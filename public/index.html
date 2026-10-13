@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Flow Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:#0a0f16;--panel:#111923;--panel2:#151f2b;--line:#253243;--ink:#eef4fa;--muted:#8fa0b4;--green:#36d399;--red:#fb7185;--blue:#76a9fa;--amber:#fbbf24;--radius:16px;font-family:Manrope,system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#142538 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1400px;margin:auto;padding:28px 22px 60px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--green);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(27px,4vw,40px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:680px;line-height:1.7;margin:0}.header-right{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.chip{font-size:12px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}.btn{cursor:pointer;font-weight:700}.btn:hover{border-color:#58718d}.notice{margin:22px 0 16px;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}.kpi,.panel{background:linear-gradient(145deg,rgba(20,30,43,.96),rgba(15,23,33,.96));border:1px solid var(--line);border-radius:var(--radius)}.kpi{padding:17px}.kpi .label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em}.kpi .value{font-size:27px;font-weight:800;letter-spacing:-.04em;margin:7px 0 3px}.kpi .hint{font-size:11px;color:var(--muted)}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:18px 18px 13px}.section-head h2{margin:0;font-size:16px;letter-spacing:-.02em}.section-head p{margin:5px 0 0;color:var(--muted);font-size:12px}.filters{display:flex;gap:8px;flex-wrap:wrap}.filters input{min-width:150px}.filters select{padding:9px}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;white-space:nowrap}.table th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:12px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.table td{padding:13px 16px;border-bottom:1px solid rgba(37,50,67,.72);font-size:12px}.table tr:last-child td{border-bottom:0}.table tbody tr:hover{background:#172332}.sym{font-weight:800;font-size:13px}.sub{display:block;color:var(--muted);font-size:10px;margin-top:4px}.mono{font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}.score{display:inline-flex;align-items:center;gap:7px;font-weight:800}.scorebar{height:5px;width:54px;background:#263443;border-radius:8px;overflow:hidden;display:inline-block}.scorebar i{display:block;height:100%;background:var(--green);border-radius:8px}.badge{display:inline-block;border:1px solid var(--line);padding:5px 8px;border-radius:7px;font-size:10px;font-weight:800}.badge.strong{color:var(--green);border-color:#236a53;background:#102a25}.badge.watch{color:var(--amber);border-color:#6d5621;background:#2b2414}.badge.risk{color:var(--red);border-color:#6e2c3a;background:#2d1720}.buybar{width:95px;height:6px;background:#713344;border-radius:5px;overflow:hidden;margin-top:5px}.buybar i{display:block;height:100%;background:var(--green)}.empty{padding:36px;text-align:center;color:var(--muted)}.lower{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px}.events{padding:0 18px 12px}.event{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.event:last-child{border:0}.event strong{font-size:12px}.event small{display:block;color:var(--muted);margin-top:4px}.source-list{padding:0 18px 17px}.source-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);gap:12px}.source-row:last-child{border:0}.source-row span:first-child{color:var(--muted)}.status-pill{font-size:10px;font-weight:800}.foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.error{display:none;margin:12px 0;background:#2d1720;border:1px solid #6e2c3a;color:#ffabb9;border-radius:10px;padding:12px;font-size:12px;line-height:1.6}.tabs{display:flex;gap:6px}.tab{border:1px solid var(--line);border-radius:9px;padding:9px 12px;color:var(--muted);background:transparent;font:inherit;font-size:12px;font-weight:800;cursor:pointer}.tab.active{background:#203145;color:var(--ink);border-color:#3b5674}
+.clickhint{color:var(--muted);font-size:11px}.coin-link{cursor:pointer;color:var(--ink);background:none;border:0;padding:0;text-align:left;font:inherit}.coin-link:hover{color:var(--blue)}
+.modal-backdrop{position:fixed;inset:0;z-index:20;background:rgba(3,7,12,.82);display:none;align-items:center;justify-content:center;padding:18px}.modal-backdrop.open{display:flex}.modal{width:min(1100px,100%);max-height:92vh;overflow:auto;background:#0f1722;border:1px solid #33465c;border-radius:18px;box-shadow:0 24px 90px #000a}.modal-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:20px;border-bottom:1px solid var(--line)}.modal-head h2{margin:0;font-size:22px}.modal-head p{color:var(--muted);margin:6px 0 0;font-size:12px}.book-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 20px}.book-stat{background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:12px}.book-stat span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}.book-stat strong{display:block;font-size:15px;margin-top:7px}.book-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px 20px}.book-side{border:1px solid var(--line);border-radius:12px;overflow:hidden}.book-side h3{font-size:13px;margin:0;padding:12px 14px;background:#151f2b}.book-side h3 .green{float:right}.book-table{width:100%;border-collapse:collapse;font:11px "DM Mono",monospace}.book-table th,.book-table td{padding:7px 10px;text-align:right;position:relative}.book-table th{color:var(--muted);font:10px Manrope,sans-serif}.book-table tbody tr{border-top:1px solid #1d2a38}.depth-cell{position:relative;overflow:hidden}.depth-bar{position:absolute;inset:1px 0 1px auto;opacity:.15;pointer-events:none}.depth-cell span{position:relative}.book-status{padding:0 20px 16px;color:var(--muted);font-size:11px}.book-status.error{display:block;margin:0 20px 16px}.book-actions{display:flex;gap:8px;align-items:center}.book-actions .btn{padding:7px 10px}@media(max-width:700px){.book-grid{grid-template-columns:1fr}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-backdrop{padding:8px}.modal-head{padding:15px}}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}}
+</style></head>
+<body><main class="wrap">
+<header><div><div class="eyebrow">Market intelligence · Spot only</div><h1>Market Flow Radar</h1><p class="lede">Find unusual trading activity, aggressive buyer/seller imbalance and early momentum changes across liquid Binance USDT spot pairs.</p></div><div class="header-right"><span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span><button class="btn" id="refresh">↻ Refresh</button></div></header>
+<div class="notice"><b>Signal honesty:</b> Exchange order flow is not proof of smart-money or whale activity. Scores rank observable market conditions; they do not predict returns. Web3 wallet signals are shown separately and may be unavailable if the upstream API blocks access or changes its schema.</div>
+<div class="error" id="errors"></div>
+<div class="kpis">
+ <div class="kpi"><div class="label">Pairs monitored</div><div class="value" id="kPairs">—</div><div class="hint">Liquid USDT spot pairs</div></div>
+ <div class="kpi"><div class="label">Strong flow</div><div class="value green" id="kStrong">—</div><div class="hint">Score ≥ 75 / 100</div></div>
+ <div class="kpi"><div class="label">Buy pressure leaders</div><div class="value" id="kBuy">—</div><div class="hint">5-minute taker buy ratio ≥ 55%</div></div>
+ <div class="kpi"><div class="label">Last market update</div><div class="value" id="kUpdated" style="font-size:19px">—</div><div class="hint" id="kInterval">Refresh interval —</div></div>
+</div>
+<section class="panel">
+ <div class="section-head"><div><h2>Live flow leaderboard</h2><p>Ranked by transparent 0–100 heuristic, not a buy recommendation</p></div><div class="tabs"><button class="tab active" id="tabFlow">Market flow</button><button class="tab" id="tabWallets">Web3 signals</button></div></div>
+ <div class="section-head" style="padding-top:0"><div class="filters" id="filters"><input id="search" placeholder="Search coin, e.g. SUI" aria-label="Search coins"><select id="minScore"><option value="0">All scores</option><option value="45">Score 45+</option><option value="60">Score 60+</option><option value="75">Score 75+</option></select><select id="minVol"><option value="0">Any 24h volume</option><option value="5000000">$5M+ volume</option><option value="20000000">$20M+ volume</option><option value="100000000">$100M+ volume</option></select></div><span class="chip" id="count">—</span></div>
+ <div class="table-wrap"><table class="table"><thead id="thead"></thead><tbody id="tbody"><tr><td colspan="8" class="empty">Waiting for market data…</td></tr></tbody></table></div>
+</section>
+<div class="lower">
+ <section class="panel"><div class="section-head"><div><h2>New strong-flow events</h2><p>Fires when a coin crosses the score threshold</p></div></div><div class="events" id="events"><div class="empty">No events yet. A quiet feed is okay.</div></div></section>
+ <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>See what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div></section>
+</div>
+<div class="foot">How to use: look for multiple confirming signals, inspect the chart and liquidity, and compare activity across timeframes before acting. Relative volume compares the latest 1-minute candle with up to 20 prior closed candles. The newest candle can still be forming. This tool uses public market data and does not place trades. Demo mode is simulated and must never be treated as live market data.</div>
+</main>
+<div class="modal-backdrop" id="bookModal" role="dialog" aria-modal="true" aria-labelledby="bookTitle">
+ <section class="modal"><div class="modal-head"><div><div class="eyebrow">Binance spot depth snapshot</div><h2 id="bookTitle">Order book</h2><p id="bookSubtitle">Select a coin to inspect bids and asks.</p></div><div class="book-actions"><button class="btn" id="bookRefresh">↻ Refresh</button><button class="btn" id="bookClose" aria-label="Close order book">✕</button></div></div>
+ <div class="book-meta"><div class="book-stat"><span>Best bid</span><strong class="green mono" id="bestBid">—</strong></div><div class="book-stat"><span>Best ask</span><strong class="red mono" id="bestAsk">—</strong></div><div class="book-stat"><span>Spread</span><strong class="mono" id="bookSpread">—</strong></div><div class="book-stat"><span>Spread %</span><strong class="mono" id="bookSpreadPct">—</strong></div></div>
+ <div class="book-grid"><div class="book-side"><h3>BUY ORDERS / BIDS <span class="green" id="bidTotal">—</span></h3><table class="book-table"><thead><tr><th>Price (USDT)</th><th>Amount</th><th>Total (USDT)</th></tr></thead><tbody id="bidsBody"><tr><td colspan="3">Loading…</td></tr></tbody></table></div><div class="book-side"><h3>SELL ORDERS / ASKS <span class="red" id="askTotal">—</span></h3><table class="book-table"><thead><tr><th>Price (USDT)</th><th>Amount</th><th>Total (USDT)</th></tr></thead><tbody id="asksBody"><tr><td colspan="3">Loading…</td></tr></tbody></table></div></div>
+ <div class="book-status" id="bookStatus">Order book is a live snapshot, not a guarantee that orders will remain available.</div></section>
+</div>
+<script>
+(()=> {
+ const $=s=>document.querySelector(s); let view="flow", data={}, lastRender=0, activeBookSymbol="", bookTimer=null;
+ const money=v=>v==null||!Number.isFinite(Number(v))?"—":Number(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Number(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Number(v)>=1e3?"$"+(v/1e3).toFixed(1)+"K":"$"+Number(v).toFixed(2);
+ const price=v=>v==null?"—":Number(v)>=1000?"$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:2}):Number(v)>=1?"$"+Number(v).toFixed(3):"$"+Number(v).toPrecision(5);
+ const pct=v=>v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%";
+ const time=v=>v?new Date(v).toLocaleTimeString():"—";
+ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ function drawFlow(){
+  $("#thead").innerHTML="<tr><th>Pair</th><th>Flow score</th><th>5m taker flow</th><th>Relative volume</th><th>5m price</th><th>24h volume</th><th>Trades / 1m</th><th>Signal</th></tr>";
+  const q=$("#search").value.trim().toLowerCase(), ms=Number($("#minScore").value), mv=Number($("#minVol").value);
+  const rows=(data.coins||[]).filter(c=>c.symbol.toLowerCase().includes(q)&&c.score>=ms&&c.volume24h>=mv);
+  $("#count").textContent=rows.length+" pairs";
+  $("#tbody").innerHTML=rows.length?rows.map(c=>{
+   const klass=c.label==="Strong flow"?"strong":c.label==="Distribution risk"?"risk":c.score>=60?"watch":"";
+   const buy=Number(c.buyRatio5m)||0, delta=Number(c.change5m)||0;
+   return `<tr><td><button class="coin-link sym" data-book="${esc(c.symbol)}" title="Open spot order book">${esc(c.symbol.replace("USDT",""))} ↗</button><span class="sub">USDT spot · click for order book</span></td>
+   <td><span class="score mono">${c.score}<span class="scorebar"><i style="width:${Math.max(0,Math.min(100,c.score))}%"></i></span></span></td>
+   <td><span class="mono ${buy>=55?"green":buy<48?"red":""}">${buy.toFixed(1)}% buy</span><div class="buybar"><i style="width:${Math.max(0,Math.min(100,buy))}%"></i></div><span class="sub">Net ${money(c.netFlow5m)}</span></td>
+   <td class="mono ${c.relativeVolume>=2?"green":""}">${c.relativeVolume==null?"—":c.relativeVolume.toFixed(2)+"×"}<span class="sub">vs prior 20 candles</span></td>
+   <td class="mono ${delta>0?"green":delta<0?"red":""}">${pct(delta)}<span class="sub">${price(c.price)}</span></td>
+   <td class="mono">${money(c.volume24h)}</td><td class="mono">${Number(c.trades1m||0).toLocaleString()}</td><td><span class="badge ${klass}">${esc(c.label)}</span><span class="sub">${esc((c.reasons||[]).slice(0,2).join(" · "))}</span></td></tr>`;
+  }).join(""):'<tr><td colspan="8" class="empty">No pairs match these filters. Try lowering the minimum score or volume.</td></tr>';
+ }
+ function drawWallets(){
+  $("#thead").innerHTML="<tr><th>Token</th><th>Chain</th><th>Direction</th><th>Wallet count</th><th>Exit rate</th><th>Time</th><th>Contract</th></tr>";
+  const rows=data.web3Signals||[];
+  $("#count").textContent=rows.length+" signals";
+  $("#tbody").innerHTML=rows.length?rows.map(s=>`<tr><td><span class="sym">${esc(s.ticker)}</span></td><td>${esc(s.chain)}</td><td><span class="badge ${s.direction==="buy"?"strong":s.direction==="sell"?"risk":""}">${esc(s.direction)}</span></td><td class="mono">${s.wallets??"—"}</td><td class="mono">${s.exitRate==null?"—":Math.round(s.exitRate)+"%"}</td><td class="mono">${time(s.time)}</td><td class="mono">${s.address?esc(s.address.slice(0,7)+"…"+s.address.slice(-5)):"—"}</td></tr>`).join(""):'<tr><td colspan="7" class="empty">No validated Web3 signals currently available. Check Data health for API errors; no wallet activity is being invented.</td></tr>';
+ }
+ function draw(){
+  const coins=data.coins||[];
+  $("#kPairs").textContent=coins.length;
+  $("#kStrong").textContent=coins.filter(c=>c.score>=75).length;
+  $("#kBuy").textContent=coins.filter(c=>c.buyRatio5m>=55).length;
+  $("#kUpdated").textContent=time(data.lastUpdated);
+  $("#kInterval").textContent="Refresh every "+Math.round((data.pollIntervalMs||30000)/1000)+" seconds";
+  const live=data.marketStatus==="connected"||data.marketStatus==="demo";
+  $("#liveChip").innerHTML=`<span class="dot ${live?"":"bad"}"></span>${data.demo?"DEMO DATA":data.marketStatus==="connected"?"Market data connected":data.marketStatus==="error"?"Market data error":"Connecting…"}`;
+  const errs=Object.entries(data.errors||{});
+  $("#errors").style.display=errs.length?"block":"none";
+  $("#errors").innerHTML=errs.map(([k,v])=>`<b>${esc(k)}:</b> ${esc(v)}`).join("<br>");
+  $("#sources").innerHTML=`<div class="source-row"><span>Binance Spot candles</span><b class="status-pill ${data.marketStatus==="connected"?"green":data.marketStatus==="demo"?"amber":"red"}">${esc(data.marketStatus||"starting")}</b></div>
+   <div class="source-row"><span>Binance Web3 wallet signals</span><b class="status-pill ${data.web3Status==="connected"?"green":"amber"}">${esc(data.web3Status||"not checked")}</b></div>
+   <div class="source-row"><span>Telegram alerts</span><b class="status-pill">${data.telegramConfigured?"Configured":"Optional · env vars"}</b></div>
+   <div class="source-row"><span>Last successful update</span><b class="status-pill mono">${time(data.lastUpdated)}</b></div>`;
+  const events=data.events||[];
+  $("#events").innerHTML=events.length?events.slice(0,8).map(e=>`<div class="event"><div><strong>${esc(e.symbol)} · ${esc(e.label)}</strong><small>${esc(e.message)}</small></div><small class="mono">${time(e.time)}</small></div>`).join(""):'<div class="empty">No threshold-crossing events yet.</div>';
+  if(view==="flow")drawFlow();else drawWallets();
+ }
+ function fmtNum(v, digits=8){const n=Number(v);return n.toLocaleString("en-US",{maximumFractionDigits:digits,minimumFractionDigits:0});}
+ function fmtPrice(v){const n=Number(v);return n>=1000?n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):n>=1?n.toFixed(5):n.toPrecision(6);}
+ async function openBook(symbol){
+  activeBookSymbol=symbol; $("#bookModal").classList.add("open"); $("#bookTitle").textContent=symbol.replace("USDT","")+" / USDT"; $("#bookSubtitle").textContent="Loading current Binance Spot depth…"; $("#bookStatus").className="book-status"; $("#bookStatus").textContent="Fetching order book snapshot…";
+  if(bookTimer)clearInterval(bookTimer); await loadBook(); bookTimer=setInterval(()=>{if(activeBookSymbol)loadBook();},5000);
+ }
+ async function loadBook(){
+  const symbol=activeBookSymbol;if(!symbol)return;
+  try{
+   const r=await fetch("/api/orderbook?symbol="+encodeURIComponent(symbol),{cache:"no-store"});const b=await r.json();if(!r.ok)throw new Error(b.error||("HTTP "+r.status));if(symbol!==activeBookSymbol)return;
+   const bids=b.bids||[], asks=b.asks||[];if(!bids.length||!asks.length)throw new Error("No bid/ask levels returned");
+   const bid=Number(bids[0][0]),ask=Number(asks[0][0]),spread=ask-bid,mid=(ask+bid)/2;
+   $("#bestBid").textContent=fmtPrice(bid);$("#bestAsk").textContent=fmtPrice(ask);$("#bookSpread").textContent=fmtPrice(spread);$("#bookSpreadPct").textContent=(mid?spread/mid*100:0).toFixed(4)+"%";
+   const bidRows=bids.slice(0,20),askRows=asks.slice(0,20);let bCum=0,aCum=0;const bAmounts=bidRows.map(x=>Number(x[0])*Number(x[1])),aAmounts=askRows.map(x=>Number(x[0])*Number(x[1]));const bMax=Math.max(...bAmounts,1),aMax=Math.max(...aAmounts,1);
+   $("#bidsBody").innerHTML=bidRows.map((x,i)=>{bCum+=Number(x[0])*Number(x[1]);const amount=Number(x[1]),total=Number(x[0])*amount;return `<tr><td class="green">${fmtPrice(x[0])}</td><td>${fmtNum(amount,5)}</td><td class="depth-cell"><i class="depth-bar" style="width:${bAmounts[i]/bMax*100}%;background:var(--green)"></i><span>${money(total)}</span></td></tr>`;}).join("");
+   $("#asksBody").innerHTML=askRows.map((x,i)=>{aCum+=Number(x[0])*Number(x[1]);const amount=Number(x[1]),total=Number(x[0])*amount;return `<tr><td class="red">${fmtPrice(x[0])}</td><td>${fmtNum(amount,5)}</td><td class="depth-cell"><i class="depth-bar" style="width:${aAmounts[i]/aMax*100}%;background:var(--red)"></i><span>${money(total)}</span></td></tr>`;}).join("");
+   $("#bidTotal").textContent=money(bCum);$("#askTotal").textContent=money(aCum);$("#bookSubtitle").textContent=`Top ${Math.min(20,bids.length)} bid and ask levels · refreshed ${time(b.updatedAt)}`;
+   $("#bookStatus").className="book-status";$("#bookStatus").textContent=(b.demo?"DEMO — simulated values, not real market data. ":"")+`Source: ${b.source}. Snapshot refreshes every 5 seconds while open. Depth is cancellable and may change before an order executes.`;
+  }catch(e){$("#bookStatus").className="book-status error";$("#bookStatus").textContent=e.message;}
+ }
+ function closeBook(){activeBookSymbol="";$("#bookModal").classList.remove("open");if(bookTimer){clearInterval(bookTimer);bookTimer=null;}}
+ $("#tbody").addEventListener("click",e=>{const b=e.target.closest("[data-book]");if(b&&view==="flow")openBook(b.dataset.book);});
+ $("#bookClose").onclick=closeBook;$("#bookRefresh").onclick=loadBook;$("#bookModal").addEventListener("click",e=>{if(e.target===$("#bookModal"))closeBook();});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeBook();});
+ async function load(){
+  try{const r=await fetch("/api/signals",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);data=await r.json();draw();}
+  catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/signals: "+e.message;}
+ }
+ $("#tabFlow").onclick=()=>{view="flow";$("#tabFlow").classList.add("active");$("#tabWallets").classList.remove("active");$("#filters").style.display="flex";draw();};
+ $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";draw();};
+ $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#refresh").onclick=load;
+ load();setInterval(load,5000);
+})();
+</script></body></html>

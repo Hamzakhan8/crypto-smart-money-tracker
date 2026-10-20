@@ -14,7 +14,24 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}}
 </style></head>
 <body><main class="wrap">
-<header><div><div class="eyebrow">Market intelligence · Spot only</div><h1>Market Flow Radar</h1><p class="lede">Find unusual trading activity, aggressive buyer/seller imbalance and early momentum changes across liquid Binance USDT spot pairs.</p></div><div class="header-right"><span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span><button class="btn" id="refresh">↻ Refresh</button></div></header>
+<header>
+ <div><div class="eyebrow">Market intelligence · Spot only</div><h1>Market Flow Radar</h1><p class="lede">Find unusual trading activity, aggressive buyer/seller imbalance and early momentum changes across liquid Binance USDT spot pairs.</p></div>
+ <div class="header-right">
+  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
+  
+  <!-- AI Model Selectors -->
+  <select id="aiModel" style="padding: 8px; font-size: 12px;">
+    <option value="gemini-3.5-flash">Gemini 3.5 Flash (Fast)</option>
+    <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Accurate)</option>
+  </select>
+  <label style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+    <input type="checkbox" id="aiRecursive"> Recursive Agent
+  </label>
+  
+  <button class="btn" id="analyzeBtn" style="color: var(--blue); border-color: var(--blue);">✨ AI Analysis</button>
+  <button class="btn" id="refresh">↻ Refresh</button>
+ </div>
+</header>
 <div class="notice"><b>Signal honesty:</b> Exchange order flow is not proof of smart-money or whale activity. Scores rank observable market conditions; they do not predict returns. Web3 wallet signals are shown separately and may be unavailable if the upstream API blocks access or changes its schema.</div>
 <div class="error" id="errors"></div>
 <div class="kpis">
@@ -40,6 +57,23 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="book-grid"><div class="book-side"><h3>BUY ORDERS / BIDS <span class="green" id="bidTotal">—</span></h3><table class="book-table"><thead><tr><th>Price (USDT)</th><th>Amount</th><th>Total (USDT)</th></tr></thead><tbody id="bidsBody"><tr><td colspan="3">Loading…</td></tr></tbody></table></div><div class="book-side"><h3>SELL ORDERS / ASKS <span class="red" id="askTotal">—</span></h3><table class="book-table"><thead><tr><th>Price (USDT)</th><th>Amount</th><th>Total (USDT)</th></tr></thead><tbody id="asksBody"><tr><td colspan="3">Loading…</td></tr></tbody></table></div></div>
  <div class="book-status" id="bookStatus">Order book is a live snapshot, not a guarantee that orders will remain available.</div></section>
 </div>
+
+<!-- AI MODAL -->
+<div class="modal-backdrop" id="aiModal" role="dialog">
+  <section class="modal" style="max-width: 700px;">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Gemini AI Agent</div>
+        <h2>AI Market Brief</h2>
+      </div>
+      <button class="btn" id="aiClose">✕</button>
+    </div>
+    <div style="padding: 20px; line-height: 1.6;" id="aiContent">
+      Loading analysis...
+    </div>
+  </section>
+</div>
+
 <script>
 (()=> {
  const $=s=>document.querySelector(s); let view="flow", data={}, lastRender=0, activeBookSymbol="", bookTimer=null;
@@ -117,6 +151,47 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   try{const r=await fetch("/api/signals",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);data=await r.json();draw();}
   catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/signals: "+e.message;}
  }
+ 
+ // AI AGENT SCRIPT
+ $("#analyzeBtn").onclick = async () => {
+   $("#aiModal").classList.add("open");
+   $("#aiContent").innerHTML = "Agent is analyzing current market flow data...";
+   
+   const selectedModel = $("#aiModel").value;
+   const isRecursive = $("#aiRecursive").checked;
+
+   if (isRecursive) {
+     $("#aiContent").innerHTML = "Running Recursive Agents...<br><br><span class='muted'>Phase 1: Analyzing Flow Data...<br>Phase 2: Risk Manager reviewing output...</span>";
+   }
+   
+   try {
+     const res = await fetch("/api/analyze", { 
+       method: "POST",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ 
+         model: selectedModel, 
+         recursive: isRecursive 
+       })
+     });
+     
+     const data = await res.json();
+     
+     if (!res.ok) throw new Error(data.error || "Failed to analyze");
+     
+     // Convert basic markdown formatting to HTML
+     const formattedText = data.analysis
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n\n/g, '<br><br>')
+        .replace(/\n/g, '<br>');
+     $("#aiContent").innerHTML = formattedText;
+   } catch (e) {
+     $("#aiContent").innerHTML = `<span class="red">Error: ${e.message}</span>`;
+   }
+ };
+
+ $("#aiClose").onclick = () => $("#aiModal").classList.remove("open");
+ $("#aiModal").addEventListener("click",e=>{if(e.target===$("#aiModal"))$("#aiModal").classList.remove("open");});
+
  $("#tabFlow").onclick=()=>{view="flow";$("#tabFlow").classList.add("active");$("#tabWallets").classList.remove("active");$("#filters").style.display="flex";draw();};
  $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";draw();};
  $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#refresh").onclick=load;

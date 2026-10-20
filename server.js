@@ -1,11 +1,11 @@
 // Smart Money / Market Flow Radar
-// Node.js 18+. No third-party dependencies.
-// Important: Binance spot flow is a proxy for aggressive trading, NOT proof of whale identity.
+// Node.js 18+. No third-party dependencies (except @google/genai).
 
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { GoogleGenAI } from "@google/genai";
 
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
@@ -19,6 +19,9 @@ const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
 const WEB3_API = "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai";
 const CHAINS = [{ id: "56", name: "BSC" }, { id: "CT_501", name: "Solana" }];
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// Initialize Gemini using environment variable securely
+const ai = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;
 
 const state = {
   startedAt: Date.now(),
@@ -71,8 +74,6 @@ function isUsdtSpot(t) {
     n(t.quoteVolume) >= MIN_QUOTE_VOLUME;
 }
 function candleMetrics(klines) {
-  // Binance kline fields: open time, open, high, low, close, base volume,
-  // close time, quote volume, trades, taker-buy base, taker-buy quote, ignore.
   const candles = (klines || []).map(k => ({
     openTime: n(k[0]), open: n(k[1]), high: n(k[2]), low: n(k[3]),
     close: n(k[4]), baseVolume: n(k[5]) || 0, quoteVolume: n(k[7]) || 0,
@@ -80,7 +81,6 @@ function candleMetrics(klines) {
   })).filter(c => c.close !== null && c.quoteVolume !== null);
   if (!candles.length) throw new Error("No usable candles");
   const last = candles[candles.length - 1];
-  // Exclude the currently forming candle from baseline when possible.
   const closed = candles.slice(0, -1);
   const buyQ = last.takerBuyQuote;
   const sellQ = Math.max(0, last.quoteVolume - buyQ);
@@ -105,7 +105,6 @@ function candleMetrics(klines) {
   };
 }
 function scoreCoin(ticker, m) {
-  // Transparent heuristic (0–100), not a prediction or wallet-identification model.
   let score = 0;
   const reasons = [];
   const ratio = m.buyRatio5m;
@@ -154,7 +153,6 @@ async function mapLimit(items, limit, fn) {
       if (i >= items.length) break;
       try { results[i] = await fn(items[i], i); }
       catch (e) { results[i] = { _error: e.message, _item: items[i] }; }
-      // small stagger to smooth requests
       await sleep(35);
     }
   }));
@@ -197,7 +195,7 @@ function updateEvents(coins) {
         time: now, type: "flow",
       });
       lastAlertAt.set(c.symbol, now);
-      if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only; not proof of smart-money buying.`);
+      if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only.`);
     }
     previousScores.set(c.symbol, c.score);
   }
@@ -290,14 +288,73 @@ const jsonResponse = (res, code, data) => {
 };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  
   if (url.pathname === "/api/health") return jsonResponse(res, 200, {
     ok: true, marketStatus: state.marketStatus, web3Status: state.web3Status,
     lastUpdated: state.lastUpdated, pollIntervalMs: state.pollIntervalMs, demo: state.demo,
     errors: state.errors,
   });
+  
   if (url.pathname === "/api/signals") return jsonResponse(res, 200, {
     ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals,
   });
+
+  // NEW RECURSIVE GEMINI API ENDPOINT
+  if (url.pathname === "/api/analyze" && req.method === "POST") {
+    if (!ai) {
+      return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
+    }
+
+    try {
+      // Parse the incoming request body
+      let body = {};
+      try {
+        const buffers = [];
+        for await (const chunk of req) buffers.push(chunk);
+        if (buffers.length > 0) body = JSON.parse(Buffer.concat(buffers).toString());
+      } catch (e) { /* ignore parse errors */ }
+
+      const selectedModel = body.model || 'gemini-2.5-flash';
+      const isRecursive = body.recursive === true;
+
+      // 1. Gather Data
+      const topCoins = state.coins.slice(0, 5).map(c => 
+        `${c.symbol}: Score ${c.score}/100, 5m Buy Ratio ${c.buyRatio5m.toFixed(1)}%, Volume ${c.volume24h}, Reasons: ${c.reasons.join(', ')}`
+      ).join("\n");
+      const activeSignals = state.web3Signals.slice(0, 5).map(s => 
+        `${s.ticker} (${s.chain}): ${s.direction.toUpperCase()}, Wallets: ${s.wallets}`
+      ).join("\n");
+
+      // 2. Step One: Initial Analyst Agent
+      const prompt1 = `You are a crypto market flow analyst. Analyze the following real-time data.\n\nFlow Data:\n${topCoins || "No active flow data."}\n\nWeb3 Signals:\n${activeSignals || "No recent wallet signals."}\n\nProvide a concise 2-paragraph market brief summarizing trends and the most interesting asset.`;
+
+      const response1 = await ai.models.generateContent({
+        model: selectedModel,
+        contents: prompt1,
+      });
+      let finalText = response1.text;
+
+      // 3. Step Two: Recursive Risk Manager Agent (If requested)
+      if (isRecursive) {
+        const prompt2 = `You are a Senior Risk Manager. Review the junior analyst's report below:\n\n"${finalText}"\n\nCritique this analysis. Point out any potential fake-outs, low-volume risks, or assumptions the analyst missed. Provide a strict 1-paragraph final verdict.`;
+        
+        const critiqueModel = 'gemini-1.5-pro'; 
+        
+        const response2 = await ai.models.generateContent({
+          model: critiqueModel,
+          contents: prompt2,
+        });
+
+        finalText = `**Phase 1: Initial Analysis (${selectedModel})**\n${response1.text}\n\n---\n\n**Phase 2: Risk Manager Critique (${critiqueModel})**\n${response2.text}`;
+      }
+
+      return jsonResponse(res, 200, { analysis: finalText });
+    } catch (e) {
+      console.error("Gemini API Error:", e);
+      return jsonResponse(res, 500, { error: "Failed to generate AI analysis.", details: e.message });
+    }
+  }
+  
   if (url.pathname === "/api/orderbook") {
     const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
     if (!/^[A-Z0-9]{3,20}USDT$/.test(symbol)) return jsonResponse(res, 400, { error: "Provide a valid Binance USDT spot symbol, e.g. SUIUSDT" });
@@ -316,6 +373,7 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, { symbol, lastUpdateId: book.lastUpdateId, bids: book.bids, asks: book.asks, source: "Binance Spot REST depth snapshot", demo: false, updatedAt: Date.now() });
     } catch (e) { return jsonResponse(res, 502, { error: `Order book unavailable: ${e.message}`, symbol }); }
   }
+  
   if (url.pathname === "/") {
     try {
       const html = await readFile(path.join(here, "public", "index.html"));
@@ -329,6 +387,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Market Flow Radar: http://${HOST}:${PORT}`);
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
+  if (ai) console.log("Gemini AI integration enabled.");
 });
 poll();
 setInterval(poll, POLL_MS);

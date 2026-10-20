@@ -1,9 +1,8 @@
-Markdown
 # Market Flow Radar
 
 A real-time dashboard that tracks crypto market momentum, buyer/seller imbalances, and smart money flow for Binance spot pairs.
 
-## 🚀 Quick Start (How to run the app)
+## Quick Start (How to run the app)
 
 1. Make sure you have Node.js installed.
 2. Open your terminal in the project folder and run:

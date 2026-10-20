@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
-
+import { runAnalysis, readJsonBody, AgentError } from "./Agent.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -301,57 +301,14 @@ const server = http.createServer(async (req, res) => {
 
   // NEW RECURSIVE GEMINI API ENDPOINT
   if (url.pathname === "/api/analyze" && req.method === "POST") {
-    if (!ai) {
-      return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
-    }
-
+    if (!ai) return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
     try {
-      // Parse the incoming request body
-      let body = {};
-      try {
-        const buffers = [];
-        for await (const chunk of req) buffers.push(chunk);
-        if (buffers.length > 0) body = JSON.parse(Buffer.concat(buffers).toString());
-      } catch (e) { /* ignore parse errors */ }
-
-      const selectedModel = body.model || 'gemini-2.5-flash';
-      const isRecursive = body.recursive === true;
-
-      // 1. Gather Data
-      const topCoins = state.coins.slice(0, 5).map(c => 
-        `${c.symbol}: Score ${c.score}/100, 5m Buy Ratio ${c.buyRatio5m.toFixed(1)}%, Volume ${c.volume24h}, Reasons: ${c.reasons.join(', ')}`
-      ).join("\n");
-      const activeSignals = state.web3Signals.slice(0, 5).map(s => 
-        `${s.ticker} (${s.chain}): ${s.direction.toUpperCase()}, Wallets: ${s.wallets}`
-      ).join("\n");
-
-      // 2. Step One: Initial Analyst Agent
-      const prompt1 = `You are a crypto market flow analyst. Analyze the following real-time data.\n\nFlow Data:\n${topCoins || "No active flow data."}\n\nWeb3 Signals:\n${activeSignals || "No recent wallet signals."}\n\nProvide a concise 2-paragraph market brief summarizing trends and the most interesting asset.`;
-
-      const response1 = await ai.models.generateContent({
-        model: selectedModel,
-        contents: prompt1,
-      });
-      let finalText = response1.text;
-
-      // 3. Step Two: Recursive Risk Manager Agent (If requested)
-      if (isRecursive) {
-        const prompt2 = `You are a Senior Risk Manager. Review the junior analyst's report below:\n\n"${finalText}"\n\nCritique this analysis. Point out any potential fake-outs, low-volume risks, or assumptions the analyst missed. Provide a strict 1-paragraph final verdict.`;
-        
-        const critiqueModel = 'gemini-1.5-pro'; 
-        
-        const response2 = await ai.models.generateContent({
-          model: critiqueModel,
-          contents: prompt2,
-        });
-
-        finalText = `**Phase 1: Initial Analysis (${selectedModel})**\n${response1.text}\n\n---\n\n**Phase 2: Risk Manager Critique (${critiqueModel})**\n${response2.text}`;
-      }
-
-      return jsonResponse(res, 200, { analysis: finalText });
+      const body = await readJsonBody(req);
+      return jsonResponse(res, 200, await runAnalysis(ai, state, body));
     } catch (e) {
-      console.error("Gemini API Error:", e);
-      return jsonResponse(res, 500, { error: "Failed to generate AI analysis.", details: e.message });
+      const known = e instanceof AgentError;
+      if (!known) console.error("Gemini agent error:", e);
+      return jsonResponse(res, known ? e.status : 502, { error: known ? e.message : "Failed to generate AI analysis." });
     }
   }
   

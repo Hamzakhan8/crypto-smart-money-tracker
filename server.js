@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
-import { runAnalysis, readJsonBody, AgentError } from "./Agent.js";
+import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -348,3 +348,4 @@ server.listen(PORT, HOST, () => {
 });
 poll();
 setInterval(poll, POLL_MS);
+import "./screener.js";

@@ -12,22 +12,28 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .clickhint{color:var(--muted);font-size:11px}.coin-link{cursor:pointer;color:var(--ink);background:none;border:0;padding:0;text-align:left;font:inherit}.coin-link:hover{color:var(--blue)}
 .modal-backdrop{position:fixed;inset:0;z-index:20;background:rgba(3,7,12,.82);display:none;align-items:center;justify-content:center;padding:18px}.modal-backdrop.open{display:flex}.modal{width:min(1100px,100%);max-height:92vh;overflow:auto;background:#0f1722;border:1px solid #33465c;border-radius:18px;box-shadow:0 24px 90px #000a}.modal-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:20px;border-bottom:1px solid var(--line)}.modal-head h2{margin:0;font-size:22px}.modal-head p{color:var(--muted);margin:6px 0 0;font-size:12px}.book-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 20px}.book-stat{background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:12px}.book-stat span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}.book-stat strong{display:block;font-size:15px;margin-top:7px}.book-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px 20px}.book-side{border:1px solid var(--line);border-radius:12px;overflow:hidden}.book-side h3{font-size:13px;margin:0;padding:12px 14px;background:#151f2b}.book-side h3 .green{float:right}.book-table{width:100%;border-collapse:collapse;font:11px "DM Mono",monospace}.book-table th,.book-table td{padding:7px 10px;text-align:right;position:relative}.book-table th{color:var(--muted);font:10px Manrope,sans-serif}.book-table tbody tr{border-top:1px solid #1d2a38}.depth-cell{position:relative;overflow:hidden}.depth-bar{position:absolute;inset:1px 0 1px auto;opacity:.15;pointer-events:none}.depth-cell span{position:relative}.book-status{padding:0 20px 16px;color:var(--muted);font-size:11px}.book-status.error{display:block;margin:0 20px 16px}.book-actions{display:flex;gap:8px;align-items:center}.book-actions .btn{padding:7px 10px}@media(max-width:700px){.book-grid{grid-template-columns:1fr}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.modal-backdrop{padding:8px}.modal-head{padding:15px}}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}}
+/* additions: AI brief, disabled buttons, keyboard focus */
+.muted{color:var(--muted)}.btn:disabled{opacity:.55;cursor:wait}.btn:focus-visible,.tab:focus-visible,.coin-link:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+#aiContent p{margin:0 0 10px}.ai-list{margin:6px 0 14px;padding-left:18px}.ai-list li{margin:0 0 12px;line-height:1.65}.ai-tg{margin-top:8px;font-size:11px}.ai-meta{margin-top:18px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.8}
 </style></head>
 <body><main class="wrap">
 <header>
  <div><div class="eyebrow">Market intelligence · Spot only</div><h1>Market Flow Radar</h1><p class="lede">Find unusual trading activity, aggressive buyer/seller imbalance and early momentum changes across liquid Binance USDT spot pairs.</p></div>
  <div class="header-right">
   <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
-  
-  <!-- AI Model Selectors -->
-  <select id="aiModel" style="padding: 8px; font-size: 12px;">
+
+  <!-- AI controls -->
+  <select id="aiModel" title="Model for the analyst stage" style="padding: 8px; font-size: 12px;">
     <option value="gemini-3.5-flash">Gemini 3.5 Flash (Fast)</option>
     <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Accurate)</option>
   </select>
-  <label style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-    <input type="checkbox" id="aiRecursive"> Recursive Agent
+  <label title="Verifies top candidates with order-book and wallet checks, then adds an independent risk review. Slower and uses more API calls." style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+    <input type="checkbox" id="aiDeep"> Deep mode
   </label>
-  
+  <label id="aiTgLabel" style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+    <input type="checkbox" id="aiTelegram" checked> Send to Telegram
+  </label>
+
   <button class="btn" id="analyzeBtn" style="color: var(--blue); border-color: var(--blue);">✨ AI Analysis</button>
   <button class="btn" id="refresh">↻ Refresh</button>
  </div>
@@ -42,7 +48,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 </div>
 <section class="panel">
  <div class="section-head"><div><h2>Live flow leaderboard</h2><p>Ranked by transparent 0–100 heuristic, not a buy recommendation</p></div><div class="tabs"><button class="tab active" id="tabFlow">Market flow</button><button class="tab" id="tabWallets">Web3 signals</button></div></div>
- <div class="section-head" style="padding-top:0"><div class="filters" id="filters"><input id="search" placeholder="Search coin, e.g. SUI" aria-label="Search coins"><select id="minScore"><option value="0">All scores</option><option value="45">Score 45+</option><option value="60">Score 60+</option><option value="75">Score 75+</option></select><select id="minVol"><option value="0">Any 24h volume</option><option value="5000000">$5M+ volume</option><option value="20000000">$20M+ volume</option><option value="100000000">$100M+ volume</option></select></div><span class="chip" id="count">—</span></div>
+ <div class="section-head" style="padding-top:0"><div class="filters" id="filters"><input id="search" placeholder="Search coin, e.g. SUI" aria-label="Search coins"><select id="minScore"><option value="0">All scores</option><option value="45">Score 45+</option><option value="60">Score 60+</option><option value="75">Score 75+</option></select><select id="minVol"><option value="0">Any 24h volume</option><option value="5000000">$5M+ volume</option><option value="20000000">$20M+ volume</option><option value="100000000">$100M+ volume</option></select><select id="sortBy" aria-label="Sort pairs by"><option value="score">Sort: flow score</option><option value="buy">Sort: 5m buy ratio</option><option value="rv">Sort: relative volume</option><option value="chg">Sort: 5m price change</option><option value="vol">Sort: 24h volume</option></select><select id="rowLimit" aria-label="Rows to show"><option value="25">Show 25</option><option value="50" selected>Show 50</option><option value="100">Show 100</option><option value="0">Show all</option></select></div><span class="chip" id="count">—</span></div>
  <div class="table-wrap"><table class="table"><thead id="thead"></thead><tbody id="tbody"><tr><td colspan="8" class="empty">Waiting for market data…</td></tr></tbody></table></div>
 </section>
 <div class="lower">
@@ -59,16 +65,16 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 </div>
 
 <!-- AI MODAL -->
-<div class="modal-backdrop" id="aiModal" role="dialog">
-  <section class="modal" style="max-width: 700px;">
+<div class="modal-backdrop" id="aiModal" role="dialog" aria-modal="true" aria-labelledby="aiTitle">
+  <section class="modal" style="max-width: 760px;">
     <div class="modal-head">
       <div>
         <div class="eyebrow">Gemini AI Agent</div>
-        <h2>AI Market Brief</h2>
+        <h2 id="aiTitle">AI Market Brief</h2>
       </div>
-      <button class="btn" id="aiClose">✕</button>
+      <button class="btn" id="aiClose" aria-label="Close AI brief">✕</button>
     </div>
-    <div style="padding: 20px; line-height: 1.6;" id="aiContent">
+    <div style="padding: 20px; line-height: 1.6;" id="aiContent" aria-live="polite">
       Loading analysis...
     </div>
   </section>
@@ -76,17 +82,21 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 
 <script>
 (()=> {
- const $=s=>document.querySelector(s); let view="flow", data={}, lastRender=0, activeBookSymbol="", bookTimer=null;
+ const $=s=>document.querySelector(s); let view="flow", data={}, activeBookSymbol="", bookTimer=null, lastStamp=null, offline=false, aiAbort=null;
  const money=v=>v==null||!Number.isFinite(Number(v))?"—":Number(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Number(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Number(v)>=1e3?"$"+(v/1e3).toFixed(1)+"K":"$"+Number(v).toFixed(2);
  const price=v=>v==null?"—":Number(v)>=1000?"$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:2}):Number(v)>=1?"$"+Number(v).toFixed(3):"$"+Number(v).toPrecision(5);
  const pct=v=>v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%";
  const time=v=>v?new Date(v).toLocaleTimeString():"—";
  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ const SORTS={score:c=>c.score,buy:c=>c.buyRatio5m,rv:c=>c.relativeVolume,chg:c=>c.change5m,vol:c=>c.volume24h};
  function drawFlow(){
   $("#thead").innerHTML="<tr><th>Pair</th><th>Flow score</th><th>5m taker flow</th><th>Relative volume</th><th>5m price</th><th>24h volume</th><th>Trades / 1m</th><th>Signal</th></tr>";
   const q=$("#search").value.trim().toLowerCase(), ms=Number($("#minScore").value), mv=Number($("#minVol").value);
-  const rows=(data.coins||[]).filter(c=>c.symbol.toLowerCase().includes(q)&&c.score>=ms&&c.volume24h>=mv);
-  $("#count").textContent=rows.length+" pairs";
+  const all=(data.coins||[]).filter(c=>c.symbol.toLowerCase().includes(q)&&c.score>=ms&&c.volume24h>=mv);
+  const key=SORTS[$("#sortBy").value]||SORTS.score, lim=Number($("#rowLimit").value);
+  const sorted=[...all].sort((a,b)=>(key(b)??-Infinity)-(key(a)??-Infinity));
+  const rows=lim>0?sorted.slice(0,lim):sorted;
+  $("#count").textContent=(rows.length<all.length?rows.length+" of "+all.length:all.length)+" pairs";
   $("#tbody").innerHTML=rows.length?rows.map(c=>{
    const klass=c.label==="Strong flow"?"strong":c.label==="Distribution risk"?"risk":c.score>=60?"watch":"";
    const buy=Number(c.buyRatio5m)||0, delta=Number(c.change5m)||0;
@@ -120,6 +130,9 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    <div class="source-row"><span>Binance Web3 wallet signals</span><b class="status-pill ${data.web3Status==="connected"?"green":"amber"}">${esc(data.web3Status||"not checked")}</b></div>
    <div class="source-row"><span>Telegram alerts</span><b class="status-pill">${data.telegramConfigured?"Configured":"Optional · env vars"}</b></div>
    <div class="source-row"><span>Last successful update</span><b class="status-pill mono">${time(data.lastUpdated)}</b></div>`;
+  const tg=$("#aiTelegram");tg.disabled=!data.telegramConfigured;
+  $("#aiTgLabel").style.opacity=data.telegramConfigured?1:.5;
+  $("#aiTgLabel").title=data.telegramConfigured?"Also send the finished brief to your Telegram chat":"Telegram isn't configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.";
   const events=data.events||[];
   $("#events").innerHTML=events.length?events.slice(0,8).map(e=>`<div class="event"><div><strong>${esc(e.symbol)} · ${esc(e.label)}</strong><small>${esc(e.message)}</small></div><small class="mono">${time(e.time)}</small></div>`).join(""):'<div class="empty">No threshold-crossing events yet.</div>';
   if(view==="flow")drawFlow();else drawWallets();
@@ -146,55 +159,71 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  }
  function closeBook(){activeBookSymbol="";$("#bookModal").classList.remove("open");if(bookTimer){clearInterval(bookTimer);bookTimer=null;}}
  $("#tbody").addEventListener("click",e=>{const b=e.target.closest("[data-book]");if(b&&view==="flow")openBook(b.dataset.book);});
- $("#bookClose").onclick=closeBook;$("#bookRefresh").onclick=loadBook;$("#bookModal").addEventListener("click",e=>{if(e.target===$("#bookModal"))closeBook();});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeBook();});
- async function load(){
-  try{const r=await fetch("/api/signals",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);data=await r.json();draw();}
-  catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/signals: "+e.message;}
+ $("#bookClose").onclick=closeBook;$("#bookRefresh").onclick=loadBook;$("#bookModal").addEventListener("click",e=>{if(e.target===$("#bookModal"))closeBook();});
+ document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeBook();$("#aiModal").classList.remove("open");}});
+
+ // Skips the 200-row redraw when the server has not produced a new poll yet.
+ async function load(force){
+  try{
+   const r=await fetch("/api/signals",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);
+   const next=await r.json();
+   const unchanged=!force&&!offline&&next.lastUpdated===lastStamp;
+   data=next;lastStamp=next.lastUpdated;offline=false;
+   if(!unchanged)draw();
+  }
+  catch(e){offline=true;$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/signals: "+e.message;}
  }
- 
- // AI AGENT SCRIPT
- $("#analyzeBtn").onclick = async () => {
-   $("#aiModal").classList.add("open");
-   $("#aiContent").innerHTML = "Agent is analyzing current market flow data...";
-   
-   const selectedModel = $("#aiModel").value;
-   const isRecursive = $("#aiRecursive").checked;
 
-   if (isRecursive) {
-     $("#aiContent").innerHTML = "Running Recursive Agents...<br><br><span class='muted'>Phase 1: Analyzing Flow Data...<br>Phase 2: Risk Manager reviewing output...</span>";
-   }
-   
-   try {
-     const res = await fetch("/api/analyze", { 
-       method: "POST",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ 
-         model: selectedModel, 
-         recursive: isRecursive 
-       })
-     });
-     
-     const data = await res.json();
-     
-     if (!res.ok) throw new Error(data.error || "Failed to analyze");
-     
-     // Convert basic markdown formatting to HTML
-     const formattedText = data.analysis
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n\n/g, '<br><br>')
-        .replace(/\n/g, '<br>');
-     $("#aiContent").innerHTML = formattedText;
-   } catch (e) {
-     $("#aiContent").innerHTML = `<span class="red">Error: ${e.message}</span>`;
-   }
+ // ---- AI brief -------------------------------------------------------------
+ // The brief is model-written text and can echo token names from the Web3 feed, which anyone can
+ // choose. So it is always HTML-escaped first; only **bold**, _italic_ and "- " bullets are added back.
+ function mdToHtml(src){
+  const inline=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(^|\s)_(.+?)_(?=\s|$|[.,;])/g,"$1<em>$2</em>");
+  const out=[];let list=null;
+  const flush=()=>{if(list){out.push('<ul class="ai-list">'+list.map(li=>"<li>"+li.join("<br>")+"</li>").join("")+"</ul>");list=null;}};
+  for(const raw of String(src||"").split("\n")){
+   if(/^- /.test(raw)){(list=list||[]).push([inline(raw.slice(2))]);}
+   else if(list&&/^\s{2,}\S/.test(raw)){list[list.length-1].push(inline(raw.trim()));}
+   else{flush();if(raw.trim())out.push("<p>"+inline(raw)+"</p>");}
+  }
+  flush();return out.join("");
+ }
+ function metaHtml(m){
+  if(!m)return"";
+  const models=m.models?Object.values(m.models).join(" → "):"";
+  const tools=(m.toolCalls||[]).map(t=>String(t.tool||"").replace(/^get_/,"").replace(/_/g," ")+(t.args&&t.args.symbol?" "+t.args.symbol:"")+(t.ok?"":" (failed)"));
+  const bits=[m.mode==="deep"?"Deep mode":"Fast mode",models,m.cached?"cached result":null,m.durationMs!=null?(m.durationMs/1000).toFixed(1)+"s":null,m.dataAgeSec!=null?"data "+m.dataAgeSec+"s old":null].filter(Boolean);
+  return `<div class="ai-meta">${esc(bits.join(" · "))}${tools.length?"<br>Checked: "+esc(tools.join(", ")):""}</div>`;
+ }
+ function tgNote(t){
+  if(!t)return"";
+  const msg=t.sent?"Sent to Telegram"+(t.parts>1?" ("+t.parts+" messages)":""):t.skipped?"Telegram: "+t.skipped:"Telegram failed: "+(t.error||"unknown error");
+  return `<div class="ai-tg ${t.sent?"green":t.skipped?"muted":"red"}">${esc(msg)}</div>`;
+ }
+ $("#analyzeBtn").onclick=async()=>{
+  if(aiAbort){$("#aiModal").classList.add("open");return;}   // a run is already in progress
+  const deep=$("#aiDeep").checked, model=$("#aiModel").value, btn=$("#analyzeBtn");
+  $("#aiModal").classList.add("open");
+  $("#aiContent").innerHTML=deep
+   ?'<p>Running deep analysis…</p><p class="muted">1. Verifying top candidates (order book, wallet signals)<br>2. Writing the brief<br>3. Independent risk review<br><br>This usually takes 20–60 seconds.</p>'
+   :"<p>Analyzing current market flow…</p>";
+  btn.disabled=true;btn.textContent=deep?"Analyzing (deep)…":"Analyzing…";
+  aiAbort=new AbortController();const timer=setTimeout(()=>aiAbort.abort(),120000);
+  try{
+   const res=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,mode:deep?"deep":"fast",notify:$("#aiTelegram").checked&&!$("#aiTelegram").disabled}),signal:aiAbort.signal});
+   const body=await res.json().catch(()=>({}));
+   if(!res.ok)throw new Error(body.error||("HTTP "+res.status));
+   $("#aiContent").innerHTML=mdToHtml(body.analysis)+metaHtml(body.meta)+tgNote(body.telegram);
+  }catch(e){
+   $("#aiContent").innerHTML='<span class="red">Error: '+esc(e.name==="AbortError"?"The analysis timed out after 120 seconds. Try fast mode.":e.message)+"</span>";
+  }finally{clearTimeout(timer);aiAbort=null;btn.disabled=false;btn.textContent="✨ AI Analysis";}
  };
-
- $("#aiClose").onclick = () => $("#aiModal").classList.remove("open");
+ $("#aiClose").onclick=()=>$("#aiModal").classList.remove("open");
  $("#aiModal").addEventListener("click",e=>{if(e.target===$("#aiModal"))$("#aiModal").classList.remove("open");});
 
  $("#tabFlow").onclick=()=>{view="flow";$("#tabFlow").classList.add("active");$("#tabWallets").classList.remove("active");$("#filters").style.display="flex";draw();};
  $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";draw();};
- $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#refresh").onclick=load;
+ $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#sortBy").onchange=draw;$("#rowLimit").onchange=draw;$("#refresh").onclick=()=>load(true);
  load();setInterval(load,5000);
 })();
 </script></body></html>

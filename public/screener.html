@@ -29,12 +29,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .toasts{position:fixed;top:16px;right:16px;z-index:40;display:flex;flex-direction:column;gap:10px;width:min(370px,calc(100vw - 24px))}
 .toast{background:#0f1722;border:1px solid #33465c;border-left:4px solid var(--green);border-radius:12px;padding:14px 16px;box-shadow:0 18px 50px #000a;cursor:pointer;animation:slide .25s ease-out}.toast.test{border-left-color:var(--amber)}
 .toast h4{margin:0;font-size:13px;display:flex;justify-content:space-between;gap:10px;align-items:center}.toast .tag{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--green)}.toast.test .tag{color:var(--amber)}.toast p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.55}.toast .x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
+.track{display:block;margin-top:4px;font-size:10px}.badge.tier{margin-right:6px}
 @keyframes slide{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.toast{animation:none}}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
 </style></head>
 <body><main class="wrap">
 <header>
- <div><div class="eyebrow">Binance × CoinGecko top 500 · Early setups</div><h1>Early Setup Screener</h1><p class="lede">Tokens where volume is expanding, price is coiling or just breaking out, the narrative is heating up, and futures positioning is not overcrowded. New alerts appear here as popups.</p></div>
+ <div><div class="eyebrow">Binance × CoinGecko top 500 · Early setups</div><h1>Early Setup Screener</h1><p class="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
  <div class="header-right">
   <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
   <button class="btn" id="soundBtn" title="Play a short tone when a new alert arrives">Sound: off</button>
@@ -43,19 +44,24 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   <a class="btn" id="mainLink" href="#">Market Flow Radar</a>
  </div>
 </header>
-<div class="notice"><b>Signal honesty:</b> Scores rank observable conditions (volume, chart setup, narrative, tokenomics, futures positioning). They flag early setups, not guaranteed moves, and many setups fail. Whale/exchange-flow data, token unlock dates and Binance Monitoring tags are not included, so check them yourself before acting. Not financial advice.</div>
+<div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Some will still arrive after a small move, and many early signals fail. Whale/exchange-flow data, token unlock dates and Binance Monitoring tags are not included, so check them yourself before acting. Not financial advice.</div>
 <div class="error" id="errors"></div>
 <div class="kpis">
  <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="kScanned">—</div><div class="hint" id="kScannedHint">Binance + top 500, liquid only</div></div>
- <div class="kpi"><div class="label">Alert-level setups</div><div class="value green" id="kAlert">—</div><div class="hint" id="kAlertHint">Score above threshold</div></div>
- <div class="kpi"><div class="label">Hot narratives</div><div class="value" id="kNarr">—</div><div class="hint">Categories rising in market cap</div></div>
+ <div class="kpi"><div class="label">Early ignitions now</div><div class="value green" id="kIgnite">—</div><div class="hint">Volume igniting, price not yet run</div></div>
+ <div class="kpi"><div class="label">Setup-level (not moved)</div><div class="value" id="kAlert">—</div><div class="hint" id="kAlertHint">Score above threshold</div></div>
  <div class="kpi"><div class="label">BTC 24h (market filter)</div><div class="value" id="kBtc">—</div><div class="hint" id="kBtcHint">Alerts pause if BTC drops sharply</div></div>
 </div>
+<section class="panel" style="margin-bottom:14px">
+ <div class="section-head"><div><h2>Live ignition watch</h2><p>15-minute volume vs the token's normal. Green = early, amber = building, red = already running (do not chase).</p></div><span class="chip" id="igCount">—</span></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>State</th><th>15m volume</th><th>Price move</th><th>Buyers (15m)</th><th>Daily setup</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
+</section>
 <section class="panel">
- <div class="section-head"><div><h2>Setup leaderboard</h2><p>Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
+ <div class="section-head"><div><h2>Setup leaderboard</h2><p>Daily setup quality. Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
  <div class="section-head" style="padding-top:0"><div class="filters">
   <input id="search" placeholder="Search token, e.g. SUI" aria-label="Search tokens">
   <select id="minScore" aria-label="Minimum score"><option value="0">All scores</option><option value="40">Score 40+</option><option value="55">Score 55+</option><option value="70">Score 70+</option></select>
+  <select id="hideMoved" aria-label="Already moved filter"><option value="1" selected>Hide already moved</option><option value="0">Show already moved</option></select>
   <select id="narrOnly" aria-label="Narrative filter"><option value="0">All narratives</option><option value="1">Hot narrative only</option></select>
   <select id="sortBy" aria-label="Sort tokens"><option value="score">Sort: score</option><option value="rvol">Sort: relative volume</option><option value="chg">Sort: 24h change</option><option value="vol">Sort: 24h volume</option><option value="rank">Sort: market cap rank</option></select>
   <select id="rowLimit" aria-label="Rows to show"><option value="25">Show 25</option><option value="50" selected>Show 50</option><option value="150">Show all</option></select>
@@ -66,7 +72,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
  <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2></div></div><div class="chips" id="narrChips"></div></section>
 </div>
-<div class="foot">How scores work (max 100): volume surge vs 20-day average 25 · chart setup (near or just above the 20-day high, volatility compression, above 20-day average, healthy RSI) 25 · hot narrative 20 · market cap/FDV 10 · futures funding and open interest 10 · liquidity 10. Tokens already far above their 20-day high score low on purpose, to avoid chasing. An alert needs the threshold score and BTC not falling sharply, with a cooldown per token. Demo mode data is simulated.</div>
+<div class="foot">How it works: every ~20 seconds the scanner compares each token's last 15 minutes of volume with its own normal (20-day average). It alerts only when 15m volume is high, 1h volume confirms, at least ~58% of recent volume was aggressive buying, price has only just turned up, and the token is not already up a lot in 24h, 1h or 15m. A second tier alerts on strong daily setups (volume, near the 20-day high, hot narrative, MC/FDV, futures, liquidity) that have not moved. Tokens that already ran are capped at score 55 and never alert. The "since alert" figures are sampled at each scan, so treat peaks as approximate. Demo mode data is simulated.</div>
 </main>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -84,60 +90,89 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 <script>
 (()=> {
  const $=s=>document.querySelector(s);
- let data={}, seen=null, offline=false, soundOn=false, audioCtx=null;
- const PART_LABELS={volume:"Volume surge",technical:"Chart setup",narrative:"Narrative",tokenomics:"MC / FDV",futures:"Futures",liquidity:"Liquidity"};
+ let data={}, seen=null, soundOn=false, audioCtx=null, baseTitle=document.title;
+ const PART_LABELS={volume:"Volume (24h)",technical:"Chart setup",narrative:"Narrative",tokenomics:"MC / FDV",futures:"Futures",liquidity:"Liquidity"};
  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const money=v=>v==null||!Number.isFinite(Number(v))?"—":Number(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Number(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Number(v)>=1e3?"$"+(v/1e3).toFixed(1)+"K":"$"+Number(v).toFixed(2);
  const price=v=>v==null?"—":Number(v)>=1000?"$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:2}):Number(v)>=1?"$"+Number(v).toFixed(3):"$"+Number(v).toPrecision(5);
  const pct=v=>v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%";
+ const pct1=v=>v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(1)+"%";
  const time=v=>v?new Date(v).toLocaleTimeString():"—";
  const when=v=>v?new Date(v).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
  const store={get(k){try{return localStorage.getItem(k);}catch{return null;}},set(k,v){try{localStorage.setItem(k,v);}catch{}}};
  const cfg=()=>data.config||{minScore:70};
+ const col=v=>v>0?"green":v<0?"red":"";
+ const moveLine=c=>`${pct1(c.ret15m)} 15m · ${pct1(c.ret1h)} 1h · ${pct1(c.change24h)} 24h`;
+ const STATE={ignited:["Early ignition","strong"],heating:["Heating up","watch"],ran:["Already running","risk"]};
 
- // ---------- table ----------
+ // ---------- ignition watch ----------
+ function drawIgnite(){
+  const order={ignited:0,heating:1,ran:2};
+  const rows=(data.candidates||[]).filter(c=>c.ignition).sort((a,b)=>order[a.ignition]-order[b.ignition]||(b.rvol15||0)-(a.rvol15||0)).slice(0,20);
+  $("#igCount").textContent=rows.length+" tokens";
+  $("#igBody").innerHTML=rows.length?rows.map(c=>{
+   const [txt,k]=STATE[c.ignition];
+   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button><span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
+   <td><span class="badge ${k}">${txt}</span>${c.moved?`<span class="sub red">${esc((c.movedWhy||[]).slice(0,2).join(" · "))}</span>`:""}</td>
+   <td class="mono ${c.rvol15>=4?"green":""}">${c.rvol15==null?"—":c.rvol15.toFixed(1)+"×"}<span class="sub">1h: ${c.rvol1h==null?"—":c.rvol1h.toFixed(1)+"×"}</span></td>
+   <td class="mono"><span class="${col(c.ret15m)}">${pct1(c.ret15m)}</span> 15m<span class="sub">${pct1(c.ret1h)} 1h · ${pct1(c.change24h)} 24h</span></td>
+   <td class="mono ${c.buyRatio15m>=58?"green":c.buyRatio15m<50?"red":""}">${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)+"% buy"}</td>
+   <td class="mono">${c.score}<span class="sub">${esc(c.label)}</span></td>
+   <td>${c.narrative?esc(c.narrative.names.slice(0,2).join(", ")):'<span class="muted">—</span>'}</td></tr>`;
+  }).join(""):'<tr><td colspan="7" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:"Nothing is igniting right now. Quiet is normal.")+'</td></tr>';
+ }
+
+ // ---------- leaderboard ----------
  const SORTS={score:c=>c.score,rvol:c=>c.rvol,chg:c=>c.change24h,vol:c=>c.quoteVolume,rank:c=>c.rank==null?-Infinity:-c.rank};
  function distText(c){const d=c.distToHigh;if(d==null)return"—";return d<0?(Math.abs(d)*100).toFixed(1)+"% below 20d high":"+"+(d*100).toFixed(1)+"% above 20d high";}
  function drawTable(){
-  const q=$("#search").value.trim().toLowerCase(),ms=Number($("#minScore").value),no=$("#narrOnly").value==="1";
-  const all=(data.candidates||[]).filter(c=>(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative));
+  const q=$("#search").value.trim().toLowerCase(),ms=Number($("#minScore").value),no=$("#narrOnly").value==="1",hm=$("#hideMoved").value==="1";
+  const all=(data.candidates||[]).filter(c=>(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative)&&(!hm||!c.moved));
   const key=SORTS[$("#sortBy").value]||SORTS.score,lim=Number($("#rowLimit").value);
   const sorted=[...all].sort((a,b)=>(key(b)??-Infinity)-(key(a)??-Infinity));
   const rows=lim>0?sorted.slice(0,lim):sorted;
   $("#count").textContent=(rows.length<all.length?rows.length+" of "+all.length:all.length)+" tokens";
   $("#tbody").innerHTML=rows.length?rows.map(c=>{
-   const klass=c.score>=cfg().minScore?"strong":c.score>=55?"watch":"";
+   const klass=c.moved?"risk":c.score>=cfg().minScore?"strong":c.score>=55?"watch":"";
    const fut=c.fundingPct==null?'<span class="muted">no futures</span>':`<span class="mono ${c.fundingPct>0.05?"red":""}">${c.fundingPct.toFixed(3)}%</span><span class="sub">OI 24h ${c.oiChange24hPct==null?"—":pct(c.oiChange24hPct)}</span>`;
    return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}" title="See score breakdown">${esc(c.base)} ↗</button><span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
    <td><span class="score mono">${c.score}<span class="scorebar"><i style="width:${Math.max(0,Math.min(100,c.score))}%"></i></span></span></td>
-   <td class="mono ${c.rvol>=2?"green":""}">${c.rvol==null?"—":c.rvol.toFixed(2)+"×"}<span class="sub">vs 20-day avg</span></td>
+   <td class="mono ${c.rvol>=2?"green":""}">${c.rvol==null?"—":c.rvol.toFixed(2)+"×"}<span class="sub">24h vs 20-day avg</span></td>
    <td>${esc(distText(c))}<span class="sub">${c.compressed?"volatility compressed":"normal volatility"}${c.aboveSma?" · above 20d avg":""}</span></td>
    <td class="mono ${c.rsi>72?"red":""}">${c.rsi==null?"—":c.rsi.toFixed(0)}</td>
    <td class="mono ${c.mcFdv!=null&&c.mcFdv<0.3?"red":""}">${c.mcFdv==null?"—":Math.round(c.mcFdv*100)+"%"}</td>
    <td>${c.narrative?esc(c.narrative.names.slice(0,2).join(", "))+`<span class="sub green">${pct(c.narrative.change24hPct)} 24h</span>`:'<span class="muted">—</span>'}</td>
    <td>${fut}</td><td class="mono">${money(c.quoteVolume)}<span class="sub ${c.change24h>=0?"green":"red"}">${pct(c.change24h)}</span></td>
-   <td><span class="badge ${klass}">${esc(c.label)}</span><span class="sub">${esc((c.reasons||[]).slice(0,2).join(" · "))}</span></td></tr>`;
-  }).join(""):'<tr><td colspan="10" class="empty">No tokens match these filters.</td></tr>';
+   <td><span class="badge ${klass}">${esc(c.label)}</span><span class="sub">${esc(c.moved?(c.movedWhy||[]).join(" · "):(c.reasons||[]).slice(0,2).join(" · "))}</span></td></tr>`;
+  }).join(""):'<tr><td colspan="10" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:"No tokens match these filters.")+'</td></tr>';
  }
 
  // ---------- page chrome ----------
+ function histRow(e){
+  const t=e.track,c=e.detail||{};
+  let since="";
+  if(t&&t.entry){const now=(t.last/t.entry-1)*100,hi=(t.high/t.entry-1)*100,lo=(t.low/t.entry-1)*100;
+   since=`<span class="track mono">Since alert <b class="${col(now)}">${pct1(now)}</b> · peak ${pct1(hi)} · low ${pct1(lo)}</span>`;}
+  const tier=e.tier==="ignition"?["Ignition","strong"]:["Setup","watch"];
+  return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}</div><small class="mono">${when(e.time)}</small></div>`;
+ }
  function draw(){
   const cs=data.candidates||[],min=cfg().minScore,reg=data.regime||{};
   $("#kScanned").textContent=data.universe?data.universe.eligible:"—";
-  $("#kScannedHint").textContent=data.universe?`of ${data.universe.coingecko||"n/a"} CoinGecko · ${data.universe.binance} Binance USDT pairs`:"";
-  $("#kAlert").textContent=cs.filter(c=>c.score>=min).length;
+  $("#kScannedHint").textContent=data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: ${data.warmup.loaded}/${data.warmup.total} daily charts loaded`:data.universe?`of ${data.universe.coingecko||"n/a"} CoinGecko · ${data.universe.binance} Binance USDT pairs${data.lastScanMs!=null?" · scan "+(data.lastScanMs/1000).toFixed(1)+"s":""}`:"";
+  $("#kIgnite").textContent=cs.filter(c=>c.ignition==="ignited").length;
+  $("#kAlert").textContent=cs.filter(c=>c.score>=min&&!c.moved).length;
   $("#kAlertHint").textContent="Score "+min+"+ · cooldown "+Math.round(cfg().cooldownHours*10)/10+"h per token";
-  $("#kNarr").textContent=(data.hotNarratives||[]).length;
   $("#kBtc").textContent=reg.btcChange24hPct==null?"—":pct(reg.btcChange24hPct);
   $("#kBtc").className="value "+(reg.ok===false?"red":"");
   $("#kBtcHint").textContent=reg.ok===false?"BTC is dumping: alerts are paused":"Market OK: alerts enabled";
-  const st=data.status,live=st==="connected"||st==="demo"||st==="binance_only";
-  $("#liveChip").innerHTML=`<span class="dot ${live?"":"bad"}"></span>${st==="demo"?"DEMO DATA":st==="connected"?"Scanner connected":st==="binance_only"?"Binance-only mode":st==="error"?"Scanner error":"Starting…"}`;
+  const st=data.status,live=st==="connected"||st==="demo"||st==="binance_only"||st==="warming_up";
+  $("#liveChip").innerHTML=`<span class="dot ${live?"":"bad"}"></span>${st==="demo"?"DEMO DATA":st==="connected"?"Scanner connected":st==="binance_only"?"Binance-only mode":st==="warming_up"?"Warming up…":st==="error"?"Scanner error":"Starting…"}`;
   const errs=Object.entries(data.errors||{});
   $("#errors").style.display=errs.length?"block":"none";
   $("#errors").innerHTML=errs.map(([k,v])=>`<b>${esc(k)}:</b> ${esc(v)}`).join("<br>");
   const cls=v=>v==="connected"?"green":v==="demo"||v==="stale"?"amber":"red";
-  $("#sources").innerHTML=`<div class="source-row"><span>Binance Spot (prices, volume, candles)</span><b class="status-pill ${cls(st==="binance_only"?"connected":st)}">${esc(st||"starting")}</b></div>
+  $("#sources").innerHTML=`<div class="source-row"><span>Binance Spot (prices, volume, candles)</span><b class="status-pill ${cls(st==="binance_only"||st==="warming_up"?"connected":st)}">${esc(st||"starting")}</b></div>
    <div class="source-row"><span>CoinGecko (rank, FDV, narratives)</span><b class="status-pill ${cls(data.cgStatus)}">${esc(data.cgStatus||"not checked")}</b></div>
    <div class="source-row"><span>Binance Futures (funding, OI)</span><b class="status-pill ${cls(data.futuresStatus)}">${esc(data.futuresStatus||"not checked")}</b></div>
    <div class="source-row"><span>Telegram alerts</span><b class="status-pill">${data.telegramConfigured?"Configured":"Optional · env vars"}</b></div>
@@ -146,19 +181,20 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   $("#narrChips").innerHTML=hn.length?hn.map(h=>`<span class="badge strong">${esc(h.name)} ${pct(h.change24hPct)}</span>`).join(""):'<span class="muted" style="font-size:12px">None above the threshold right now.</span>';
   if(data.mainUrl)$("#mainLink").href=data.mainUrl;
   const ev=data.events||[];
-  $("#events").innerHTML=ev.length?ev.slice(0,15).map(e=>`<div class="event" data-ev="${esc(e.id)}"><div><strong>${esc(e.detail?e.detail.base:e.symbol)} · ${esc(e.label)} · ${e.score}/100</strong><small>${esc((e.detail&&e.detail.reasons||[]).slice(0,3).join(" · "))}</small></div><small class="mono">${when(e.time)}</small></div>`).join(""):'<div class="empty">No alerts yet. A quiet feed is okay.</div>';
-  drawTable();
+  $("#events").innerHTML=ev.length?ev.slice(0,15).map(histRow).join(""):'<div class="empty">No alerts yet. A quiet feed is okay.</div>';
+  drawIgnite();drawTable();
  }
 
  // ---------- detail modal ----------
  function openDetail(c,eyebrow){
   if(!c)return;
   $("#mEyebrow").textContent=eyebrow||"Setup detail";
-  $("#mTitle").textContent=`${c.base} / USDT · score ${c.score}/100`;
-  $("#mSub").textContent=`${c.name||c.base} · ${c.rank?"market cap rank #"+c.rank:"rank n/a"} · ${c.label}`;
+  $("#mTitle").textContent=`${c.base} / USDT · daily score ${c.score}/100`;
+  $("#mSub").textContent=`${c.name||c.base} · ${c.rank?"market cap rank #"+c.rank:"rank n/a"} · ${c.label}${c.moved&&c.movedWhy?" ("+c.movedWhy.join(", ")+")":""}`;
   const stat=(l,v,k="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong></div>`;
-  $("#mStats").innerHTML=stat("Price",price(c.price))+stat("24h change",pct(c.change24h),c.change24h>=0?"green":"red")+stat("Relative volume",c.rvol==null?"—":c.rvol.toFixed(2)+"×",c.rvol>=2?"green":"")+stat("RSI (14d)",c.rsi==null?"—":c.rsi.toFixed(0))
-   +stat("vs 20d high",c.distToHigh==null?"—":pct(c.distToHigh*100))+stat("MC / FDV",c.mcFdv==null?"—":Math.round(c.mcFdv*100)+"%")+stat("Funding / 8h",c.fundingPct==null?"none":c.fundingPct.toFixed(3)+"%")+stat("OI 24h",c.oiChange24hPct==null?"—":pct(c.oiChange24hPct));
+  $("#mStats").innerHTML=stat("Price",price(c.price))+stat("15m volume",c.rvol15==null?"—":c.rvol15.toFixed(1)+"× normal",c.rvol15>=4?"green":"")+stat("Move 15m / 1h",pct1(c.ret15m)+" / "+pct1(c.ret1h))+stat("Buyers (15m)",c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)+"%",c.buyRatio15m>=58?"green":"")
+   +stat("24h change",pct(c.change24h),col(c.change24h))+stat("24h volume",c.rvol==null?"—":c.rvol.toFixed(2)+"× avg",c.rvol>=2?"green":"")+stat("RSI (14d)",c.rsi==null?"—":c.rsi.toFixed(0))+stat("vs 20d high",c.distToHigh==null?"—":pct(c.distToHigh*100))
+   +stat("MC / FDV",c.mcFdv==null?"—":Math.round(c.mcFdv*100)+"%")+stat("Funding / 8h",c.fundingPct==null?"none":c.fundingPct.toFixed(3)+"%")+stat("OI 24h",c.oiChange24hPct==null?"—":pct(c.oiChange24hPct))+stat("24h turnover",money(c.quoteVolume));
   $("#mParts").innerHTML=Object.entries(c.parts||{}).map(([k,p])=>{const w=Math.min(100,Math.abs(p.pts)/p.max*100);return `<div class="part"><span>${esc(PART_LABELS[k]||k)}</span><span class="bar"><i class="${p.pts<0?"neg":""}" style="width:${w}%"></i></span><b class="mono ${p.pts<0?"red":""}">${p.pts}/${p.max}</b></div>`;}).join("");
   $("#mReasons").innerHTML=(c.reasons||[]).length?c.reasons.map(r=>`<li>${esc(r)}</li>`).join(""):'<li class="muted">No standout factors.</li>';
   $("#mBinance").href="https://www.binance.com/en/trade/"+encodeURIComponent(c.base)+"_USDT?type=spot";
@@ -168,7 +204,8 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  $("#mClose").onclick=closeDetail;
  $("#modal").addEventListener("click",e=>{if(e.target===$("#modal"))closeDetail();});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail();});
- $("#tbody").addEventListener("click",e=>{const b=e.target.closest("[data-sym]");if(b)openDetail((data.candidates||[]).find(c=>c.symbol===b.dataset.sym));});
+ const symClick=e=>{const b=e.target.closest("[data-sym]");if(b)openDetail((data.candidates||[]).find(c=>c.symbol===b.dataset.sym));};
+ $("#tbody").addEventListener("click",symClick);$("#igBody").addEventListener("click",symClick);
  $("#events").addEventListener("click",e=>{const r=e.target.closest("[data-ev]");if(r){const ev=(data.events||[]).find(x=>x.id===r.dataset.ev);if(ev)openDetail(ev.detail,"Alert as it fired · "+when(ev.time));}});
 
  // ---------- popups ----------
@@ -177,26 +214,32 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type="sine";o.frequency.value=880;g.gain.value=.08;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+.18);}catch{}
  }
  function popup(ev,test){
-  const c=ev.detail||{},el=document.createElement("div");
+  const c=ev.detail||{},ign=ev.tier==="ignition",el=document.createElement("div");
   el.className="toast"+(test?" test":"");
-  el.innerHTML=`<h4><span><span class="tag">${test?"TEST ALERT":"NEW SETUP"}</span> &nbsp;${esc(c.base||ev.symbol)} · ${ev.score}/100</span><button class="x" aria-label="Dismiss">✕</button></h4><p>${esc((c.reasons||[]).slice(0,3).join(" · ")||ev.message)}</p><p class="mono">${price(c.price)} · ${pct(c.change24h)} 24h${c.rank?" · rank #"+c.rank:""}</p>`;
+  const tag=test?"TEST ALERT":ign?"EARLY IGNITION":"NEW SETUP";
+  const headline=ign?`15m volume ${c.rvol15==null?"—":c.rvol15.toFixed(1)}× normal · ${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)}% buyers`:((c.reasons||[]).slice(0,3).join(" · ")||ev.message);
+  el.innerHTML=`<h4><span><span class="tag">${tag}</span> &nbsp;${esc(c.base||ev.symbol)}</span><button class="x" aria-label="Dismiss">✕</button></h4><p>${esc(headline)}</p><p class="mono">Moved so far: ${esc(moveLine(c))}</p><p class="mono">${price(c.price)}${c.rank?" · rank #"+c.rank:""} · daily score ${ev.score}</p>`;
   const kill=()=>el.remove();
   el.addEventListener("click",e=>{if(e.target.closest(".x")){kill();return;}openDetail(c,test?"Test alert (sample data)":"Alert as it fired");kill();});
   $("#toasts").prepend(el);
   while($("#toasts").children.length>4)$("#toasts").lastChild.remove();
-  setTimeout(kill,15000);
+  setTimeout(kill,20000);
   beep();
-  if(!test&&"Notification" in window&&Notification.permission==="granted"){try{new Notification(`${c.base||ev.symbol}: early setup ${ev.score}/100`,{body:(c.reasons||[]).slice(0,3).join(" · ")});}catch{}}
+  if(!test){
+   if(document.hidden)document.title="● "+(c.base||ev.symbol)+" "+(ign?"ignition":"setup")+" | "+baseTitle;
+   if("Notification" in window&&Notification.permission==="granted"){try{new Notification(`${c.base||ev.symbol}: ${ign?"early ignition":"early setup"}`,{body:headline+" | moved "+moveLine(c)});}catch{}}
+  }
  }
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden)document.title=baseTitle;});
  function checkNew(){
   const ev=data.events||[];
   if(seen===null){seen=new Set(ev.map(e=>e.id));return;}   // first load: do not replay old alerts as popups
   const fresh=ev.filter(e=>!seen.has(e.id));
   fresh.reverse().forEach(e=>{seen.add(e.id);popup(e,false);});
  }
- $("#testBtn").onclick=()=>popup({id:"test",symbol:"SAMPLEUSDT",score:84,message:"Sample alert",detail:{base:"SAMPLE",name:"Sample Token",symbol:"SAMPLEUSDT",rank:120,price:1.2345,change24h:4.2,score:84,label:"Early setup",rvol:3.1,rsi:58,distToHigh:-0.012,mcFdv:0.72,fundingPct:0.008,oiChange24hPct:6.5,compressed:true,aboveSma:true,
-  reasons:["volume 3.1x its 20d average","within 3% of 20d high (coiling)","volatility compression","hot narrative: AI (+7.4% 24h)","open interest +7% with rising price"],
-  parts:{volume:{pts:25,max:25},technical:{pts:25,max:25},narrative:{pts:15,max:20},tokenomics:{pts:10,max:10},futures:{pts:10,max:10},liquidity:{pts:7,max:10}}}},true);
+ $("#testBtn").onclick=()=>popup({id:"test",tier:"ignition",symbol:"SAMPLEUSDT",score:62,message:"Sample alert",detail:{base:"SAMPLE",name:"Sample Token",symbol:"SAMPLEUSDT",rank:120,price:1.2345,change24h:3.1,ret15m:1.2,ret1h:2.4,rvol15:5.3,rvol1h:2.2,buyRatio15m:67,score:62,label:"Watch closely",rvol:2.1,rsi:58,distToHigh:-0.012,mcFdv:0.72,fundingPct:0.008,oiChange24hPct:6.5,compressed:true,aboveSma:true,quoteVolume:42e6,
+  reasons:["volume 2.1x its 20d average","within 3% of 20d high (coiling)","volatility compression","hot narrative: AI (+7.4% 24h)"],
+  parts:{volume:{pts:18,max:25},technical:{pts:25,max:25},narrative:{pts:15,max:20},tokenomics:{pts:10,max:10},futures:{pts:10,max:10},liquidity:{pts:7,max:10}}}},true);
  function setSound(on){soundOn=on;$("#soundBtn").textContent="Sound: "+(on?"on":"off");$("#soundBtn").classList.toggle("on",on);store.set("screenerSound",on?"1":"0");}
  $("#soundBtn").onclick=()=>{setSound(!soundOn);if(soundOn)beep();};
  if(store.get("screenerSound")==="1")setSound(true);
@@ -204,15 +247,15 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  $("#notifyBtn").onclick=async()=>{if("Notification" in window&&Notification.permission==="default"){try{await Notification.requestPermission();}catch{}}syncNotify();};
  syncNotify();
 
- // ---------- polling ----------
+ // ---------- polling (3s keeps popup latency low) ----------
  async function load(){
   try{
    const r=await fetch("/api/screener",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);
-   data=await r.json();offline=false;draw();checkNew();
-  }catch(e){offline=true;$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/screener: "+e.message;}
+   data=await r.json();draw();checkNew();
+  }catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/screener: "+e.message;}
  }
- ["search"].forEach(id=>$("#"+id).oninput=drawTable);
- ["minScore","narrOnly","sortBy","rowLimit"].forEach(id=>$("#"+id).onchange=drawTable);
- load();setInterval(load,5000);
+ $("#search").oninput=drawTable;
+ ["minScore","narrOnly","hideMoved","sortBy","rowLimit"].forEach(id=>$("#"+id).onchange=drawTable);
+ load();setInterval(load,3000);
 })();
 </script></body></html>

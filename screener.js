@@ -1287,6 +1287,9 @@ const jsonResponse = (res, code, data) => {
   res.end(JSON.stringify(data));
 };
 
+// Read-only view of the live screener (candidates, regime, breadth, stats, config), used by the AI trade desk.
+export const screenerSnapshot = () => state;
+
 // Answers the screener's API routes; returns false for anything else so the caller can carry on.
 export async function handleScreenerRequest(req, res, url) {
   if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) }); return true; }

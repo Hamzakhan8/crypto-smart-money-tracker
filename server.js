@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage } from "./screener.js";
+import { handleAiRequest } from "./ai-trade.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -289,11 +290,19 @@ const jsonResponse = (res, code, data) => {
   res.end(JSON.stringify(data));
 };
 // One server for everything: Market Flow Radar at /, the Early Setup Screener (with its BTC rotation and whale tracker
-// tabs) at /screener, and every API under /api.
+// tabs) at /screener, the AI trade desk at /ai, and every API under /api.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   if (await handleScreenerRequest(req, res, url)) return;
+  if (await handleAiRequest(req, res, url, ai)) return;
   if (url.pathname === "/screener" || url.pathname === "/screener/") return serveScreenerPage(res);
+  if (url.pathname === "/ai" || url.pathname === "/ai/") {
+    try {
+      const html = await readFile(path.join(here, "public", "ai.html"));
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      return res.end(html);
+    } catch { res.writeHead(500).end("public/ai.html is missing"); return; }
+  }
   
   if (url.pathname === "/api/health") return jsonResponse(res, 200, {
     ok: true, marketStatus: state.marketStatus, web3Status: state.web3Status,
@@ -359,7 +368,8 @@ server.listen(PORT, HOST, () => {
   console.log(`  Market Flow Radar      ${base}/`);
   console.log(`  Early Setup Screener   ${base}/screener`);
   console.log(`  BTC rotation           ${base}/screener#rotation`);
-  console.log(`  Whale tracker          ${base}/screener#whales\n`);
+  console.log(`  Whale tracker          ${base}/screener#whales`);
+  console.log(`  AI trade desk          ${base}/ai${ai ? "" : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");

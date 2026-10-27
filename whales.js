@@ -535,6 +535,22 @@ async function readBody(req, limit = 4096) {
 const allowedWrite = (req) => String(req.headers["content-type"] || "").includes("application/json") &&
   (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
 
+// Large Ethereum transfers of one token (matched by symbol) over the last 24h, for the AI trade desk.
+export function tokenWhaleSummary(symbol) {
+  const sym = String(symbol || "").toUpperCase(), now = Date.now();
+  if (!started) return { tracked: false, reason: "whale tracker is off" };
+  const list = transfers.filter((tr) => String(tr.symbol).toUpperCase() === sym && now - tr.t <= DAY && tr.kind !== "internal" && !plumbing(tr));
+  const sum = (k) => list.filter((x) => x.kind === k).reduce((s, x) => s + x.usd, 0);
+  const deposits = sum("deposit"), withdrawals = sum("withdrawal");
+  return {
+    tracked: true, chain: "Ethereum (ERC-20 and ETH transfers >= " + fmtUsd(MIN_USD) + ")", transfers24h: list.length,
+    totalUsd24h: list.reduce((s, x) => s + x.usd, 0), exchangeDeposits24h: deposits, exchangeWithdrawals24h: withdrawals,
+    netToExchanges24h: deposits - withdrawals,
+    largest: [...list].sort((a, b) => b.usd - a.usd).slice(0, 5).map((x) => ({ usd: Math.round(x.usd), kind: x.kind, from: who(x.from), to: who(x.to),
+      ageMin: Math.round((now - x.t) / 60_000) })),
+  };
+}
+
 let started = false;
 export function startWhales() {
   if (started) return;

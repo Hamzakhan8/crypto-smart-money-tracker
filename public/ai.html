@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Trade Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:#0a0f16;--panel:#111923;--line:#253243;--ink:#eef4fa;--muted:#8fa0b4;--green:#36d399;--red:#fb7185;--blue:#76a9fa;--amber:#fbbf24;--violet:#a78bfa;--radius:16px;font-family:Manrope,system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#1d1838 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1440px;margin:auto;padding:28px 22px 60px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--violet);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(27px,4vw,40px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:720px;line-height:1.7;margin:0}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:9px 12px;font:inherit;font-size:13px}
+.chip{color:var(--muted)}.btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}.btn:hover{border-color:#58718d}.btn.primary{background:var(--violet);border-color:var(--violet);color:#140d2b}.btn:disabled{opacity:.55;cursor:wait}.btn.sm{padding:6px 10px;font-size:12px}
+.dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}label.check{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}label.check input{padding:0}
+.notice{margin:18px 0 0;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}.error{display:none;margin:12px 0;background:#2d1720;border:1px solid #6e2c3a;color:#ffabb9;border-radius:10px;padding:12px;font-size:12px;line-height:1.6}
+.strip{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}.strip span{border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;color:var(--muted)}.strip b{color:var(--ink)}
+.grid{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:14px;margin-top:14px;align-items:start}.panel{background:linear-gradient(145deg,rgba(20,30,43,.96),rgba(15,23,33,.96));border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 18px 12px}.section-head h2{margin:0;font-size:16px;letter-spacing:-.02em}.section-head p{margin:5px 0 0;color:var(--muted);font-size:12px}
+.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:10px 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);white-space:nowrap}.table td{padding:11px 12px;border-bottom:1px solid rgba(37,50,67,.72);font-size:12px;vertical-align:top}.table tr:last-child td{border-bottom:0}.table tr.sel td{background:#161d33}
+.mono{font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}.sub{display:block;color:var(--muted);font-size:10px;margin-top:3px}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.muted{color:var(--muted)}
+.badge{display:inline-block;border:1px solid var(--line);padding:3px 7px;border-radius:7px;font-size:10px;font-weight:800;white-space:nowrap}.badge.confirmed{color:var(--green);border-color:#236a53;background:#102a25}.badge.early{color:var(--blue);border-color:#2c4a77;background:#111d30}.badge.heating{color:var(--amber);border-color:#6d5621;background:#2b2414}.badge.ran{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.dec{display:inline-block;font-weight:800;border-radius:8px;padding:4px 9px;font-size:11px;letter-spacing:.06em}.dec.TAKE{background:#0f3a2c;color:var(--green);border:1px solid #236a53}.dec.WAIT{background:#2f2612;color:var(--amber);border:1px solid #6d5621}.dec.SKIP{background:#33171f;color:var(--red);border:1px solid #6e2c3a}
+.empty{padding:28px;text-align:center;color:var(--muted);line-height:1.7}.anyrow{display:flex;gap:8px;padding:0 18px 14px;flex-wrap:wrap}.anyrow input{width:150px;text-transform:uppercase}
+.result{padding:4px 20px 20px}.hero{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:6px 0 12px;border-bottom:1px solid var(--line)}.hero .big{font-size:30px;font-weight:800;letter-spacing:-.03em;padding:8px 18px;border-radius:12px}.hero h3{margin:0;font-size:19px;letter-spacing:-.02em}.hero p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.big.TAKE{background:#0f3a2c;color:var(--green)}.big.WAIT{background:#2f2612;color:var(--amber)}.big.SKIP{background:#33171f;color:var(--red)}
+.thesis{line-height:1.7;margin:14px 0}.plan{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0}.plan.dim{opacity:.55}.stat{background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:11px}.stat span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}.stat strong{display:block;font-size:15px;margin-top:6px}.stat small{color:var(--muted);font-size:11px}
+.sec{margin:16px 0 6px;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}.cols ul{margin:0;padding-left:18px;line-height:1.65}.callout{border-left:3px solid var(--amber);background:#1d1a12;padding:10px 12px;border-radius:8px;line-height:1.6;margin:8px 0;font-size:13px}.callout.red{border-color:var(--red);background:#22141a}.callout.blue{border-color:var(--blue);background:#121a28}
+.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.facts .stat strong{font-size:13px}details{margin-top:14px}summary{cursor:pointer;color:var(--blue);font-size:12px}pre{white-space:pre-wrap;word-break:break-word;background:#0b1118;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:11px;max-height:420px;overflow:auto}
+.meta{color:var(--muted);font-size:11px;margin-top:14px;line-height:1.7}.foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
+.btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.plan,.cols{grid-template-columns:1fr}.wrap{padding:18px 12px}.table th,.table td{padding:9px 8px}}
+</style></head>
+<body><main class="wrap">
+<header>
+ <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, BTC) and asks Gemini one question: <b>take the trade, wait, or skip?</b> Code checks every plan and overrides calls that break the rules.</p></div>
+ <div class="header-right">
+  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
+  <a class="btn" href="/">Market Flow Radar</a><a class="btn" href="/screener">Screener</a><a class="btn" href="/screener#whales">Whale tracker</a>
+ </div>
+</header>
+<div class="notice" id="keyNotice" style="display:none"><b>Gemini is not set up.</b> Add <span class="mono">GEMINI_API_KEY=your_key</span> to the <span class="mono">.env</span> file in the project folder and restart <span class="mono">node server.js</span>. You can still open any coin's data with "Data only".</div>
+<div class="error" id="errors"></div>
+<div class="strip" id="strip"></div>
+<div class="strip">
+ <label class="check">Model <select id="model"></select></label>
+ <label class="check" title="A second, stronger model double-checks the call and can downgrade it. Slower and costs one more call."><input type="checkbox" id="deep"> risk review</label>
+ <label class="check" title="Send the decision to your Telegram"><input type="checkbox" id="notify"> send to Telegram</label>
+</div>
+
+<div class="grid">
+ <section class="panel">
+  <div class="section-head"><div><h2>Ignition coins</h2><p id="listHint">Igniting first, then heating up. Refreshes every 20 seconds.</p></div><button class="btn primary" id="allBtn">Analyze all</button></div>
+  <form class="anyrow" id="anyForm"><input name="sym" placeholder="Any coin, e.g. SOL" aria-label="Coin symbol" required><button class="btn" type="submit">Analyze</button><button class="btn" type="button" id="dataBtn" title="Show the facts without calling Gemini">Data only</button></form>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Signal</th><th>Move</th><th>AI</th><th></th></tr></thead><tbody id="coins"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section class="panel" id="resultPanel">
+  <div class="section-head"><div><h2 id="resTitle">Analysis</h2><p id="resSub">Choose a coin on the left, or analyze all of them at once.</p></div></div>
+  <div class="result" id="result"><div class="empty">No analysis yet.<br>Each analysis is one Gemini request (two with risk review). Results are kept for 3 minutes.</div></div>
+ </section>
+</div>
+<div class="foot">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Gemini only interprets that dossier, under rules that include how often this kind of signal won in the past. Afterwards code enforces: TAKE only for coins that are igniting now and have reward:risk of at least 1.2, never for coins that already ran; plans must fit the levels; confidence is capped for early signals, demo data and weak markets. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
+</main>
+<script>
+(()=>{
+ const $=s=>document.querySelector(s);
+ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ const num=(v,d=2)=>v==null||!Number.isFinite(Number(v))?"—":Number(v).toFixed(d);
+ const pct=(v,d=1)=>v==null||!Number.isFinite(Number(v))?"—":(Number(v)>0?"+":"")+Number(v).toFixed(d)+"%";
+ const usd=v=>v==null||!Number.isFinite(Number(v))?"—":Math.abs(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Math.abs(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Math.abs(v)>=1e3?"$"+(v/1e3).toFixed(1)+"k":"$"+Math.round(v);
+ const price=v=>v==null?"—":Number(v)>=1000?Number(v).toLocaleString("en-US",{maximumFractionDigits:2}):Number(v)>=1?Number(v).toFixed(4):Number(v).toPrecision(5);
+ const ago=t=>{if(!t)return"";const s=Math.round((Date.now()-t)/1000);return s<60?s+"s ago":s<3600?Math.round(s/60)+"m ago":Math.round(s/3600)+"h ago";};
+ const col=v=>v>0?"green":v<0?"red":"";
+ let cand={},busy=false,selected=null,modelsFilled=false;
+
+ async function getJson(url,opt){const r=await fetch(url,{cache:"no-store",...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"HTTP "+r.status);return j;}
+ const post=(url,body)=>getJson(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ const opts=()=>({model:$("#model").value||undefined,deep:$("#deep").checked,notify:$("#notify").checked&&!$("#notify").disabled});
+
+ async function loadCandidates(){
+  try{cand=await getJson("/api/ai/candidates");drawCandidates();$("#errors").style.display="none";}
+  catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/ai/candidates: "+e.message;}
+ }
+ function drawCandidates(){
+  const c=cand;
+  $("#keyNotice").style.display=c.configured?"none":"block";
+  $("#allBtn").disabled=busy||!c.configured;
+  $("#notify").disabled=!c.telegramConfigured;$("#notify").parentElement.title=c.telegramConfigured?"Send the decision to your Telegram":"Telegram is not configured (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID in .env)";
+  if(!modelsFilled&&c.models){modelsFilled=true;for(const m of [...new Set([c.models.analyst,c.models.reviewer])]){const o=document.createElement("option");o.value=m;o.textContent=m+(m===c.models.analyst?" (default)":"");$("#model").appendChild(o);}}
+  $("#liveChip").innerHTML=`<span class="dot ${c.screenerStatus==="error"?"bad":""}"></span>${c.demo?"Screener: DEMO data":"Screener: "+esc(c.screenerStatus||"starting")}`;
+  const m=c.market||{},br=(c.baseRates||{}),rep=br.replay||{},live=br.live||{};
+  const liveTxt=(b,n)=>b&&b.resolved?`${n} <b>${num(b.winRatePct,0)}%</b> of ${b.resolved}`:`${n} no resolved alerts yet`;
+  $("#strip").innerHTML=`<span>BTC <b class="${col(m.btc1hPct)}">${pct(m.btc1hPct)}</b> 1h · <b class="${col(m.btc4hPct)}">${pct(m.btc4hPct)}</b> 4h · <b class="${col(m.btcChange24hPct)}">${pct(m.btcChange24hPct)}</b> 24h</span>${m.marketWide?'<span class="amber">Market-wide surge: signals are less token-specific</span>':""}`+
+   (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Past win rate (replay): confirmed <b>${rep.confirmed.winRatePct}%</b>, early <b>${rep.early.winRatePct}%</b></span>`:"")+
+   `<span>Live: ${liveTxt(live.ignition,"confirmed")} · ${liveTxt(live.early,"early")}</span>`;
+  const list=c.coins||[];
+  $("#listHint").textContent=`${list.filter(x=>x.state==="ignited").length} igniting, ${list.filter(x=>x.state==="heating").length} heating up. Refreshes every 20 seconds.`;
+  $("#allBtn").textContent=`Analyze all (${Math.min(8,list.filter(x=>!x.moved&&(x.state==="ignited"||x.state==="heating")).length)})`;
+  $("#coins").innerHTML=list.length?list.map(x=>{
+   const tag=x.state==="ignited"?`<span class="badge ${x.tier}">${x.tier==="confirmed"?"Confirmed":"Early"}</span>`:x.state==="ran"?'<span class="badge ran">Already ran</span>':'<span class="badge heating">Heating</span>';
+   const sig=x.r5!=null?`5m ${num(x.prevR5,1)}× → ${num(x.r5,1)}×`:`15m ${num(x.rvol15,1)}×`;
+   const last=x.last?`<span class="dec ${esc(x.last.decision)}">${esc(x.last.decision)}</span><span class="sub">${esc(x.last.confidence)} · ${esc(ago(x.last.at))}</span>`:'<span class="muted">—</span>';
+   return `<tr class="${selected===x.symbol?"sel":""}"><td><b>${esc(x.base)}</b> ${tag}<span class="sub">${price(x.price)}${x.narrative?" · "+esc(x.narrative):""}${x.igScore!=null?" · score "+x.igScore:""}</span></td>
+    <td class="mono">${sig}<span class="sub">buyers ${num(x.buy10,0)}% · RSI ${num(x.rsi,0)}</span>${x.state==="heating"&&x.missing.length?`<span class="sub amber">needs: ${esc(x.missing.join(", "))}</span>`:""}${x.moved?`<span class="sub red">${esc((x.movedWhy||[]).join(", "))}</span>`:""}</td>
+    <td class="mono"><span class="${col(x.ret10m)}">${pct(x.ret10m)}</span> 10m<span class="sub">${pct(x.change24h)} 24h</span></td><td>${last}</td>
+    <td><button class="btn sm" data-an="${esc(x.symbol)}" ${busy||!c.configured?"disabled":""}>Analyze</button></td></tr>`;
+  }).join(""):`<tr><td colspan="5" class="empty">No igniting or heating coins right now.<br>The screener checks every 20 seconds; you can still analyze any coin above.</td></tr>`;
+ }
+
+ function loading(title,sub){busy=true;drawCandidates();$("#resTitle").textContent=title;$("#resSub").textContent=sub;$("#result").innerHTML=`<div class="empty"><span class="spin"></span>${esc(sub)}</div>`;}
+ function done(){busy=false;drawCandidates();}
+
+ async function analyze(symbol){
+  selected=symbol;loading(symbol,"Gathering market data and asking Gemini…"+($("#deep").checked?" Then the risk review.":""));
+  try{drawResult(await post("/api/ai/analyze",{symbol,...opts()}));}
+  catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
+  finally{done();loadCandidates();}
+ }
+ async function analyzeAll(){
+  selected=null;loading("All ignition coins","Gathering data for each coin and triaging them in one Gemini request…");
+  try{drawBatch(await post("/api/ai/analyze-all",{limit:8,...opts()}));}
+  catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
+  finally{done();loadCandidates();}
+ }
+ async function dataOnly(symbol){
+  selected=symbol;loading(symbol,"Gathering market data (no AI)…");
+  try{const d=await getJson("/api/ai/dossier?symbol="+encodeURIComponent(symbol));$("#resSub").textContent="Facts only: nothing was sent to Gemini.";$("#result").innerHTML=factsHtml(d)+dossierHtml(d,true);}
+  catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
+  finally{done();}
+ }
+
+ const stat=(k,v,sub,cls="")=>`<div class="stat"><span>${esc(k)}</span><strong class="${cls}">${v}</strong>${sub?`<small>${sub}</small>`:""}</div>`;
+ function factsHtml(d){
+  const ch=d.chart||{},lv=d.levels||{},ob=d.orderBook||{},fu=d.futures||{},wh=d.whales||{},dx=d.dexFlows||{},mk=d.market||{},sc=d.screener;
+  const imb=ob.bands&&ob.bands.length?ob.bands[Math.min(1,ob.bands.length-1)]:null;
+  return `<div class="sec">Data the AI used</div><div class="facts">`+
+   stat("Screener",sc?esc(sc.tier?sc.tier+" ignition":sc.state):"not flagged",sc&&sc.ignitionScore!=null?"score "+sc.ignitionScore:"")+
+   stat("Trend 1h",esc(ch.trend1h?ch.trend1h.state.split(" (")[0]:"—"),ch.trend1h?"vs EMA20 "+pct(ch.trend1h.priceVsEma20Pct):"")+
+   stat("Trend 4h",esc(ch.trend4h?ch.trend4h.state.split(" (")[0]:"—"),ch.trend4h?"vs EMA20 "+pct(ch.trend4h.priceVsEma20Pct):"")+
+   stat("ATR (1h)",num(ch.atrPct&&ch.atrPct["1h"])+"%","typical hourly move")+
+   stat("To resistance",lv.roomToResistancePct==null?"none overhead":pct(lv.roomToResistancePct),lv.resistance?price(lv.resistance):"")+
+   stat("To support",lv.distanceToSupportPct==null?"—":pct(lv.distanceToSupportPct),lv.support?price(lv.support):"")+
+   stat("Order book",imb?(imb.imbalance>0?"more bids":"more asks"):"—",imb?`imbalance ${num(imb.imbalance)} within ${imb.withinPct}% · spread ${num(ob.spreadBps,1)} bps`:"",imb?col(imb.imbalance):"")+
+   stat("Funding / 8h",fu.available?num(fu.fundingPctPer8h,4)+"%":"n/a",fu.available?"OI 24h "+pct(fu.oiChange24hPct):esc(fu.reason||""),fu.available&&fu.fundingPctPer8h>0.05?"red":"")+
+   stat("Long/short",fu.available?num(fu.longShortAccountRatio):"n/a",fu.available?"taker buy/sell "+num(fu.takerBuySellRatio30m):"")+
+   stat("Whales → exchanges",wh.tracked&&wh.transfers24h?usd(wh.netToExchanges24h):"none seen",wh.tracked&&wh.transfers24h?`${wh.transfers24h} big transfers 24h (ETH chain)`:esc(wh.reason||"Ethereum only"),wh.netToExchanges24h>0?"red":wh.netToExchanges24h<0?"green":"")+
+   stat("DEX net 24h",dx.tracked?usd(dx.last24h.netUsd):"not tracked",dx.tracked?`${dx.last24h.swaps} swaps`:esc(dx.reason||""),dx.tracked?col(dx.last24h.netUsd):"")+
+   stat("BTC 4h",pct(mk.btc4hPct),mk.btcRegime?esc(mk.btcRegime):"",col(mk.btc4hPct))+`</div>`;
+ }
+ const dossierHtml=(d,open)=>`<details ${open?"open":""}><summary>Full data sent to the AI (JSON)</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
+
+ function drawResult(x){
+  const p=x.plan||{},take=x.decision==="TAKE";
+  $("#resTitle").textContent=x.symbol;$("#resSub").textContent=x.meta&&x.meta.cached?"Saved result from "+ago(x.meta.at)+" (re-run with Analyze after 3 minutes)":"Fresh analysis";
+  const changed=x.modelDecision&&x.modelDecision!==x.decision?`<span class="sub">Gemini said ${esc(x.modelDecision)}; the rules changed it (see below)</span>`:"";
+  $("#result").innerHTML=`<div class="hero"><div class="big ${esc(x.decision)}">${esc(x.decision)}</div><div><h3>${esc(x.headline)}</h3><p>${esc(x.confidence)} confidence · setup ${x.setupScore}/10 · price ${price(x.dossier&&x.dossier.price)}</p>${changed}</div></div>
+   <div class="thesis">${esc(x.thesis)}</div>
+   ${(x.guardNotes||[]).length?`<div class="callout">${x.guardNotes.map(esc).join("<br>")}</div>`:""}
+   ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>Wait for:</b> ${esc(x.waitFor)}</div>`:""}
+   <div class="sec">${take?"Trade plan":"Plan if it triggers (not a signal now)"}</div>
+   <div class="plan ${take?"":"dim"}">${stat("Entry zone",price(p.entryLow)+" – "+price(p.entryHigh))+stat("Stop loss",price(p.stop),pct(p.stopPct)+" from entry","red")+stat("Target 1",price(p.target1),pct(p.target1Pct),"green")+
+    stat("Target 2",price(p.target2))+stat("Reward : risk",num(p.rewardRisk)+" : 1","",p.rewardRisk>=1.5?"green":p.rewardRisk<1.2?"red":"")+stat("Hold",num(p.holdHours,0)+"h","then exit if neither hit")}</div>
+   <div class="callout red"><b>Invalidated if:</b> ${esc(x.invalidation)}<br><b>Key risk:</b> ${esc(x.keyRisk)}</div>
+   <div class="cols"><div><div class="sec green">For the trade</div><ul>${(x.bullishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div><div><div class="sec red">Against the trade</div><ul>${(x.bearishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div></div>
+   ${x.review?`<div class="sec">Risk review (${esc(x.meta.reviewModel||"")})</div><div class="callout ${x.review.verdict==="agree"?"blue":"red"}"><b>${esc(x.review.verdict)}</b>: ${esc(x.review.reason)}${(x.review.risks||[]).length?"<br>"+x.review.risks.map(esc).join("<br>"):""}</div>`:""}
+   ${factsHtml(x.dossier||{})}${dossierHtml(x.dossier||{},false)}
+   <div class="meta">${esc(x.meta.model)}${x.meta.reviewModel?" + "+esc(x.meta.reviewModel):""} · ${num(x.meta.durationMs/1000,1)}s${x.telegram?(x.telegram.sent?' · <span class="green">sent to Telegram</span>':" · Telegram: "+esc(x.telegram.skipped||x.telegram.error)):""}<br>Long only. Risk at most 1% of your account. AI opinion on data, not financial advice.</div>`;
+ }
+ function drawBatch(b){
+  $("#resTitle").textContent="All ignition coins";$("#resSub").textContent=(b.meta&&b.meta.cached?"Saved result from "+ago(b.meta.at):"Fresh triage")+(b.meta&&b.meta.model?" · "+b.meta.model:"");
+  $("#result").innerHTML=`<div class="thesis">${esc(b.marketView)}</div>
+   <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Decision</th><th>Why</th><th>Key risk</th><th></th></tr></thead><tbody>${(b.coins||[]).map(c=>`<tr>
+    <td><b>${esc(c.symbol.replace(/USDT$/,""))}</b>${c.tier?` <span class="badge ${c.tier}">${c.tier==="confirmed"?"Confirmed":"Early"}</span>`:` <span class="badge heating">${esc(c.state)}</span>`}<span class="sub">ref. R:R ${num(c.referenceRewardRisk)}</span></td>
+    <td><span class="dec ${esc(c.decision)}">${esc(c.decision)}</span><span class="sub">${esc(c.confidence)} · ${c.setupScore}/10</span>${c.modelDecision!==c.decision?`<span class="sub amber">AI: ${esc(c.modelDecision)}</span>`:""}</td>
+    <td>${esc(c.reason)}${(c.guardNotes||[]).length?`<span class="sub amber">${c.guardNotes.map(esc).join(" ")}</span>`:""}</td><td class="muted">${esc(c.keyRisk)}</td>
+    <td><button class="btn sm" data-an="${esc(c.symbol)}">Full analysis</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Nothing to analyze.</td></tr>'}</tbody></table></div>
+   ${(b.failed||[]).length?`<div class="callout red">No data for: ${b.failed.map(f=>esc(f.symbol)+" ("+esc(f.error)+")").join(", ")}</div>`:""}
+   <div class="meta">Quick triage on the most important facts per coin, in one request. Open "Full analysis" for a trade plan with entry, stop and targets.${b.telegram?(b.telegram.sent?' · <span class="green">TAKE calls sent to Telegram</span>':" · Telegram: "+esc(b.telegram.skipped||b.telegram.error)):""}</div>`;
+ }
+
+ document.addEventListener("click",e=>{const b=e.target.closest("[data-an]");if(b&&!busy){if(!cand.configured){dataOnly(b.dataset.an);return;}analyze(b.dataset.an);}});
+ $("#allBtn").onclick=()=>{if(!busy)analyzeAll();};
+ $("#anyForm").onsubmit=e=>{e.preventDefault();const s=e.target.sym.value.trim().toUpperCase().replace(/USDT$/,"");if(!s||busy)return;if(!cand.configured){dataOnly(s+"USDT");return;}analyze(s+"USDT");};
+ $("#dataBtn").onclick=()=>{const s=$("#anyForm").sym.value.trim().toUpperCase().replace(/USDT$/,"");if(s&&!busy)dataOnly(s+"USDT");};
+ loadCandidates();setInterval(()=>{if(!busy)loadCandidates();},20000);
+})();
+</script>
+</body>
+</html>

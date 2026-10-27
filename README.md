@@ -18,6 +18,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
    | Early Setup Screener | http://localhost:3000/screener |
    | BTC rotation | http://localhost:3000/screener#rotation |
    | Whale tracker | http://localhost:3000/screener#whales |
+   | AI trade desk | http://localhost:3000/ai |
 
 3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
 
@@ -92,6 +93,15 @@ Early ignition alert: the last two finished 5-minute candles both traded at leas
 Confirmed ignition alert: the same, plus an ignition score of 65+ (volume that keeps running). It usually comes a few minutes later and was the more accurate tier in testing.
 
 In a 60-day replay of 65 tokens (node screener-backtest.js), the confirmed tier won 26% of the time at +4% / -2.5% within 6 hours and averaged +0.55% per alert after fees, against 21% and -0.04% for the previous version. Past results do not guarantee future results; the performance panel tracks every live alert per tier. Settings (optional): SCREENER_EARLY_RVOL=3 · SCREENER_MAX_DAILY_RSI=65 · SCREENER_BTC_4H_MIN=-0.1 · SCREENER_EARLY_ALERTS=0 to keep only confirmed alerts · SCREENER_IGNITE_MIN_SCORE=65.
+
+8. AI Trade Desk (Gemini)
+Open http://localhost:3000/ai (needs GEMINI_API_KEY in .env). It lists the coins the screener flags as igniting or heating up.
+
+Analyze: the desk gathers everything that matters about the coin and asks Gemini whether to take the trade: the screener's signal and what it still lacks, the 15-minute / 1-hour / 4-hour chart (trend, momentum, typical move, VWAP), support and resistance, the order book, futures positioning (funding, open interest, long/short ratio), whale transfers and exchange flows, DEX buying and selling, BTC, and how often this kind of signal won in the past. The answer is TAKE, WAIT or SKIP with a plan: entry zone, stop loss, targets, reward:risk and how long to hold, plus the reasons for and against and what would invalidate it.
+
+Analyze all: one request triages every igniting coin at once and ranks them; open "Full analysis" on any of them for a trade plan. "Data only" shows all the facts without calling Gemini (free). Tick "risk review" for a second, stronger model to double-check the call, and "send to Telegram" to get the result on your phone.
+
+Rules the code enforces after Gemini answers: TAKE only for coins igniting right now with reward:risk of at least 1.2, never for coins that already ran; plans must fit the real levels or the screener's own +4% / -2.5% plan is shown instead; confidence is lowered for early signals, demo data, weak markets and 4h downtrends. Long only, no leverage, risk at most 1% of your account. Each analysis is one Gemini request (two with risk review) and is reused for 3 minutes. It is an AI opinion on data, not financial advice.
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

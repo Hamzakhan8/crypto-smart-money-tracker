@@ -586,6 +586,27 @@ async function readBody(req, limit = 4096) {
 const allowedWrite = (req) => String(req.headers["content-type"] || "").includes("application/json") &&
   (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
 
+// DEX swaps into and out of one token (matched by symbol, any followed network) over the last 24h, for the AI trade desk.
+export function tokenFlowSummary(symbol) {
+  const s = String(symbol || "").toUpperCase();
+  if (!started || !cache) return { tracked: false, reason: "DEX tracker not running yet" };
+  const now = Date.now(), hit = (k) => String(sym(k)).toUpperCase() === s;
+  const routes = cache.routes.filter((r) => hit(r.from) || hit(r.to));
+  if (!routes.length) return { tracked: false, reason: `no followed DEX pool trades ${s}` };
+  const win = (ms) => {
+    const rs = routes.filter((r) => now - r.t <= ms), bought = rs.filter((r) => hit(r.to)), sold = rs.filter((r) => hit(r.from));
+    const usd = (a) => Math.round(a.reduce((x, r) => x + r.usd, 0));
+    return { boughtUsd: usd(bought), soldUsd: usd(sold), netUsd: usd(bought) - usd(sold), swaps: rs.length, wallets: new Set(rs.map((r) => r.wallet)).size };
+  };
+  const by = (pick) => {
+    const m = new Map();
+    for (const r of routes) { const k = pick(r); if (k) m.set(sym(k), (m.get(sym(k)) || 0) + r.usd); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => ({ token: k, usd: Math.round(v) }));
+  };
+  return { tracked: true, networks: [...new Set(routes.map((r) => chain(r.net).name))], last1h: win(HOUR), last24h: win(DAY),
+    boughtWith: by((r) => (hit(r.to) ? r.from : null)), soldFor: by((r) => (hit(r.from) ? r.to : null)) };
+}
+
 let started = false;
 export function startFlows() {
   if (started) return;

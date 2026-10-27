@@ -14,11 +14,11 @@ import { Type } from "@google/genai";
 
 const env = process.env;
 
-const MODELS = {
+export const MODELS = {
   analyst: env.GEMINI_ANALYST_MODEL || "gemini-3.5-flash",
   reviewer: env.GEMINI_REVIEW_MODEL || "gemini-3.1-pro-preview",
 };
-const MODEL_PATTERN = /^gemini-[a-z0-9.\-]+$/i;
+export const MODEL_PATTERN = /^gemini-[a-z0-9.\-]+$/i;
 const LEVELS = ["low", "medium", "high"];
 const MAX_TOOL_ROUNDS = 3;
 const MAX_TOOL_CALLS = 6;
@@ -422,7 +422,8 @@ async function execTool(name, args, ctx) {
 
 // ───────────────────────────── LLM helpers ─────────────────────────────
 
-async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } = {}) {
+// Shared with ai-trade.js (the AI trade desk).
+export async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -442,7 +443,7 @@ async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } = {}) {
   }
 }
 
-function jsonFrom(res, label) {
+export function jsonFrom(res, label) {
   const text = (res.text || "").replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "").trim();
   if (!text) throw new AgentError(`${label} returned an empty response`, 502);
   try { return JSON.parse(text); }

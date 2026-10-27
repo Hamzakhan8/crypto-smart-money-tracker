@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent } from "./screener.js";
-import { handleAiRequest, reviewAlert } from "./ai-trade.js";
+import { handleAiRequest, reviewAlert, setMarketFlowSource } from "./ai-trade.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -19,6 +19,8 @@ const MAX_SYMBOLS = Math.min(60, Math.max(10, Number(env.MAX_SYMBOLS || 40)));
 const MIN_QUOTE_VOLUME = Number(env.MIN_QUOTE_VOLUME || 1_000_000);
 const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
+const RADAR_TELEGRAM = env.RADAR_TELEGRAM === "1"; // Radar "Strong flow" messages are off by default: Telegram is for the screener and AI
+const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
 const WEB3_API = "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai";
 const CHAINS = [{ id: "56", name: "BSC" }, { id: "CT_501", name: "Solana" }];
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -178,11 +180,11 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 async function fetchMarket() {
-  const tickerData = await fetchJson("https://api.binance.com/api/v3/ticker/24hr", {}, 12000);
+  const tickerData = await fetchJson(`${BN}/api/v3/ticker/24hr`, {}, 12000);
   if (!Array.isArray(tickerData)) throw new Error("Unexpected 24h ticker response");
   const tickers = tickerData.filter(isUsdtSpot).sort((a, b) => Number(b.quoteVolume) - Number(a.quoteVolume)).slice(0, MAX_SYMBOLS);
   const rows = await mapLimit(tickers, 5, async (t) => {
-    const klines = await fetchJson(`https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(t.symbol)}&interval=1m&limit=22`);
+    const klines = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(t.symbol)}&interval=1m&limit=22`);
     const m = candleMetrics(klines);
     const signal = scoreCoin(t, m);
     return {
@@ -214,7 +216,7 @@ function updateEvents(coins) {
         time: now, type: "flow",
       });
       lastAlertAt.set(c.symbol, now);
-      if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only.`);
+      if (RADAR_TELEGRAM && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only.`);
     }
     previousScores.set(c.symbol, c.score);
   }
@@ -229,6 +231,18 @@ async function sendTelegram(message) {
     });
   } catch (e) { state.errors.Telegram = e.message; }
 }
+// Market Flow data for the AI trade desk: the Radar's live numbers for the coins it follows, and the same formula computed
+// on demand for any other coin (most ignition coins are smaller than the Radar's top coins).
+async function radarFlowFor(symbol) {
+  const [t, k] = await Promise.all([
+    fetchJson(`${BN}/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`),
+    fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=22`),
+  ]);
+  const m = candleMetrics(k);
+  return { symbol, ...m, ...scoreCoin(t, m), volume24h: n(t.quoteVolume) || 0, updatedAt: Date.now() };
+}
+setMarketFlowSource({ state: () => state, flowFor: radarFlowFor });
+
 function normalizeWeb3(row, chain) {
   const wallets = n(row.smartMoneyCount ?? row.walletCount ?? row.smartMoneyWalletCount);
   const exitRate = n(row.exitRate);
@@ -360,7 +374,7 @@ const server = http.createServer(async (req, res) => {
         }
         return jsonResponse(res, 200, { symbol, lastUpdateId: null, bids, asks, source: "SIMULATED DEMO ORDER BOOK", demo: true, updatedAt: Date.now() });
       }
-      const book = await fetchJson(`https://api.binance.com/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=100`, {}, 9000);
+      const book = await fetchJson(`${BN}/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=100`, {}, 9000);
       if (!Array.isArray(book.bids) || !Array.isArray(book.asks)) throw new Error("Unexpected Binance order-book response");
       return jsonResponse(res, 200, { symbol, lastUpdateId: book.lastUpdateId, bids: book.bids, asks: book.asks, source: "Binance Spot REST depth snapshot", demo: false, updatedAt: Date.now() });
     } catch (e) { return jsonResponse(res, 502, { error: `Order book unavailable: ${e.message}`, symbol }); }

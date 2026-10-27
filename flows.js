@@ -336,7 +336,7 @@ function fire(key, type, ev, cooldown = 0) {
   lastAlertAt.set(key, now);
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, ...ev };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && state.telegramConfigured) {
+  if (!DEMO && state.telegramConfigured && env.FLOWS_TELEGRAM !== "0") {
     const label = { whale: "WHALE SWAP", watch: "PAIR WATCH", surge: "ROTATION SURGE", rotation: "WALLET ROTATION" }[type] || type.toUpperCase();
     sendTelegram([`${label} · ${chain(e.net).name}`, e.title, ...(e.lines || []), ...(e.links || []).map((l) => `${l.label}: ${l.url}`),
       "Research signal only, not financial advice."].join("\n"));

@@ -284,7 +284,7 @@ function fire(key, type, tr, title, extra = []) {
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, net: "eth", from: tr.symbol, to: "", usd: tr.usd,
     title, lines, links: links(tr) };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && state.telegramConfigured && telegramSent.length < TELEGRAM_PER_HOUR) {
+  if (!DEMO && state.telegramConfigured && env.WHALES_TELEGRAM !== "0" && telegramSent.length < TELEGRAM_PER_HOUR) {
     telegramSent.push(now);
     const label = { whale: "WHALE TRANSFER", deposit: "EXCHANGE DEPOSIT", withdrawal: "EXCHANGE WITHDRAWAL", mint: "STABLECOIN MINT", burn: "STABLECOIN BURN",
       issuer: "ISSUER MOVE", wallet: "WATCHED WALLET", token: "WATCHED TOKEN" }[type] || type.toUpperCase();

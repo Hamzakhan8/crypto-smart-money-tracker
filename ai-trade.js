@@ -9,10 +9,12 @@
 //     and live, and that profits depend on small losses.
 //
 // Dossier per coin: the screener's signal (tier, ignition score and parts, 5m/15m/1h volume, buyers, daily RSI, trend,
-// what it still lacks), fresh Binance candles (15m / 1h / 4h: trend, momentum, ATR, VWAP, support and resistance),
-// the order book (depth bands, imbalance, walls), futures positioning (funding, open interest, long/short and taker
-// ratios, when the coin has a perpetual), large Ethereum transfers and exchange flows (whale tracker), DEX buying and
-// selling (DEX tracker), BTC and the market backdrop, and a reference plan from the screener's own +target / -stop rule.
+// what it still lacks), the Market Flow Radar's taker flow (flow score, 1m / 5m aggressive buying, net flow, relative
+// volume; computed on demand for coins the Radar does not follow), Binance Web3 smart-money wallet signals, fresh
+// Binance candles (15m / 1h / 4h: trend, momentum, ATR, VWAP, support and resistance), the order book (depth bands,
+// imbalance, walls), futures positioning (funding, open interest, long/short and taker ratios, when the coin has a
+// perpetual), large Ethereum transfers and exchange flows (whale tracker), DEX buying and selling (DEX tracker), BTC
+// and the market backdrop, and a reference plan from the screener's own +target / -stop rule.
 //
 // Single coin: POST /api/ai/analyze (optional second-model risk review). All ignition coins: POST /api/ai/analyze-all
 // (one batched triage call). Facts only, no AI: GET /api/ai/dossier?symbol=. Research tool, not financial advice.
@@ -110,6 +112,40 @@ async function futures(symbol) {
   }
 }
 
+// ───────────────────────────── Market Flow Radar data ─────────────────────────────
+// server.js registers the Radar here (its live state plus a function that applies the Radar's formula to any coin).
+let flowSource = null;
+export function setMarketFlowSource(src) { flowSource = src; }
+
+export async function marketFlowFor(symbol) {
+  if (!flowSource) return { available: false, reason: "Market Flow Radar is not running" };
+  const st = flowSource.state() || {}, coins = st.coins || [], base = symbol.replace(/USDT$/, "");
+  const tracked = coins.find((c) => c.symbol === symbol);
+  let m = tracked, source = `Radar live data (top ${coins.length} coins by volume, refreshed every ${Math.round((st.pollIntervalMs || 30000) / 1000)}s)`;
+  if (!m) {
+    try { m = await flowSource.flowFor(symbol); source = "computed now with the Radar's formula (coin is outside the Radar's top list)"; }
+    catch (e) { return { available: false, reason: `Market Flow data unavailable (${e.message})` }; }
+  }
+  const signals = (st.web3Signals || []).filter((s) => String(s.ticker || "").toUpperCase() === base)
+    .sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, 5)
+    .map((s) => ({ chain: s.chain, direction: s.direction, wallets: s.wallets, exitRate: s.exitRate, ageMin: s.time ? Math.round((Date.now() - s.time) / MIN) : null, status: s.status }));
+  return {
+    available: true, source, simulated: !!st.demo && !!tracked, // computed-on-demand numbers are always live
+    flowScore: m.score, label: m.label, reasons: m.reasons, rankAmongRadarCoins: tracked ? `${coins.indexOf(tracked) + 1} of ${coins.length}` : null,
+    buyRatio1mPct: r(m.buyRatio1m, 1), buyRatio5mPct: r(m.buyRatio5m, 1), netFlow5mUsd: Number.isFinite(m.netFlow5m) ? Math.round(m.netFlow5m) : null,
+    change5mPct: r(m.change5m, 2), lastMinuteVolumeVsAvg: r(m.relativeVolume, 2), trades1m: m.trades1m,
+    smartMoneyWallets: { feedStatus: st.web3Status || "unknown", matchingSignals: signals },
+  };
+}
+// Taker-flow breadth across the Radar's coins: is aggressive buying broad or narrow right now?
+function flowBreadth() {
+  const coins = flowSource?.state()?.coins || [];
+  if (!coins.length) return null;
+  const buy = coins.reduce((a, c) => a + (c.buyQuote5m || 0), 0), sell = coins.reduce((a, c) => a + (c.sellQuote5m || 0), 0);
+  return { coins: coins.length, buyDominant5m: coins.filter((c) => c.buyRatio5m >= 55).length, sellDominant5m: coins.filter((c) => c.buyRatio5m <= 45).length,
+    aggregateBuyRatio5mPct: buy + sell > 0 ? r((buy / (buy + sell)) * 100, 1) : null };
+}
+
 // ───────────────────────────── dossier ─────────────────────────────
 const dossierCache = new Map();
 export async function buildDossier(symbol) {
@@ -117,7 +153,7 @@ export async function buildDossier(symbol) {
   if (hit && Date.now() - hit.at < DOSSIER_TTL) return hit.d;
   const snap = screenerSnapshot();
   const cand = (snap.candidates || []).find((c) => c.symbol === symbol) || null;
-  const [s, fut] = await Promise.all([spot(symbol), futures(symbol)]);
+  const [s, fut, flow] = await Promise.all([spot(symbol), futures(symbol), marketFlowFor(symbol)]);
   if (!s.h1.length || !s.h4.length) throw new AgentError(`${symbol}: no candle data from Binance`, 502);
   const price = Number(s.t24.lastPrice) || s.m15[s.m15.length - 1]?.c;
   const atr1h = atrPct(s.h1), atr4h = atrPct(s.h4);
@@ -151,7 +187,8 @@ export async function buildDossier(symbol) {
     symbol, asOf: new Date().toISOString(), price: sig(price), dataQuality: {
       demo: !!snap.demo, screenerStatus: snap.status, inScreener: !!cand,
       notes: [snap.demo ? "Screener is in DEMO mode: its signal is simulated (market data below is live)." : null,
-        !cand ? "Not in the screener's current list (no ignition data); judged on market data only." : null].filter(Boolean),
+        !cand ? "Not in the screener's current list (no ignition data); judged on market data only." : null,
+        flow.simulated ? "Market Flow Radar is in DEMO mode: its flow numbers are simulated." : null].filter(Boolean),
     },
     screener: cand ? {
       state: cand.ignition || "none", tier, moved: cand.moved, movedWhy: cand.movedWhy, stillNeeds: cand.missing,
@@ -177,13 +214,14 @@ export async function buildDossier(symbol) {
       high24h: sig(h24.high), low24h: sig(h24.low), high7d: sig(d7.high), low7d: sig(d7.low), high15d: sig(d15.high), low15d: sig(d15.low),
       note: resistance == null ? "Price is at or above its 15-day high: no overhead level in this data." : null,
     },
+    marketFlow: flow,
     orderBook: s.book && Array.isArray(s.book.bids) && s.book.bids.length ? analyzeDepth(s.book) : { available: false },
     futures: fut,
     whales: tokenWhaleSummary(symbol.replace(/USDT$/, "")),
     dexFlows: tokenFlowSummary(symbol.replace(/USDT$/, "")),
     market: {
       btcChange24hPct: snap.regime?.btcChange24hPct, btc1hPct: snap.regime?.btc1hPct, btc4hPct: snap.regime?.btc4hPct,
-      marketWideSurge: !!snap.breadth?.marketWide, shareOfTokensSurging: snap.breadth?.hotShare,
+      marketWideSurge: !!snap.breadth?.marketWide, shareOfTokensSurging: snap.breadth?.hotShare, takerFlowBreadth: flowBreadth(),
       btcRegime: cand?.rotation?.regimeLabel || null, narrativeRanks: cand?.rotation?.narratives?.filter((x) => x.rank != null).slice(0, 3) || null,
     },
     referencePlan: plan,
@@ -202,7 +240,11 @@ const RULES = `
 - Base rates matter: most ignitions do not reach the target (see baseRates: about a quarter to a third do), and only about
   half close in profit. A trade only pays if losses stay small, so reward:risk and a clear invalidation level matter more
   than excitement. Early-tier signals barely break even on average; confirmed ones did clearly better.
-- Weigh together: the screener tier (confirmed > early > not igniting), 1h and 4h trend alignment, room to resistance vs
+- marketFlow is the Market Flow Radar's Binance spot taker flow for the last 1-5 minutes (flow score 0-100, share of
+  aggressive buying, net buy-minus-sell USD). It shows aggressive buying on one exchange, not informed or "smart" money.
+  smartMoneyWallets are on-chain wallet signals from Binance Web3; keep them separate from the spot flow.
+- Weigh together: the screener tier (confirmed > early > not igniting), 1h and 4h trend alignment, live taker flow
+  (does aggressive buying still dominate, or has it turned to selling?), room to resistance vs
   distance to the stop, order-book support, futures crowding (funding above ~0.05% per 8h, open interest jumping while
   price stalls, a high long/short ratio), whale deposits to exchanges (supply), DEX net selling, BTC falling or a
   market-wide surge, and data quality.
@@ -355,6 +397,8 @@ const compact = (d) => ({
     ignitionScore: d.screener.ignitionScore, volume: d.screener.volume, buyersPct: d.screener.buyersPct, movePct: d.screener.movePct, dailyRsi: d.screener.dailyRsi },
   trend1h: d.chart.trend1h?.state, trend4h: d.chart.trend4h?.state, returnsPct: d.chart.returnsPct, atr1hPct: d.chart.atrPct["1h"],
   roomToResistancePct: d.levels.roomToResistancePct, distanceToSupportPct: d.levels.distanceToSupportPct, referenceRewardRisk: d.referencePlan.rewardRisk,
+  marketFlow: d.marketFlow?.available ? { flowScore: d.marketFlow.flowScore, buyRatio5mPct: d.marketFlow.buyRatio5mPct, netFlow5mUsd: d.marketFlow.netFlow5mUsd,
+    lastMinuteVolumeVsAvg: d.marketFlow.lastMinuteVolumeVsAvg, smartMoneySignals: d.marketFlow.smartMoneyWallets.matchingSignals.length } : null,
   orderBook: d.orderBook.bands ? { spreadBps: d.orderBook.spreadBps, imbalance: d.orderBook.bands.map((b) => [b.withinPct, b.imbalance]) } : null,
   futures: d.futures.available ? { fundingPctPer8h: d.futures.fundingPctPer8h, oiChange24hPct: d.futures.oiChange24hPct, longShort: d.futures.longShortAccountRatio } : null,
   whaleNetToExchanges24h: d.whales.tracked && d.whales.transfers24h ? Math.round(d.whales.netToExchanges24h) : null,

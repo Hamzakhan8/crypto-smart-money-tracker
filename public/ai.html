@@ -31,7 +31,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 </style></head>
 <body><main class="wrap">
 <header>
- <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, BTC) and asks Gemini one question: <b>take the trade, wait, or skip?</b> Code checks every plan and overrides calls that break the rules.</p></div>
+ <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, Market Flow taker data, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, smart-money wallets, BTC) and asks Gemini one question: <b>take the trade, wait, or skip?</b> Code checks every plan and overrides calls that break the rules.</p></div>
  <div class="header-right">
   <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
   <a class="btn" href="/">Market Flow Radar</a><a class="btn" href="/screener">Screener</a><a class="btn" href="/screener#whales">Whale tracker</a>
@@ -129,7 +129,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 
  const stat=(k,v,sub,cls="")=>`<div class="stat"><span>${esc(k)}</span><strong class="${cls}">${v}</strong>${sub?`<small>${sub}</small>`:""}</div>`;
  function factsHtml(d){
-  const ch=d.chart||{},lv=d.levels||{},ob=d.orderBook||{},fu=d.futures||{},wh=d.whales||{},dx=d.dexFlows||{},mk=d.market||{},sc=d.screener;
+  const ch=d.chart||{},lv=d.levels||{},ob=d.orderBook||{},fu=d.futures||{},wh=d.whales||{},dx=d.dexFlows||{},mk=d.market||{},sc=d.screener,mf=d.marketFlow||{},sm=(mf.smartMoneyWallets&&mf.smartMoneyWallets.matchingSignals)||[];
   const imb=ob.bands&&ob.bands.length?ob.bands[Math.min(1,ob.bands.length-1)]:null;
   return `<div class="sec">Data the AI used</div><div class="facts">`+
    stat("Screener",sc?esc(sc.tier?sc.tier+" ignition":sc.state):"not flagged",sc&&sc.ignitionScore!=null?"score "+sc.ignitionScore:"")+
@@ -143,7 +143,10 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    stat("Long/short",fu.available?num(fu.longShortAccountRatio):"n/a",fu.available?"taker buy/sell "+num(fu.takerBuySellRatio30m):"")+
    stat("Whales → exchanges",wh.tracked&&wh.transfers24h?usd(wh.netToExchanges24h):"none seen",wh.tracked&&wh.transfers24h?`${wh.transfers24h} big transfers 24h (ETH chain)`:esc(wh.reason||"Ethereum only"),wh.netToExchanges24h>0?"red":wh.netToExchanges24h<0?"green":"")+
    stat("DEX net 24h",dx.tracked?usd(dx.last24h.netUsd):"not tracked",dx.tracked?`${dx.last24h.swaps} swaps`:esc(dx.reason||""),dx.tracked?col(dx.last24h.netUsd):"")+
-   stat("BTC 4h",pct(mk.btc4hPct),mk.btcRegime?esc(mk.btcRegime):"",col(mk.btc4hPct))+`</div>`;
+   stat("BTC 4h",pct(mk.btc4hPct),mk.btcRegime?esc(mk.btcRegime):"",col(mk.btc4hPct))+
+   stat("Market flow",mf.available?`${num(mf.flowScore,0)}/100 · ${esc(mf.label)}`:"n/a",mf.available?`5m buyers ${num(mf.buyRatio5mPct,0)}% · net ${usd(mf.netFlow5mUsd)}`:esc(mf.reason||""),mf.available?(mf.flowScore>=60?"green":mf.buyRatio5mPct<45?"red":""):"")+
+   stat("Smart-money wallets",mf.available?(sm.length?`${sm.length} signal${sm.length===1?"":"s"}`:"none"):"n/a",mf.available&&sm.length?esc(sm.map(x=>x.direction+" · "+(x.wallets??"?")+" wallets").slice(0,2).join(" | ")):"Binance Web3 feed",sm.some(x=>x.direction==="buy")?"green":sm.some(x=>x.direction==="sell")?"red":"")+
+   stat("Flow breadth",mk.takerFlowBreadth?`${mk.takerFlowBreadth.buyDominant5m} buying · ${mk.takerFlowBreadth.sellDominant5m} selling`:"—",mk.takerFlowBreadth?`of the Radar's ${mk.takerFlowBreadth.coins} coins (5m)`:"")+`</div>`;
  }
  const dossierHtml=(d,open)=>`<details ${open?"open":""}><summary>Full data sent to the AI (JSON)</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
 

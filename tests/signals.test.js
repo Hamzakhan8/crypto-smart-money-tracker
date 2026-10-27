@@ -111,3 +111,17 @@ test("AI desk: plans are checked and calls are overridden by the rules", () => {
   const down = { ...conf, chart: { trend4h: { state: "downtrend (price < EMA20 < EMA50)" } } };
   assert.equal(desk.applyGuards(down, { decision: "TAKE", confidence: "high" }).confidence, "medium"); // against the 4h trend
 });
+
+test("AI desk: Market Flow data from the Radar, or computed for coins it does not follow", async () => {
+  desk.setMarketFlowSource({
+    state: () => ({ pollIntervalMs: 30000, web3Status: "connected",
+      coins: [{ symbol: "BTCUSDT", score: 81, label: "Strong flow", reasons: ["volume >=3x"], buyRatio1m: 66, buyRatio5m: 61.04, netFlow5m: 1234567.8, change5m: 0.4, relativeVolume: 3.2, trades1m: 900, buyQuote5m: 6, sellQuote5m: 4 }],
+      web3Signals: [{ ticker: "PEPE", chain: "BSC", direction: "buy", wallets: 7, exitRate: 10, time: Date.now() - 120000, status: "active" }] }),
+    flowFor: async (sym) => ({ symbol: sym, score: 40, label: "Neutral", reasons: [], buyRatio1m: 50, buyRatio5m: 48, netFlow5m: -5000, change5m: -0.1, relativeVolume: 0.9, trades1m: 120 }),
+  });
+  const btc = await desk.marketFlowFor("BTCUSDT");
+  assert.equal(btc.flowScore, 81); assert.equal(btc.buyRatio5mPct, 61); assert.equal(btc.netFlow5mUsd, 1234568); assert.equal(btc.rankAmongRadarCoins, "1 of 1");
+  const pepe = await desk.marketFlowFor("PEPEUSDT");
+  assert.equal(pepe.flowScore, 40); assert.match(pepe.source, /computed now/); assert.equal(pepe.smartMoneyWallets.matchingSignals.length, 1);
+  assert.equal(pepe.smartMoneyWallets.matchingSignals[0].direction, "buy");
+});

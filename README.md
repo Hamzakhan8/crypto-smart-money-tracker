@@ -22,6 +22,8 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
 
 3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
 
+Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): you get the screener's ignition alerts, the AI's verdict on each new alert, results you send from the AI desk, and the whale tracker's big alerts. The Market Flow Radar does not send messages; RADAR_TELEGRAM=1 turns its "Strong flow" messages back on. To keep other parts on screen only: WHALES_TELEGRAM=0 (whale transfers), FLOWS_TELEGRAM=0 (DEX rotations), AI_REVIEW_TELEGRAM=0 (AI follow-ups).
+
 Tests: `npm test` checks the signal, outcome-tracking and AI safety logic (no internet or API key needed).
 
 Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
@@ -91,7 +93,7 @@ Watchlist: paste any wallet (give it your own label, it shows everywhere) or tok
 
 DEX rotations: swaps on Ethereum, Base and Solana DEXes, e.g. ETH → PEPE. Watch a pair to be alerted on every swap above your size.
 
-Alerts pop up on every tab and go to Telegram: transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges.
+Alerts pop up on every tab and go to Telegram: transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges (WHALES_TELEGRAM=0 / FLOWS_TELEGRAM=0 keep them on screen only).
 
 Data: public Ethereum RPC nodes (blocks and transfers), DexScreener (prices, liquidity), GeckoTerminal (DEX swaps) and an open Etherscan label snapshot from June 2023 (data/eth-labels.json, rebuilt with `node scripts/build-labels.js`). Newer exchange wallets can show as unlabelled. Settings (optional, in .env): WHALES_MIN_USD=100000 · WHALES_ALERT_USD=1000000 · WHALES_STABLE_ALERT_USD=25000000 · WHALES_EXCHANGE_ALERT_USD=500000 · WHALES_MINT_ALERT_USD=10000000 · WHALES_TELEGRAM_PER_HOUR=30 · WHALES_RPC=your own node URL(s) · FLOWS_NETWORKS=eth,base,solana · SCREENER_WHALES=0 to switch it all off. Run with DEMO=1 to preview with simulated data.
 
@@ -109,13 +111,13 @@ In a 60-day replay of 51 crypto tokens (node screener-backtest.js), the confirme
 8. AI Trade Desk (Gemini)
 Open http://localhost:3000/ai (needs GEMINI_API_KEY in .env). It lists the coins the screener flags as igniting or heating up.
 
-Analyze: the desk gathers everything that matters about the coin and asks Gemini whether to take the trade: the screener's signal and what it still lacks, the 15-minute / 1-hour / 4-hour chart (trend, momentum, typical move, VWAP), support and resistance, the order book, futures positioning (funding, open interest, long/short ratio), whale transfers and exchange flows, DEX buying and selling, BTC, and how often this kind of signal won in the past. The answer is TAKE, WAIT or SKIP with a plan: entry zone, stop loss, targets, reward:risk and how long to hold, plus the reasons for and against and what would invalidate it.
+Analyze: the desk gathers everything that matters about the coin and asks Gemini whether to take the trade: the screener's signal and what it still lacks, the 15-minute / 1-hour / 4-hour chart (trend, momentum, typical move, VWAP), support and resistance, the order book, futures positioning (funding, open interest, long/short ratio), the Market Flow Radar's live numbers for the coin (flow score, 5-minute buyers vs sellers, net flow, volume surge, and how many coins are seeing buyers right now), smart-money wallet signals, whale transfers and exchange flows, DEX buying and selling, BTC, and how often this kind of signal won in the past. The answer is TAKE, WAIT or SKIP with a plan: entry zone, stop loss, targets, reward:risk and how long to hold, plus the reasons for and against and what would invalidate it.
 
 Analyze all: one request triages every igniting coin at once and ranks them; open "Full analysis" on any of them for a trade plan. "Data only" shows all the facts without calling Gemini (free). Tick "risk review" for a second, stronger model to double-check the call, and "send to Telegram" to get the result on your phone.
 
 Automatic review: with a Gemini key set, every new ignition alert gets one AI analysis (TAKE / WAIT / SKIP) that is saved with the alert, shown in the alert history, sent to Telegram as a follow-up, and used by the performance panel ("AI said TAKE / WAIT / SKIP") so you can see after a few weeks whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off, AI_REVIEWS_PER_HOUR=12 caps the cost, AI_REVIEW_TELEGRAM=0 skips the Telegram follow-up.
 
-Rules the code enforces after Gemini answers: TAKE only for coins igniting right now with reward:risk of at least 1.2, never for coins that already ran; plans must fit the real levels or the screener's own +4% / -2.5% plan is shown instead; confidence is lowered for early signals, demo data, weak markets and 4h downtrends. Long only, no leverage, risk at most 1% of your account. Each analysis is one Gemini request (two with risk review) and is reused for 3 minutes. It is an AI opinion on data, not financial advice.
+Rules the code enforces after Gemini answers: TAKE only for coins igniting right now with reward:risk of at least 1.2, never for coins that already ran; plans must fit the real levels or the screener's own +6% / -3% plan is shown instead; confidence is lowered for early signals, demo data, weak markets and 4h downtrends. Long only, no leverage, risk at most 1% of your account. Each analysis is one Gemini request (two with risk review) and is reused for 3 minutes. It is an AI opinion on data, not financial advice.
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

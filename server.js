@@ -1,12 +1,14 @@
 // Smart Money / Market Flow Radar
 // Node.js 18+. No third-party dependencies (except @google/genai).
 
+import "./env.js"; // first: loads .env before any module reads its settings
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
+import { startScreener, handleScreenerRequest, serveScreenerPage } from "./screener.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -286,8 +288,12 @@ const jsonResponse = (res, code, data) => {
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "same-origin" });
   res.end(JSON.stringify(data));
 };
+// One server for everything: Market Flow Radar at /, the Early Setup Screener (with its BTC rotation and whale tracker
+// tabs) at /screener, and every API under /api.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (await handleScreenerRequest(req, res, url)) return;
+  if (url.pathname === "/screener" || url.pathname === "/screener/") return serveScreenerPage(res);
   
   if (url.pathname === "/api/health") return jsonResponse(res, 200, {
     ok: true, marketStatus: state.marketStatus, web3Status: state.web3Status,
@@ -341,11 +347,22 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found");
 });
+server.on("error", (e) => {
+  console.error(e.code === "EADDRINUSE"
+    ? `Port ${PORT} is already in use: another copy of the app may be running. Close it, or set PORT=3005 (any free port) in .env.`
+    : `Server error: ${e.message}`);
+  process.exit(1);
+});
 server.listen(PORT, HOST, () => {
-  console.log(`Market Flow Radar: http://${HOST}:${PORT}`);
+  const base = `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
+  console.log(`\nAll apps are running on one server:`);
+  console.log(`  Market Flow Radar      ${base}/`);
+  console.log(`  Early Setup Screener   ${base}/screener`);
+  console.log(`  BTC rotation           ${base}/screener#rotation`);
+  console.log(`  Whale tracker          ${base}/screener#whales\n`);
+  startScreener(`${base}/screener`);
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");
 });
 poll();
 setInterval(poll, POLL_MS);
-import "./screener.js";

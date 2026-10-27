@@ -4,13 +4,24 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
 
 ## Quick Start (How to run the app)
 
-1. Make sure you have Node.js installed.
-2. Open your terminal in the project folder and run:
+1. Install Node.js 18 or newer.
+2. Open a terminal in the project folder and run:
    ```bash
-   node --env-file=.env Screener.js
-Open your web browser and go to: http://localhost:3000
+   npm install
+   node server.js
+   ```
+   (or `npm start`). Everything runs on one server, on one port:
 
-(Optional: To enable the AI features, add a .env file with GEMINI_API_KEY=your_api_key and run the app using node --env-file=.env Screener.js)
+   | App | Address |
+   |---|---|
+   | Market Flow Radar | http://localhost:3000 |
+   | Early Setup Screener | http://localhost:3000/screener |
+   | BTC rotation | http://localhost:3000/screener#rotation |
+   | Whale tracker | http://localhost:3000/screener#whales |
+
+3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
+
+If you see "Port 3000 is already in use", another copy of the app is still running: close that terminal window, or pick another port in `.env`. You can still run the screener on its own with `node screener.js` (it then uses port 3001).
 
 📖 User Guide: How to use the app
 Once the dashboard is open, here is how you can use it to spot market trends:
@@ -55,7 +66,7 @@ Click it to have the AI instantly read the current top coins and wallet signals,
 Recursive Mode: If you check the "Recursive Agent" box before clicking the button, a second "Risk Manager" AI will review the first report and point out potential fake-outs, low-volume risks, or traps.
 
 6. Whale Tracker tab (Arkham-style)
-Open the screener at http://localhost:3001 and click "Whale tracker" (or go to http://localhost:3001/#whales). It starts with `node server.js` or `node screener.js`. No API key needed.
+Open http://localhost:3000/screener and click "Whale tracker" (or go straight to http://localhost:3000/screener#whales). It starts with `node server.js`. No API key needed.
 
 Live whale transfers: every Ethereum transfer of any token (or ETH) above $100k, read straight from the blockchain, with who sent it and who received it. About 10,000 addresses are labelled: exchanges (Binance, Coinbase, Kraken, OKX…), funds and market makers, stablecoin issuers (Tether, Circle), bridges, DeFi protocols, MEV bots, mixers and flagged hacker addresses. Each transfer gets a type: exchange deposit (often before selling), exchange withdrawal, exchange to exchange, mint / burn, DeFi, bridge or wallet to wallet.
 
@@ -74,7 +85,7 @@ Alerts pop up on every tab and go to Telegram: transfers over $1M (stablecoins o
 Data: public Ethereum RPC nodes (blocks and transfers), DexScreener (prices, liquidity), GeckoTerminal (DEX swaps) and an open Etherscan label snapshot from June 2023 (data/eth-labels.json, rebuilt with `node scripts/build-labels.js`). Newer exchange wallets can show as unlabelled. Settings (optional, in .env): WHALES_MIN_USD=100000 · WHALES_ALERT_USD=1000000 · WHALES_STABLE_ALERT_USD=25000000 · WHALES_EXCHANGE_ALERT_USD=500000 · WHALES_MINT_ALERT_USD=10000000 · WHALES_TELEGRAM_PER_HOUR=30 · WHALES_RPC=your own node URL(s) · FLOWS_NETWORKS=eth,base,solana · SCREENER_WHALES=0 to switch it all off. Run with DEMO=1 to preview with simulated data.
 
 7. Early Setup Screener: ignition alerts (v5)
-The "Early ignition" tab on http://localhost:3001 watches every liquid Binance USDT pair for volume igniting before price runs.
+The "Early ignition" tab on http://localhost:3000/screener watches every liquid Binance USDT pair for volume igniting before price runs.
 
 Early ignition alert: the last two finished 5-minute candles both traded at least 3x that token's normal volume for this hour of the day, price rose over those 10 minutes and most of the volume was aggressive buying. It also has to pass the quality checks: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, a rising 4-hour trend, BTC not falling over 1 and 4 hours, and no market-wide surge.
 

@@ -46,10 +46,11 @@
 // "Already moved" guard: tokens that are up a lot in 24h/1h or far above their 20-day high are capped at score 55
 // and never alert; they are shown separately so you can see them but not chase them.
 //
-// Fully separate from the Market Flow Radar: own port, own page (public/screener.html), own state file.
-// Start with `node screener.js`, or add `import "./screener.js";` at the very end of your server file.
+// Runs inside `node server.js` (one server, one port: the page is /screener, its APIs /api/screener, /api/rotation,
+// /api/whales, /api/flows), or on its own with `node screener.js` (own port SCREENER_PORT, page at /). Own state file.
 // It flags early setups; it cannot predict price moves. Research signal only, not financial advice.
 
+import "./env.js"; // first: loads .env before any setting below is read
 import http from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -169,7 +170,7 @@ const state = {
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
-  mainUrl: env.MAIN_URL || `http://${env.HOST || "127.0.0.1"}:${num("PORT", 3000)}`,
+  mainUrl: env.MAIN_URL || "/", // inside server.js the Market Flow Radar is on the same server; standalone sets it below
 };
 const lastAlertAt = new Map();
 const dailyCache = new Map();   // base -> closed daily candles (refreshed hourly / on UTC day change)
@@ -1286,36 +1287,53 @@ const jsonResponse = (res, code, data) => {
   res.end(JSON.stringify(data));
 };
 
-if (!LIBRARY_ONLY) {
+// Answers the screener's API routes; returns false for anything else so the caller can carry on.
+export async function handleScreenerRequest(req, res, url) {
+  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) }); return true; }
+  if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
+  if (await handleWhalesRequest(req, res, url)) return true;
+  if (await handleFlowsRequest(req, res, url)) return true;
+  return false;
+}
+export async function serveScreenerPage(res) {
+  try {
+    const html = await readFile(path.join(here, "public", "screener.html"));
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    res.end(html);
+  } catch { res.writeHead(500).end("public/screener.html is missing"); }
+}
+
+// Starts scanning (and the BTC rotation, whale tracker and DEX rotations). Called by server.js, or below when standalone.
+let started = false;
+export function startScreener(baseUrl = "") {
+  if (started || LIBRARY_ONLY) return;
+  started = true;
+  console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, ` +
+    `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
+  console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
+  loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
+  rotation.start();
+  if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
+  else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");
+}
+
+// Standalone: `node screener.js` serves the screener on its own port.
+const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b); // Windows paths ignore case
+const runDirectly = !!process.argv[1] && samePath(path.resolve(process.argv[1]), fileURLToPath(import.meta.url));
+if (!LIBRARY_ONLY && runDirectly) {
+  state.mainUrl = env.MAIN_URL || `http://${env.HOST || "127.0.0.1"}:${num("PORT", 3000)}`;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (url.pathname === "/api/screener") return jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) });
-    if (url.pathname === "/api/rotation") return jsonResponse(res, 200, { ...rotation.api(), binancePausedUntil: binancePause() });
-    if (await handleWhalesRequest(req, res, url)) return;
-    if (await handleFlowsRequest(req, res, url)) return;
-    if (url.pathname === "/") {
-      try {
-        const html = await readFile(path.join(here, "public", "screener.html"));
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-        return res.end(html);
-      } catch { res.writeHead(500).end("public/screener.html is missing"); return; }
-    }
+    if (await handleScreenerRequest(req, res, url)) return;
+    if (url.pathname === "/") return serveScreenerPage(res);
     if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found");
   });
   server.on("error", (e) => {
     console.error(e.code === "EADDRINUSE"
-      ? `Early Setup Screener: port ${PORT} is in use. Set SCREENER_PORT to another port.`
+      ? `Early Setup Screener: port ${PORT} is in use. Set SCREENER_PORT to another port, or run everything with node server.js.`
       : `Early Setup Screener server error: ${e.message}`);
+    process.exit(1);
   });
-  server.listen(PORT, HOST, () => {
-    console.log(`Early Setup Screener v${LOGIC_VERSION}: http://${HOST}:${PORT}`);
-    console.log(`Refresh: ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x (time-of-day adjusted), daily RSI <= ${MAX_DAILY_RSI}, early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE}, ` +
-      `typical 6h range >= ${(MIN_RANGE_RATIO * TARGET_PCT).toFixed(1)}%, BTC 1h >= ${BTC_1H_MIN}% | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | ` +
-      `top ${TOP_N} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
-    console.log(`BTC rotation tab: http://${HOST}:${PORT}/#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"} | data: Binance only, no API key`);
-  });
-  loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
-  rotation.start();
-  if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
+  server.listen(PORT, HOST, () => startScreener(`http://${HOST}:${PORT}/`));
 }

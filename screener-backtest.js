@@ -25,7 +25,7 @@ const { fiveMinFeatures, classifyIgnition, ignitionScore, scoreToken, techMetric
   DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO } = core;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BN = "https://api.binance.com";
+const BN = (process.env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
 const STEP = 300_000, HOUR = 3_600_000, DAY = 86_400_000;
 const argv = process.argv.slice(2);
 const arg = (name, d) => { const i = argv.indexOf("--" + name); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };

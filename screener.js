@@ -1,7 +1,7 @@
 // Early-Setup Screener v4 (port of screener.py + fast intraday layer). Node.js 18+, no dependencies.
 //
 // Two layers:
-//   SETUP layer (slow context): Binance USDT spot tokens that are also in the CoinGecko top 500, scored 0-100 on
+//   SETUP layer (slow context): Binance USDT spot tokens (largest 500 by market cap), scored 0-100 on
 //     volume (25) · chart setup (25) · hot narrative (20) · MC/FDV (10) · futures (10) · liquidity (10).
 //   IGNITION layer (fast, every ~20s): 15-minute volume vs that token's normal volume FOR THIS HOUR OF THE DAY,
 //     confirmed by 1h volume, volume persistence across 5m candles, trade count, taker-buy pressure, a rising 4h
@@ -12,14 +12,21 @@
 //
 // v4, based on the first 36 tracked outcomes (11% win rate, 22 of 36 "flat"):
 //   - Removes assets that cannot move +TARGET% within the horizon: stablecoins (new ones too, detected by their peg),
-//     tokenized stocks/ETFs/gold and wrapped/staked tokens (CoinGecko categories), and any token whose typical 6-hour
+//     tokenized stocks/ETFs/gold and wrapped/staked tokens (Binance sector tags), and any token whose typical 6-hour
 //     range is too small for the target.
-//   - Narrative strength = median 24h change of the category's own coins. Category market cap jumps when new coins are
-//     added to a category, which produced fake "+118%" narratives.
+//   - Narrative strength = median 24h change of the sector's own coins (a category's market cap jumps when new coins are
+//     added, which produced fake "+118%" narratives).
+//   - Only Binance is used (no CoinGecko, no API key): market caps and sector tags come from Binance's product list.
+//     Coins on Binance's Monitoring list (delisting risk) never alert.
 //   - New ignition gates: BTC not falling over the last hour, price above a rising 4h average and not stretched far
 //     above it, still near the spike high, no long upper wicks. Breaking the prior 12h high adds points.
 //   - Daily-setup alerts are off by default (9% win rate). The daily score still feeds the ignition score.
 //   - The signal functions are exported, so screener-backtest.js replays exactly this logic on past candles.
+//
+// BTC rotation (rotation.js, "BTC rotation" tab, /api/rotation): ranks altcoin narratives by how they did vs BTC in
+// past weeks with the same BTC regime plus their current price action, backtested week by week. Every ignition
+// candidate carries that context (BTC regime, its narratives' rank) and the performance panel measures whether it helps.
+// SCREENER_REGIME_GATE=1 also holds ignition alerts while BTC's daily regime is a downtrend.
 //
 // "Already moved" guard: tokens that are up a lot in 24h/1h or far above their 20-day high are capped at score 55
 // and never alert; they are shown separately so you can see them but not chase them.
@@ -32,6 +39,7 @@ import http from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRotation } from "./rotation.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -46,7 +54,6 @@ const MIN_QUOTE_VOLUME = num("SCREENER_MIN_QUOTE_VOLUME", 5_000_000);
 const MIN_SCORE_ALERT = num("SCREENER_MIN_SCORE", 70);
 const SETUP_ALERTS = env.SCREENER_SETUP_ALERTS === "1";        // daily-setup alerts: off by default (9% win rate so far)
 const COOLDOWN_MS = num("SCREENER_COOLDOWN_HOURS", 12) * 3_600_000;
-const CG_REFRESH_MS = num("SCREENER_CG_REFRESH_MIN", 10) * 60_000;
 // ---- early-ignition tuning (all adjustable; screener-backtest.js shows which values hold up on past data) ----
 const IGNITE_RVOL = num("SCREENER_IGNITE_RVOL", 4);            // 15m volume vs normal 15m volume
 const IGNITE_RVOL_1H = num("SCREENER_IGNITE_RVOL_1H", 1.5);    // 1h volume vs normal 1h volume (sustained, not one print)
@@ -70,8 +77,8 @@ const STOP_PCT = num("SCREENER_STOP_PCT", 2.5);
 const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 6) * 3_600_000;
 const FEE_PCT = num("SCREENER_FEE_PCT", 0.2);                  // round-trip fees subtracted from every result (0.1% in + 0.1% out)
 const EXCLUDE_NONCRYPTO = env.SCREENER_EXCLUDE_NONCRYPTO !== "0";
+const REGIME_GATE = env.SCREENER_REGIME_GATE === "1";          // hold ignition alerts while BTC's daily regime is a downtrend
 const HOURLY_REFRESH_MS = 6 * 3_600_000;
-const EXCLUSION_REFRESH_MS = 6 * 3_600_000;
 const IGNITE_COOLDOWN_MS = num("SCREENER_IGNITE_COOLDOWN_HOURS", 4) * 3_600_000;
 const MOVED_SCORE_CAP = 55;
 const WEIGHT_GUARD = num("SCREENER_WEIGHT_GUARD", 4800);       // skip the fast scan if Binance used-weight per minute gets this high
@@ -80,23 +87,18 @@ const MAX_ALERTS_PER_SCAN = 4;
 const HOT_CATEGORY_MIN_CHANGE = 3.0;                            // % median 24h change of a category's coins
 const MAX_HOT_CATEGORIES = 8;
 const BTC_DROP_PAUSE = -3.0;
-const FALLBACK_UNIVERSE = 150; // used only if CoinGecko is unreachable
 const listEnv = (k) => new Set((env[k] || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
 const BLOCKLIST = listEnv("SCREENER_BLOCKLIST");
-const ALLOWLIST = listEnv("SCREENER_ALLOWLIST"); // never removed by the category exclusion
+const ALLOWLIST = listEnv("SCREENER_ALLOWLIST"); // never removed by the tag exclusion
+const ALLOW_MONITORING = env.SCREENER_ALLOW_MONITORING === "1"; // let coins on Binance's Monitoring list alert
 export const STABLES = new Set(["USDT", "USDC", "FDUSD", "TUSD", "DAI", "USDE", "USDD", "PYUSD", "USD1", "BUSD", "USDP", "EUR", "AEUR",
   "RLUSD", "USDS", "USDG", "USDF", "USD0", "BFUSD", "XUSD", "FRAX", "GHO", "LUSD", "CRVUSD", "EURC", "EURI", "USDB", "SUSDE", "USDX", "USDQ"]);
 // Gold, wrapped and liquid-staked tokens: they track another asset and almost never move +4% in 6h on their own.
 export const NONCRYPTO = new Set(["PAXG", "XAUT", "WBTC", "WBETH", "BNSOL", "STETH", "WSTETH", "CBBTC", "BETH", "WETH"]);
-// CoinGecko categories whose members are removed from the universe (refreshed every 6h), grouped so each kind is covered.
-const EXCLUDE_GROUPS = [/stablecoin/i, /tokeni[sz]ed|xstock|\bstocks?\b|equit|\betfs?\b|\betps?\b/i, /gold|silver|commodit/i, /wrapped|bridged/i, /liquid (re)?staking tokens|yield-bearing/i];
-const NOT_A_NARRATIVE = /stablecoin|tokeni[sz]ed|xstock|\bstocks?\b|equit|\betfs?\b|\betps?\b|gold|silver|commodit|wrapped|bridged|staking tokens|fiat|backed|yield-bearing|made in|portfolio|ecosystem/i;
 const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
-const CG = "https://api.coingecko.com/api/v3";
 const BN = "https://api.binance.com";
 const BF = "https://fapi.binance.com";
-const cgHeaders = env.COINGECKO_KEY ? { "x-cg-demo-api-key": env.COINGECKO_KEY } : {};
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(here, DEMO ? "screener_state.demo.json" : "screener_state.json"); // demo never touches real history
 const KLINE_REFRESH_MS = 60 * 60_000;
@@ -122,11 +124,11 @@ const state = {
   pollIntervalMs: POLL_MS,
   demo: DEMO,
   status: "starting",
-  cgStatus: "not_checked",
+  metaStatus: { source: "none" },
   futuresStatus: "not_checked",
   errors: {},
   regime: { btcChange24hPct: null, btc1hPct: null, ok: true },
-  universe: { coingecko: 0, binance: 0, eligible: 0, excluded: 0, slow: 0 },
+  universe: { binance: 0, eligible: 0, excluded: 0, slow: 0 },
   warmup: { loaded: 0, total: 0, seasonal: 0 },
   breadth: { hotShare: null, marketWide: false },
   stats: null,
@@ -140,7 +142,7 @@ const state = {
     maxSpreadBps: MAX_SPREAD_BPS, minPersist: MIN_PERSIST, minRangeRatio: MIN_RANGE_RATIO, minRange6hPct: MIN_RANGE_RATIO * TARGET_PCT,
     btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExtension: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT,
-    igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO,
+    igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
   mainUrl: env.MAIN_URL || `http://${env.HOST || "127.0.0.1"}:${num("PORT", 3000)}`,
@@ -151,12 +153,18 @@ const dailyRetryAt = new Map(); // base -> time before which a failed load is no
 const hourlyCache = new Map();  // base -> hour-of-day volume medians + typical 6h range
 const hourlyRetryAt = new Map();
 const oiCache = new Map();
-const cg = { nextTry: 0, fetchedAt: 0, bySymbol: new Map(), narratives: new Map(), excluded: new Set(), excludedAt: 0, excludedCats: [] };
 let fundingCache = { at: 0, map: new Map() };
 let binanceWeight = 0;
 export const usedWeight = () => binanceWeight;
-let polling = false, cgBusy = false, dailyBusy = false, hourlyBusy = false;
+let polling = false, dailyBusy = false, hourlyBusy = false;
 let bookCache = { at: 0, map: new Map() };
+// BTC-regime narrative rotation (own tab). Not created when the backtest imports this file.
+const rotation = LIBRARY_ONLY ? null : createRotation({
+  fetchJson: (...a) => fetchJson(...a), cacheDir: path.join(here, DEMO ? "rotation_cache_demo" : "rotation_cache"), stables: STABLES, nonCrypto: NONCRYPTO,
+  getNarratives: (prices) => binanceNarratives(prices), demo: DEMO, days: Math.min(2000, Math.max(300, num("ROTATION_DAYS", 1000))), holdDays: num("ROTATION_HOLD_DAYS", 7), feePct: FEE_PCT,
+  only: (env.ROTATION_NARRATIVES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
+  startDelayMs: num("ROTATION_START_DELAY_SECONDS", 45) * 1000, usedWeight: () => binanceWeight,
+});
 
 // ───────────────────────────── utilities ─────────────────────────────
 const n = (v) => {
@@ -175,11 +183,20 @@ export const median = (a) => {
 };
 
 class HttpError extends Error {
-  constructor(message, status) { super(message); this.status = status; }
+  constructor(message, status, retryAfterMs = null) { super(message); this.status = status; this.retryAfterMs = retryAfterMs; }
 }
 const RETRYABLE = [418, 429, 500, 502, 503, 504];
+const SOURCES = [["fapi.binance.com", "Binance Futures"], ["api.binance.com", "Binance Spot"], ["www.binance.com", "Binance asset info"], ["api.telegram.org", "Telegram"]];
+const sourceOf = (url) => (SOURCES.find(([h]) => String(url).includes(h)) || [, "API"])[1];
+// After a 429/418 Binance tells us how long to back off (Retry-After). Until then no request is sent to that host,
+// because hammering a rate-limited Binance IP escalates to a temporary ban (418).
+const hostPause = new Map();
+export const binancePause = () => { const t = Math.max(hostPause.get("Binance Spot") || 0, hostPause.get("Binance Futures") || 0); return t > Date.now() ? t : null; };
 
-export async function fetchJson(url, { headers = {}, method = "GET", body, timeoutMs = 12_000, retries = 2 } = {}) {
+export async function fetchJson(url, { headers = {}, method = "GET", body, timeoutMs = 12_000, retries = 2, retry429 = true } = {}) {
+  const src = sourceOf(url);
+  const paused = hostPause.get(src);
+  if (paused && paused > Date.now()) throw new HttpError(`${src} is paused for ${Math.ceil((paused - Date.now()) / 1000)}s after a rate limit`, 429, paused - Date.now());
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -195,16 +212,24 @@ export async function fetchJson(url, { headers = {}, method = "GET", body, timeo
       }
       if (res.ok) return await res.json();
       const hint = res.status === 403 || res.status === 451 ? " (access blocked in this region)"
-        : res.status === 429 || res.status === 418 ? " (rate limited)" : "";
-      lastErr = new HttpError(`HTTP ${res.status}${hint}`, res.status);
-      if (!RETRYABLE.includes(res.status)) throw lastErr;
+        : res.status === 418 ? " (IP temporarily banned for too many requests)" : res.status === 429 ? " (rate limited)" : "";
+      const ra = Number(typeof res.headers?.get === "function" ? res.headers.get("retry-after") : NaN);
+      const retryAfterMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 3600) * 1000 : null;
+      lastErr = new HttpError(`${src} HTTP ${res.status}${hint}`, res.status, retryAfterMs);
+      if ((res.status === 429 || res.status === 418) && src.startsWith("Binance")) {
+        hostPause.set(src, Date.now() + (retryAfterMs ?? (res.status === 418 ? 300_000 : 60_000)));
+        lastErr.noRetry = true;
+        throw lastErr;
+      }
+      if (res.status === 429 && !retry429) lastErr.noRetry = true; // the caller handles the wait
+      if (!RETRYABLE.includes(res.status) || lastErr.noRetry) throw lastErr;
     } catch (e) {
-      if (e instanceof HttpError && !RETRYABLE.includes(e.status)) throw e;
+      if (e instanceof HttpError && (!RETRYABLE.includes(e.status) || e.noRetry)) throw e;
       lastErr = e;
     } finally {
       clearTimeout(timer);
     }
-    if (attempt < retries) await sleep(1500 * (attempt + 1) * (lastErr?.status === 429 ? 4 : 1));
+    if (attempt < retries) await sleep(lastErr?.retryAfterMs ?? 1500 * (attempt + 1) * (lastErr?.status === 429 ? 4 : 1));
   }
   throw lastErr;
 }
@@ -334,8 +359,8 @@ export function fiveMinFeatures(k, end, nowMs, expect5) {
 }
 
 // ───────────────────────────── scoring ─────────────────────────────
-// t = techMetrics; cgRow = {mc, fdv}; narrative = {change, names}; funding = per-8h rate (0.0001 = 0.01%).
-export function scoreToken(t, cgRow, narrative, funding, oiChg, quoteVol, priceChg) {
+// t = techMetrics; info = {mc, fdv} (fdv unknown on Binance: neutral); narrative = {change, names}; funding = per-8h rate.
+export function scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg) {
   const reasons = [];
   const parts = {
     volume: { pts: 0, max: 25 }, technical: { pts: 0, max: 25 }, narrative: { pts: 0, max: 20 },
@@ -362,7 +387,7 @@ export function scoreToken(t, cgRow, narrative, funding, oiChg, quoteVol, priceC
     reasons.push(`hot narrative: ${names} (coins ${narrative.change >= 0 ? "+" : ""}${narrative.change.toFixed(1)}% 24h)`);
   }
 
-  const fdv = cgRow?.fdv, mc = cgRow?.mc || 0;
+  const fdv = info?.fdv, mc = info?.mc || 0;
   if (fdv && mc) {
     const ratio = mc / fdv;
     parts.tokenomics.pts = ratio >= 0.7 ? 10 : ratio >= 0.5 ? 7 : ratio >= 0.3 ? 4 : 0;
@@ -407,6 +432,8 @@ export function classifyIgnition(f, change24h, distToHigh = 0, p = DEFAULT_IGNIT
   if ((f.rvol1h ?? 0) < p.rvol1h) miss.push("1h volume");
   if (f.range6h == null) miss.push("volatility history");
   if (f.btc1h != null && f.btc1h < p.btc1hMin) miss.push(`steady BTC (BTC ${f.btc1h.toFixed(1)}% 1h)`);
+  if (f.regimeOff) miss.push(`BTC daily trend (${f.regimeOff})`);
+  if (f.monitoring) miss.push("off Binance's Monitoring list (delisting risk)");
   if (f.buy15 == null) miss.push("buyer check"); else if (f.buy15 < p.minBuy) miss.push(`buyers ${p.minBuy}%+`);
   if (f.persist == null) miss.push("persistence check");
   else {
@@ -449,21 +476,22 @@ export function ignitionScore(f, ctxScore, funding, narrative, p = DEFAULT_IGNIT
 }
 const labelFor = (score) => score >= MIN_SCORE_ALERT ? "Early setup" : score >= 55 ? "Watch closely" : score >= 40 ? "Developing" : "Weak";
 
-function buildCandidate(base, cgRow, tk, t, narrative, funding, oiChg, fast) {
+function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
   const quoteVol = n(tk.quoteVolume) || 0;
   const priceChg = n(tk.priceChangePercent) || 0;
-  const s = scoreToken(t, cgRow, narrative, funding, oiChg, quoteVol, priceChg);
+  const s = scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg);
   const ig = classifyIgnition(fast, priceChg, t.distToHigh);
   let score = s.score, label = labelFor(score);
   if (ig.moved) { score = Math.min(score, MOVED_SCORE_CAP); label = "Already moved"; }
   let igs = null;
   if (fast && fast.persist != null && !ig.moved && !ig.slow) igs = ignitionScore(fast, score, funding, narrative);
   return {
-    symbol: base + "USDT", base, name: cgRow?.name || base, rank: cgRow?.rank ?? null,
+    symbol: base + "USDT", base, name: info?.name || base, rank: info?.rank ?? null, marketCap: info?.mc ?? null,
+    monitoring: isMonitoring(info), seed: isSeed(info),
     price: n(tk.lastPrice), change24h: priceChg, quoteVolume: quoteVol,
     rvol: round(t.rvol, 2), distToHigh: round(t.distToHigh, 4), aboveSma: t.aboveSma,
     rsi: round(t.rsi, 1), compressed: t.compressed,
-    mcFdv: cgRow?.fdv && cgRow?.mc ? round(cgRow.mc / cgRow.fdv, 3) : null,
+    mcFdv: info?.fdv && info?.mc ? round(info.mc / info.fdv, 3) : null,
     narrative: narrative ? { change24hPct: round(narrative.change, 2), names: [...new Set(narrative.names)] } : null,
     fundingPct: funding == null ? null : round(funding * 100, 4),
     oiChange24hPct: oiChg == null ? null : round(oiChg * 100, 2),
@@ -477,112 +505,158 @@ function buildCandidate(base, cgRow, tk, t, narrative, funding, oiChg, fast) {
     distTo12hHigh: round(fast?.distTo12hHigh, 2),
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
     igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
+    rotation: rotation ? rotation.context(base) : null,
     score, label, reasons: s.reasons, parts: s.parts, updatedAt: Date.now(),
   };
 }
 
-// ───────────────────────────── data: CoinGecko ─────────────────────────────
-async function cgTopMarkets(limit) {
-  const rows = [];
-  for (let page = 1; page <= Math.ceil(limit / 250); page++) {
-    const r = await fetchJson(`${CG}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}`, { headers: cgHeaders });
-    if (!Array.isArray(r)) throw new Error("Unexpected CoinGecko markets response");
-    rows.push(...r);
-    await sleep(2000);
-  }
-  return rows.slice(0, limit);
+// ───────────────────────────── data: Binance asset info (market caps + sector tags) ─────────────────────────────
+// Binance's documented spot API has prices and volumes but no market caps or sectors. Those come from the product list
+// that binance.com's own Markets page loads: circulating supply and sector tags (AI, Meme, RWA, Layer1_Layer2, Gaming,
+// Monitoring, Seed ...). It needs no API key and is fetched once every 6 hours. It is not part of the documented API,
+// so it could change: the last good copy is kept in binance_meta.json, and without any copy the screener ranks coins by
+// 24h volume and uses the built-in narrative lists below.
+const META_URL = "https://www.binance.com/bapi/asset/v2/public/asset-service/product/get-products?includeEtf=true";
+const META_FILE = path.join(here, DEMO ? "binance_meta.demo.json" : "binance_meta.json");
+const META_REFRESH_MS = 6 * 3_600_000;
+// Binance sector tag -> narrative name. Unlisted tags also become narratives when 4+ coins carry them and they are not
+// programme or chain labels (TAG_IGNORE).
+const TAG_NARRATIVES = [
+  [/^ai$|artificial.?intelligence/i, "AI"], [/meme/i, "Meme"], [/layer.?1.?.?layer.?2/i, "Layer 1 / Layer 2"], [/^layer.?1$|^l1$/i, "Layer 1"],
+  [/^layer.?2$|^l2$/i, "Layer 2"], [/^defi$/i, "DeFi"], [/rwa|real.?world/i, "RWA"], [/gaming|gamefi/i, "Gaming"], [/metaverse/i, "Metaverse"],
+  [/^nft$/i, "NFT"], [/depin/i, "DePIN"], [/storage/i, "Storage"], [/infrastructure/i, "Infrastructure"], [/privacy/i, "Privacy"],
+  [/oracle/i, "Oracles"], [/liquid.?staking|^lsd$/i, "Liquid staking"], [/restaking/i, "Restaking"], [/payment/i, "Payments"],
+  [/^zk|zero.?knowledge/i, "Zero knowledge"], [/solana/i, "Solana ecosystem"], [/polkadot/i, "Polkadot ecosystem"], [/^bitcoin.?eco|^btcfi/i, "Bitcoin ecosystem"],
+];
+const TAG_IGNORE = /^(pos|pow|bsc|bnb.?chain|launchpool|launchpad|megadrop|hodler.*|mining.?zone|monitoring|seed|innovation.*|new.*|alpha|fan.?token|etf|margin|isolated|.*airdrop.*|.*pool.*|grayscale|a16z.*|.*holdings|.*portfolio|arbitrum|base|polygon|avalanche|ethereum|optimism)$/i;
+const NONCRYPTO_TAG = /stable|tokeni[sz]ed|xstock|\bstocks?\b|equit|\bgold\b|silver|commodit|wrapped|bridged/i;
+const isMonitoring = (info) => !!info?.tags?.some((t) => /monitoring/i.test(t));
+const isSeed = (info) => !!info?.tags?.some((t) => /^seed$/i.test(t));
+// Used only when Binance's product list cannot be read and no saved copy exists. Coins that are not listed are skipped.
+export const BUILTIN_NARRATIVES = {
+  "AI": ["FET", "RENDER", "TAO", "WLD", "ARKM", "IO", "VIRTUAL", "NEAR", "GRT", "PHB", "NFP", "AI", "THETA"],
+  "Meme": ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "WIF", "BOME", "MEME", "PEOPLE", "TRUMP", "PENGU", "NEIRO", "TURBO", "1000SATS"],
+  "Layer 1": ["ETH", "SOL", "BNB", "ADA", "AVAX", "DOT", "APT", "SUI", "SEI", "TON", "ATOM", "ALGO", "ICP", "TRX", "HBAR", "EGLD", "INJ"],
+  "Layer 2": ["ARB", "OP", "POL", "STRK", "MANTA", "IMX", "ZK", "METIS", "SCR"],
+  "DeFi": ["UNI", "AAVE", "LDO", "CRV", "COMP", "SUSHI", "1INCH", "DYDX", "PENDLE", "JUP", "ENA", "CAKE", "RUNE", "GMX", "SNX"],
+  "RWA": ["ONDO", "OM", "POLYX", "PLUME", "TRU", "USUAL", "SYRUP"],
+  "Gaming": ["AXS", "SAND", "MANA", "GALA", "ILV", "YGG", "PIXEL", "PORTAL", "BEAMX", "XAI", "ACE"],
+  "DePIN": ["FIL", "AR", "IOTX", "STORJ", "THETA", "RENDER", "IO"],
+  "Oracles": ["LINK", "PYTH", "BAND", "API3", "TRB", "UMA"],
+  "Privacy": ["ZEC", "DASH", "ZEN", "ROSE"],
+  "Interoperability": ["DOT", "ATOM", "QNT", "AXL", "ZRO", "W"],
+  "Liquid staking": ["LDO", "RPL", "JTO", "SSV", "ETHFI", "LISTA", "EIGEN"],
+};
+const meta = { at: 0, source: "none", coins: new Map(), narratives: new Map(), nextTry: 0, loaded: false, error: null };
+const prettyTag = (t) => t.replace(/[_-]+/g, " ").trim().replace(/^./, (ch) => ch.toUpperCase());
+function narrativeOf(tag) {
+  for (const [re, name] of TAG_NARRATIVES) if (re.test(tag)) return name;
+  return TAG_IGNORE.test(tag) || NONCRYPTO_TAG.test(tag) ? null : "auto:" + tag;
 }
-const cgCategoryCoins = (id) => fetchJson(
-  `${CG}/coins/markets?vs_currency=usd&category=${encodeURIComponent(id)}&order=market_cap_desc&per_page=250&page=1`, { headers: cgHeaders });
+function setMeta(coins, source, at) {
+  const groups = new Map();
+  if (coins) {
+    for (const [base, c] of coins) for (const tag of c.tags) {
+      const name = narrativeOf(tag);
+      if (!name) continue;
+      if (!groups.has(name)) groups.set(name, { tags: new Set(), bases: new Set() });
+      groups.get(name).tags.add(tag); groups.get(name).bases.add(base);
+    }
+  }
+  const narratives = new Map();
+  for (const [name, g] of groups) {
+    if (!name.startsWith("auto:")) narratives.set(name, g);
+    else if (g.bases.size >= 4 && !groups.has(prettyTag(name.slice(5)))) narratives.set(prettyTag(name.slice(5)), g);
+  }
+  if (!narratives.size) { // no usable tags (format changed or no copy): built-in lists
+    for (const [name, list] of Object.entries(BUILTIN_NARRATIVES)) narratives.set(name, { tags: new Set(["built-in"]), bases: new Set(list) });
+    if (source === "live" || source === "cached") source += " (no sector tags, built-in narratives)";
+  }
+  Object.assign(meta, { coins: coins || new Map(), narratives, source, at, loaded: true });
+}
+// One request at a time: callers that arrive while it is running (scan, rotation tab) wait for the same result.
+let metaJob = null;
+function refreshMeta() {
+  if (metaJob) return metaJob;
+  if (meta.loaded && Date.now() < meta.nextTry) return Promise.resolve();
+  metaJob = loadMeta().finally(() => { metaJob = null; });
+  return metaJob;
+}
+async function loadMeta() {
+  try {
+    const r = await fetchJson(META_URL, { retries: 1, timeoutMs: 20_000 });
+    const rows = Array.isArray(r?.data) ? r.data : null;
+    if (!rows?.length) throw new Error("Unexpected Binance product list response");
+    const coins = new Map();
+    for (const p of rows) {
+      if (p.q !== "USDT" || !p.b || p.etf) continue;
+      coins.set(String(p.b).toUpperCase(), { name: p.an || p.b, cs: n(p.cs), tags: Array.isArray(p.tags) ? p.tags.map(String) : [] });
+    }
+    if (coins.size < 50) throw new Error("Binance product list looks incomplete");
+    setMeta(coins, "live", Date.now());
+    writeFile(META_FILE, JSON.stringify({ at: meta.at, coins: [...coins] })).catch(() => {});
+    meta.error = null; delete state.errors["Binance asset info"];
+  } catch (e) {
+    meta.nextTry = Date.now() + 15 * 60_000;
+    if (!meta.loaded) {
+      try { const c = JSON.parse(await readFile(META_FILE, "utf8")); setMeta(new Map(c.coins), "cached", c.at); }
+      catch { setMeta(null, "built-in", Date.now()); }
+    }
+    meta.error = e.message;
+    state.errors["Binance asset info"] = `${e.message}; ` + (meta.source.startsWith("cached") ? `using the saved copy from ${new Date(meta.at).toISOString().slice(0, 10)}`
+      : meta.source === "built-in" ? "ranking by 24h volume and using the built-in narrative lists (retrying every 15 min)" : "using the last good copy");
+  }
+}
+// The first scan waits for one request; later refreshes run in the background.
+async function ensureMeta() {
+  if (!meta.loaded) await refreshMeta();
+  else if (meta.source !== "live" || Date.now() - meta.at > META_REFRESH_MS) refreshMeta();
+}
+const metaStatus = () => ({ source: meta.source, at: meta.at || null, coins: meta.coins.size, sectors: meta.narratives.size, error: meta.error });
+const marketCap = (base, price) => { const cs = meta.coins.get(base)?.cs; return cs && price > 0 ? cs * price : null; };
 
-// Hot narratives: candidate categories come from the category list, but a category only counts as hot if the median
-// 24h change of its own coins is high. (A category's market cap also jumps when new coins are added to it.)
-async function cgHotNarratives(cats) {
-  const pool = cats
-    .filter((c) => (c.market_cap_change_24h || 0) >= HOT_CATEGORY_MIN_CHANGE && (c.volume_24h || 0) > 50_000_000 && !NOT_A_NARRATIVE.test(c.name || ""))
-    .sort((a, b) => b.market_cap_change_24h - a.market_cap_change_24h)
-    .slice(0, 12);
+// Universe: Binance USDT pairs, largest market cap first (coins without supply data after them, by 24h volume).
+function buildUniverse(tickers) {
+  const rows = [...tickers].map(([base, tk]) => {
+    const m = meta.coins.get(base);
+    return { base, vol: n(tk.quoteVolume) || 0, info: { id: base, name: m?.name || base, mc: marketCap(base, n(tk.lastPrice)), fdv: null, rank: null, tags: m?.tags || [] } };
+  });
+  rows.sort((a, b) => (a.info.mc == null) - (b.info.mc == null) || (b.info.mc ?? 0) - (a.info.mc ?? 0) || b.vol - a.vol);
+  let rank = 0;
+  for (const r of rows) if (r.info.mc != null) r.info.rank = ++rank;
+  return rows.slice(0, TOP_N).map((r) => [r.base, r.info]);
+}
+
+// Hot narratives, every scan, from data already fetched: median 24h change of each sector's liquid coins.
+function hotNarratives(tickers) {
   const hot = [];
-  for (const c of pool) {
-    await sleep(2000);
-    try {
-      const rows = await cgCategoryCoins(c.id);
-      const chg = rows.map((r) => n(r.price_change_percentage_24h)).filter((x) => x != null);
-      if (chg.length < 5) continue;
-      const med = median(chg);
-      if (med >= HOT_CATEGORY_MIN_CHANGE) hot.push({ c, med, rows });
-    } catch { /* one category failing should not drop the rest */ }
+  for (const [name, g] of meta.narratives) {
+    const chg = [...g.bases].map((b) => tickers.get(b)).filter((tk) => tk && (n(tk.quoteVolume) || 0) >= 1_000_000)
+      .map((tk) => n(tk.priceChangePercent)).filter((v) => v != null);
+    if (chg.length < 5) continue;
+    const med = median(chg);
+    if (med >= HOT_CATEGORY_MIN_CHANGE) hot.push({ name, med, bases: g.bases });
   }
   hot.sort((a, b) => b.med - a.med);
   const mapping = new Map();
-  for (const { c, med, rows } of hot.slice(0, MAX_HOT_CATEGORIES)) {
-    for (const r of rows) {
-      const prev = mapping.get(r.id) || { change: -Infinity, names: [] };
-      mapping.set(r.id, { change: Math.max(prev.change, med), names: [...prev.names, c.name] });
+  for (const { name, med, bases } of hot.slice(0, MAX_HOT_CATEGORIES)) {
+    for (const b of bases) {
+      const prev = mapping.get(b) || { change: -Infinity, names: [] };
+      mapping.set(b, { change: Math.max(prev.change, med), names: [...prev.names, name] });
     }
   }
-  return { mapping, list: hot.slice(0, MAX_HOT_CATEGORIES).map(({ c, med }) => ({ id: c.id, name: c.name, change24hPct: round(med, 2) })) };
+  state.hotNarratives = hot.slice(0, MAX_HOT_CATEGORIES).map(({ name, med }) => ({ id: name, name, change24hPct: round(med, 2) }));
+  return mapping;
 }
 
-// Members of stablecoin / tokenized-asset / gold / wrapped / liquid-staking categories (top 2 categories per kind).
-async function cgExclusions(cats) {
-  const picked = [];
-  for (const re of EXCLUDE_GROUPS) {
-    cats.filter((c) => re.test(c.name || "") && !picked.includes(c)).sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0))
-      .slice(0, 2).forEach((c) => picked.push(c));
-  }
-  const ids = new Set(), names = [];
-  for (const c of picked) {
-    await sleep(2500);
-    try { const rows = await cgCategoryCoins(c.id); rows.forEach((r) => ids.add(r.id)); names.push(c.name); }
-    catch { /* keep going; the volatility filter is the backstop */ }
-  }
-  return { ids, names };
-}
-
-// CoinGecko data changes slowly, so it is cached; a failure keeps the previous data.
-async function refreshCoinGecko() {
-  try {
-    const markets = await cgTopMarkets(TOP_N);
-    const bySymbol = new Map();
-    for (const m of markets) { // largest market cap wins when symbols collide
-      const sym = String(m.symbol || "").toUpperCase();
-      if (sym && !bySymbol.has(sym)) {
-        bySymbol.set(sym, { id: m.id, name: m.name, rank: m.market_cap_rank, mc: n(m.market_cap), fdv: n(m.fully_diluted_valuation) });
-      }
-    }
-    cg.bySymbol = bySymbol;
-    cg.fetchedAt = Date.now();
-    state.cgStatus = "connected";
-    delete state.errors.CoinGecko;
-    let cats = null;
-    try {
-      cats = await fetchJson(`${CG}/coins/categories`, { headers: cgHeaders });
-      if (!Array.isArray(cats)) throw new Error("Unexpected CoinGecko categories response");
-      const nar = await cgHotNarratives(cats);
-      cg.narratives = nar.mapping;
-      state.hotNarratives = nar.list;
-      delete state.errors.Narratives;
-    } catch (e) { state.errors.Narratives = `${e.message}; using previous narrative data`; }
-    if (EXCLUDE_NONCRYPTO && Array.isArray(cats) && Date.now() - cg.excludedAt > EXCLUSION_REFRESH_MS) {
-      const ex = await cgExclusions(cats);
-      if (ex.ids.size) { cg.excluded = ex.ids; cg.excludedCats = ex.names; cg.excludedAt = Date.now(); delete state.errors.Exclusions; }
-      else state.errors.Exclusions = "Could not load stablecoin / tokenized-asset categories; relying on the volatility filter";
-    }
-  } catch (e) {
-    cg.nextTry = Date.now() + 2 * 60_000;
-    state.cgStatus = cg.bySymbol.size ? "stale" : "unavailable";
-    state.errors.CoinGecko = cg.bySymbol.size ? `${e.message}; using cached data` : `${e.message}; ranking by Binance volume only (no rank, FDV or narrative data)`;
-  }
-}
-// First run waits for CoinGecko once; afterwards it refreshes in the background so scans are never blocked by it.
-async function ensureCoinGecko() {
-  const now = Date.now();
-  if (now < cg.nextTry || cgBusy) return;
-  if (cg.fetchedAt && now - cg.fetchedAt < CG_REFRESH_MS) return;
-  cgBusy = true;
-  const job = refreshCoinGecko().finally(() => { cgBusy = false; });
-  if (!cg.fetchedAt) await job;
+// Narratives for the rotation tab: [{ name, category, coins: [bases, largest market cap first] }].
+export async function binanceNarratives(priceByBase) {
+  await ensureMeta();
+  const mc = (b) => marketCap(b, priceByBase.get(b)) ?? 0;
+  return [...meta.narratives].map(([name, g]) => ({
+    name, category: g.tags.has("built-in") ? "built-in list" : "Binance tag: " + [...g.tags].join(", "),
+    coins: [...g.bases].filter((b) => priceByBase.has(b)).sort((a, b) => mc(b) - mc(a)),
+  })).filter((x) => x.coins.length >= 3).sort((a, b) => b.coins.length - a.coins.length);
 }
 
 // ───────────────────────────── data: Binance ─────────────────────────────
@@ -762,7 +836,7 @@ async function fastLayer(ready) {
   if (w15.error) state.errors["15m windows"] = w15.error; else delete state.errors["15m windows"];
   let seasonal = 0, slow = 0;
   const slowBelow = MIN_RANGE_RATIO * TARGET_PCT;
-  for (const [base] of ready) {
+  for (const [base, info] of ready) {
     const w = w15.map.get(base + "USDT");
     const d = dailyCache.get(base);
     const avgDaily = d ? mean(d.qvols.slice(-20)) : 0;
@@ -774,6 +848,7 @@ async function fastLayer(ready) {
     out.set(base, {
       avgDaily, hourly, seasonal: !!hourly, rvol15: exp15 > 0 ? Number(w.quoteVolume) / exp15 : 0,
       ret15: Number(w.priceChangePercent), spreadBps: spreads.get(base) ?? null, range6h: hourly?.range6h ?? null,
+      monitoring: !ALLOW_MONITORING && isMonitoring(info),
     });
   }
   state.warmup.seasonal = seasonal;
@@ -783,7 +858,8 @@ async function fastLayer(ready) {
   const marketWide = hotShare >= MARKET_WIDE_SHARE;
   state.breadth = { hotShare: round(hotShare, 3), marketWide };
   const btc15 = out.get("BTC")?.ret15 ?? 0;
-  for (const f of out.values()) { f.marketWide = marketWide; f.rs15 = f.ret15 - btc15; }
+  const regimeOff = REGIME_GATE && rotation?.riskOff() ? rotation.regimeLabel() : null;
+  for (const f of out.values()) { f.marketWide = marketWide; f.rs15 = f.ret15 - btc15; f.regimeOff = regimeOff; }
 
   const heating = [...out.entries()].filter(([, f]) => f.rvol15 >= 2 && !(f.range6h != null && f.range6h < slowBelow))
     .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, 60);
@@ -843,6 +919,12 @@ async function loadPersisted() {
 }
 
 const sgn = (v) => (v == null ? "n/a" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%");
+const rotationLine = (c) => {
+  const r = c.rotation;
+  if (!r || !r.regimeLabel) return null;
+  const top = r.narratives.filter((x) => x.rank != null).slice(0, 2).map((x) => `${x.name} #${x.rank}`).join(", ");
+  return `${r.regimeLabel}${top ? `; rotation rank: ${top}` : "; not in a ranked narrative"}`;
+};
 const structureLine = (c) => [c.breakout === true ? "broke its 12h high" : c.breakout === false ? "inside its 12h range" : null,
   c.trendUp ? "4h trend rising" : null, c.range6h != null ? `typical 6h range ${c.range6h.toFixed(1)}%` : null].filter(Boolean).join(", ");
 function updateEvents(results) {
@@ -864,7 +946,8 @@ function updateEvents(results) {
   };
   // 1) Fast tier: confirmed ignition with a high enough confidence score, price not yet run.
   // Held back briefly at startup until the time-of-day baselines have loaded, so early alerts are not noisy.
-  const seasonalReady = DEMO || state.warmup.seasonal >= 0.8 * state.warmup.total || now - state.startedAt > 180_000;
+  const exclusionsReady = DEMO || meta.loaded;
+  const seasonalReady = exclusionsReady && (DEMO || state.warmup.seasonal >= 0.8 * state.warmup.total || now - state.startedAt > 180_000);
   const cd1 = DEMO ? 90_000 : IGNITE_COOLDOWN_MS;
   if (seasonalReady) {
     results.filter((c) => c.ignition === "ignited" && !c.moved && (c.igScore ?? 0) >= IGNITE_MIN_SCORE)
@@ -876,7 +959,7 @@ function updateEvents(results) {
           `volume held in ${c.persist}/${c.persistOf} recent 5m candles${c.tradesRatio != null ? `, trades ${c.tradesRatio}x normal` : ""}`,
           `${c.buyRatio15m}% of recent volume was aggressive buying`,
           `price only ${sgn(c.ret15m)} in 15m, ${sgn(c.change24h)} in 24h${c.rangePos != null ? `, ${Math.round(c.rangePos * 100)}% up its 2h range` : ""}`,
-          structureLine(c),
+          structureLine(c), rotationLine(c),
           ...c.reasons.slice(0, 2)].filter(Boolean));
       });
   }
@@ -952,6 +1035,9 @@ const BUCKETS = [
   ["Volume held 3/3 candles", (c) => c.persist >= 3], ["Volume held 2/3 candles", (c) => c.persist === 2],
   ["Hot narrative", (c) => !!c.narrative], ["No narrative", (c) => !c.narrative],
   ["Daily setup 55+", (c) => c.score >= 55], ["Daily setup under 55", (c) => c.score < 55],
+  ["In a top-3 rotation narrative", (c) => !!c.rotation?.narratives?.some((x) => x.rank != null && x.rank <= 3)],
+  ["Not in a top-3 rotation narrative", (c) => !!c.rotation && !c.rotation.narratives.some((x) => x.rank != null && x.rank <= 3)],
+  ["BTC regime up or sideways", (c) => !!c.rotation?.regime && !c.rotation.riskOff], ["BTC regime downtrend", (c) => !!c.rotation?.riskOff],
 ];
 function statsBlock(evs) {
   const ig = evs.filter((e) => e.tier === "ignition");
@@ -980,21 +1066,20 @@ async function scan() {
   const btcChg = btc ? Number(btc.priceChangePercent) : 0;
   state.regime = { btcChange24hPct: round(btcChg, 2), btc1hPct: state.regime.btc1hPct ?? null, ok: btcChg > BTC_DROP_PAUSE };
 
-  await ensureCoinGecko();
+  await ensureMeta();
   const funding = await fundingRates();
-
-  const universe = cg.bySymbol.size
-    ? [...cg.bySymbol.entries()]
-    : [...tickers.entries()].sort((a, b) => Number(b[1].quoteVolume) - Number(a[1].quoteVolume)).slice(0, FALLBACK_UNIVERSE).map(([b]) => [b, null]);
+  const universe = buildUniverse(tickers);
+  const narrativeByBase = hotNarratives(tickers);
 
   const eligible = [];
   let excluded = 0;
-  for (const [base, cgRow] of universe) {
+  for (const [base, info] of universe) {
     const tk = tickers.get(base);
     if (!tk || BLOCKLIST.has(base)) continue;
     if ((n(tk.quoteVolume) || 0) < MIN_QUOTE_VOLUME) continue;
-    if (STABLES.has(base) || (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || (cgRow && cg.excluded.has(cgRow.id))))) { excluded++; continue; }
-    eligible.push([base, cgRow, tk]);
+    if (STABLES.has(base) || info.tags.some((t) => /stable/i.test(t)) ||
+      (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || info.tags.some((t) => NONCRYPTO_TAG.test(t))))) { excluded++; continue; }
+    eligible.push([base, info, tk]);
   }
   kickDaily(eligible);
   kickHourly(eligible);
@@ -1010,12 +1095,12 @@ async function scan() {
   const fast = await fastLayer(ready);
 
   const pre = [];
-  for (const [base, cgRow, tk] of ready) {
+  for (const [base, info, tk] of ready) {
     const t = techMetrics(dailyCache.get(base), Number(tk.lastPrice), Number(tk.quoteVolume));
     if (!t) continue;
-    const nar = cgRow ? cg.narratives.get(cgRow.id) : null;
+    const nar = narrativeByBase.get(base) || null;
     const f = fast.get(base);
-    pre.push({ base, cgRow, tk, t, nar, f, c: buildCandidate(base, cgRow, tk, t, nar, funding.get(base) ?? null, null, f) });
+    pre.push({ base, info, tk, t, nar, f, c: buildCandidate(base, info, tk, t, nar, funding.get(base) ?? null, null, f) });
   }
   pre.sort((a, b) => b.c.score - a.c.score);
 
@@ -1023,20 +1108,24 @@ async function scan() {
   const deep = pre.slice(0, DEEP_SCAN_LIMIT).filter((p) => funding.has(p.base));
   await mapLimit(deep, 4, async (p) => {
     const oi = await oiChange24h(p.base);
-    p.c = buildCandidate(p.base, p.cgRow, p.tk, p.t, p.nar, funding.get(p.base), oi, p.f);
+    p.c = buildCandidate(p.base, p.info, p.tk, p.t, p.nar, funding.get(p.base), oi, p.f);
   });
 
   const results = pre.map((p) => p.c).sort((a, b) => b.score - a.score);
   const top = results.slice(0, 150), inTop = new Set(top.map((c) => c.symbol));
   state.candidates = [...top, ...results.filter((c) => c.ignition && !inTop.has(c.symbol))];
-  state.universe = { coingecko: cg.bySymbol.size, binance: tickers.size, eligible: eligible.length, excluded, slow: state.universe.slow,
-    excludedCategories: cg.excludedCats };
-  state.status = ready.length === 0 && eligible.length ? "warming_up" : cg.bySymbol.size ? "connected" : "binance_only";
+  state.universe = { binance: tickers.size, eligible: eligible.length, excluded, slow: state.universe.slow,
+    rankedBy: meta.coins.size ? "market cap" : "24h volume", monitoring: ready.filter(([, info]) => isMonitoring(info)).length };
+  state.metaStatus = metaStatus();
+  state.status = ready.length === 0 && eligible.length ? "warming_up" : "connected";
   delete state.errors["Binance Spot"];
   updateEvents(results);
-  updateTracking(new Map([...tickers].map(([b, tk]) => [b, Number(tk.lastPrice)])));
+  const priceByBase = new Map([...tickers].map(([b, tk]) => [b, Number(tk.lastPrice)]));
+  updateTracking(priceByBase);
+  rotation?.updatePrices(priceByBase);
   state.stats = computeStats();
   state.lastScanMs = Date.now() - t0;
+  state.binancePausedUntil = binancePause();
 }
 
 // ───────────────────────────── demo mode (DEMO=1) ─────────────────────────────
@@ -1095,9 +1184,9 @@ function demoScan() {
     return buildCandidate(base, { name: base, rank: d.rank, mc: 1e9, fdv: 1e9 / d.ratio }, tk, t, d.narrative, d.funding, d.oi, d.f);
   }).sort((a, b) => b.score - a.score);
   state.regime = { btcChange24hPct: round(rnd(-1.5, 2.5), 2), btc1hPct: round(rnd(-0.3, 0.5), 2), ok: true };
-  state.status = "demo"; state.cgStatus = "demo"; state.futuresStatus = "demo";
+  state.status = "demo"; state.metaStatus = { source: "demo", coins: 380, sectors: 18 }; state.futuresStatus = "demo";
   state.hotNarratives = DEMO_NARR.slice(0, 3).map((name) => ({ id: name, name, change24hPct: round(rnd(4, 11), 2) }));
-  state.universe = { coingecko: 500, binance: 380, eligible: results.length, excluded: 14, slow: results.filter((c) => c.slow).length, excludedCategories: ["Stablecoins", "Tokenized Assets"] };
+  state.universe = { binance: 380, eligible: results.length, excluded: 14, slow: results.filter((c) => c.slow).length, rankedBy: "market cap", monitoring: 2 };
   state.warmup = { loaded: results.length, total: results.length, seasonal: results.length };
   state.breadth = { hotShare: 0.12, marketWide: false };
   state.candidates = results;
@@ -1114,7 +1203,7 @@ async function poll() {
     if (DEMO) demoScan();
     else {
       try { await scan(); }
-      catch (e) { state.status = "error"; state.errors["Binance Spot"] = e.message; }
+      catch (e) { state.status = "error"; state.errors["Binance Spot"] = e.message; state.binancePausedUntil = binancePause(); }
     }
     state.lastUpdated = Date.now();
   } finally { polling = false; }
@@ -1129,6 +1218,7 @@ if (!LIBRARY_ONLY) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/api/screener") return jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) });
+    if (url.pathname === "/api/rotation") return jsonResponse(res, 200, { ...rotation.api(), binancePausedUntil: binancePause() });
     if (url.pathname === "/") {
       try {
         const html = await readFile(path.join(here, "public", "screener.html"));
@@ -1149,6 +1239,8 @@ if (!LIBRARY_ONLY) {
     console.log(`Refresh: ${POLL_MS / 1000}s | ignition: 15m vol >= ${IGNITE_RVOL}x (time-of-day adjusted), score >= ${IGNITE_MIN_SCORE}, ` +
       `typical 6h range >= ${(MIN_RANGE_RATIO * TARGET_PCT).toFixed(1)}%, BTC 1h >= ${BTC_1H_MIN}% | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | ` +
       `top ${TOP_N} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
+    console.log(`BTC rotation tab: http://${HOST}:${PORT}/#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"} | data: Binance only, no API key`);
   });
   loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
+  rotation.start();
 }

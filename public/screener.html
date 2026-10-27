@@ -31,12 +31,21 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .toast{background:#0f1722;border:1px solid #33465c;border-left:4px solid var(--green);border-radius:12px;padding:14px 16px;box-shadow:0 18px 50px #000a;cursor:pointer;animation:slide .25s ease-out}.toast.test{border-left-color:var(--amber)}
 .toast h4{margin:0;font-size:13px;display:flex;justify-content:space-between;gap:10px;align-items:center}.toast .tag{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--green)}.toast.test .tag{color:var(--amber)}.toast p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.55}.toast .x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
 .track{display:block;margin-top:4px;font-size:10px}.badge.tier{margin-right:6px}
+/* tabs + rotation view */
+.tabs{display:flex;gap:4px;margin:22px 0 0;border-bottom:1px solid var(--line)}.tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-weight:700;font-size:14px;padding:11px 14px;margin-bottom:-1px;cursor:pointer}.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--green)}.tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.regime-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;padding:22px;margin:16px 0 14px}.regime-hero h2{font-size:clamp(26px,3.4vw,36px);letter-spacing:-.04em;margin:6px 0 8px}.regime-hero p{margin:0;color:var(--muted);line-height:1.6;max-width:560px}.regime-hero .lbl{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.regime-strip{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}.regime-strip span{border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:11px;color:var(--muted)}.regime-strip span.on{color:#06140f;background:var(--green);border-color:var(--green);font-weight:800}.regime-strip span.on.off{background:var(--red);border-color:var(--red)}
+.regime-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start}
+.hold{padding:0 18px 18px;display:grid;gap:12px}.hold .big{font-size:20px;font-weight:800;letter-spacing:-.02em}.hold small{display:block;color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5}
+.chart{padding:4px 18px 6px;overflow-x:auto}.chart svg{width:100%;min-width:620px;height:auto;display:block}.legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 18px 10px;font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.heat td.cell{text-align:center;font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}.heat td.cell small{display:block;font-size:10px;opacity:.75;margin-top:2px}.heat th.now{color:var(--green)}.heat td.lowconf{opacity:.55}
+.yes{color:var(--green);font-weight:800}
 @keyframes slide{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.toast{animation:none}}
-@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
+@media(max-width:900px){.regime-hero{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
 </style></head>
 <body><main class="wrap">
 <header>
- <div><div class="eyebrow">Binance × CoinGecko top 500 · Early setups</div><h1>Early Setup Screener</h1><p class="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
+ <div><div class="eyebrow">Binance spot · no API key · Early setups</div><h1>Early Setup Screener</h1><p class="lede" id="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
  <div class="header-right">
   <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
   <button class="btn" id="soundBtn" title="Play a short tone when a new alert arrives">Sound: off</button>
@@ -45,10 +54,15 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   <a class="btn" id="mainLink" href="#">Market Flow Radar</a>
  </div>
 </header>
-<div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out. Whale flows, unlock dates and Binance Monitoring tags are not checked, so check them yourself before acting. Not financial advice.</div>
+<nav class="tabs" role="tablist" aria-label="Screeners">
+ <button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Early ignition</button>
+ <button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button>
+</nav>
+<div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
+<div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div>
 <div class="error" id="errors"></div>
 <div class="kpis">
- <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="kScanned">—</div><div class="hint" id="kScannedHint">Binance + top 500, liquid only</div></div>
+ <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="kScanned">—</div><div class="hint" id="kScannedHint">Binance USDT pairs, liquid only</div></div>
  <div class="kpi"><div class="label">Early ignitions now</div><div class="value green" id="kIgnite">—</div><div class="hint">Volume igniting, price not yet run</div></div>
  <div class="kpi"><div class="label">Setup-level (not moved)</div><div class="value" id="kAlert">—</div><div class="hint" id="kAlertHint">Score above threshold</div></div>
  <div class="kpi"><div class="label">BTC (market filter)</div><div class="value" id="kBtc">—</div><div class="hint" id="kBtcHint">Alerts pause if BTC drops sharply</div></div>
@@ -68,11 +82,11 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   <select id="sortBy" aria-label="Sort tokens"><option value="score">Sort: score</option><option value="rvol">Sort: relative volume</option><option value="chg">Sort: 24h change</option><option value="vol">Sort: 24h volume</option><option value="rank">Sort: market cap rank</option></select>
   <select id="rowLimit" aria-label="Rows to show"><option value="25">Show 25</option><option value="50" selected>Show 50</option><option value="150">Show all</option></select>
  </div></div>
- <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>MC / FDV</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>Market cap</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
 </section>
 <div class="lower">
  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
- <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of the category's own coins</p></div></div><div class="chips" id="narrChips"></div></section>
+ <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of each Binance sector's coins</p></div></div><div class="chips" id="narrChips"></div></section>
 </div>
 <section class="panel" style="margin-top:14px">
  <div class="section-head"><div><h2>Alert performance</h2><p id="perfRule">How alerts actually turned out.</p></div>
@@ -89,7 +103,43 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Resolved</th><th>Win rate</th><th>Avg (after fees)</th></tr></thead><tbody id="perfBuckets"></tbody></table></div>
  <div class="foot" style="padding:0 18px 16px;margin:12px 0 0">Prices are sampled at each scan (about every 20 seconds), so a fast spike can be missed. A flat alert counts at its price when the window ends, a loss at the price where the stop was seen. Slippage and your own entry delay are not included. For a much bigger sample than live alerts, run <span class="mono">node screener-backtest.js</span>.</div>
 </section>
-<div class="foot">How it works: every ~20 seconds the scanner compares each token's last 15 minutes of volume with that token's own normal for this hour of the day (14-day median), so busy hours do not look like surges. An ignition needs: high 15m volume, 1h volume confirming, volume that held across the last 3 five-minute candles with many trades (not one big print), enough aggressive buying, price only just turning up, above a rising 4-hour average and still near its spike high without long selling wicks, BTC not falling over the last hour, a tight spread, and no market-wide surge. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. These are combined into an ignition score (0-100) and only scores above the threshold alert. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Demo mode data is simulated.</div>
+<div class="foot">How it works: every ~20 seconds the scanner compares each token's last 15 minutes of volume with that token's own normal for this hour of the day (14-day median), so busy hours do not look like surges. An ignition needs: high 15m volume, 1h volume confirming, volume that held across the last 3 five-minute candles with many trades (not one big print), enough aggressive buying, price only just turning up, above a rising 4-hour average and still near its spike high without long selling wicks, BTC not falling over the last hour, a tight spread, and no market-wide surge. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. These are combined into an ignition score (0-100) and only scores above the threshold alert. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Each ignition also shows its narrative's rank from the BTC rotation tab, and the performance panel tracks whether that rank helps. Demo mode data is simulated.</div>
+</div>
+
+<div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
+ <div class="notice"><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC. Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div>
+ <div class="error" id="rotErrors"></div>
+ <section class="panel regime-hero">
+  <div><div class="lbl">BTC regime now <span id="rAsOf"></span></div><h2 id="rRegime">Loading history…</h2><p id="rRegimeDesc">The first load downloads daily candles for every narrative coin and takes a few minutes. It refreshes once a day after the daily close.</p><div class="regime-strip" id="rStrip"></div></div>
+  <div class="regime-stats" id="rBtcStats"></div>
+ </section>
+ <div class="lower" style="margin-top:0">
+  <section class="panel"><div class="section-head"><div><h2>What the backtested rule holds now</h2><p>Re-decided every <span id="rHoldDays">7</span> days. Cash when BTC is in a downtrend.</p></div></div><div class="hold" id="rHold"></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Best narrative in each BTC regime</h2><p>Average return vs BTC over the following week, all history</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>BTC regime</th><th>Narrative</th><th>Avg vs BTC</th><th>Hit</th><th>Weeks</th><th>Confidence</th></tr></thead><tbody id="rBest"></tbody></table></div></section>
+ </div>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Narrative ranking</h2><p>Score = 50% how it did vs BTC in past weeks with this same BTC regime + 30% its 14-day strength vs BTC now + 20% share of its coins above their 20-day average. Only narratives in an uptrend can be held.</p></div><span class="chip" id="rRankCount">—</span></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Narrative</th><th>Score</th><th>In this regime (history)</th><th>14d vs BTC</th><th>30d</th><th>Coins above 20d avg</th><th>Trend</th><th>Held</th></tr></thead><tbody id="rRank"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Token picks in the top 3 narratives</h2><p>Daily price action: trend, 14-day strength vs BTC, distance from the 30-day high, not stretched above the 20-day average, rising volume. "Bought" = what the token rule would hold now.</p></div><span class="chip" id="rPickCount">—</span></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Narrative</th><th>Score</th><th>14d vs BTC</th><th>vs 30d high</th><th>vs 20d avg</th><th>Volume 7d vs 30d</th><th>Trend</th><th>Rule</th></tr></thead><tbody id="rPicks"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Backtest</h2><p id="rBtNote">Each week the rules decide using only what was known that day.</p></div><span class="chip" id="rBtChip">—</span></div>
+  <div class="chart" id="rChart"></div><div class="legend" id="rLegend"></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Strategy</th><th>Total</th><th>Per year</th><th>Worst drop</th><th>Sharpe</th><th>Weeks beating BTC</th><th>Time in cash</th><th>Switches</th></tr></thead><tbody id="rStrats"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Every narrative in every BTC regime</h2><p>Average return vs BTC over the following week · hit rate below. Faded cells have low confidence. The highlighted column is the regime BTC is in now.</p></div></div>
+  <div class="table-wrap"><table class="table heat"><thead id="rHeatHead"></thead><tbody id="rHeat"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Recent decisions</h2><p>What the ranking held each week and how it did vs BTC</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Week of</th><th>BTC regime</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRecent"></tbody></table></div>
+ </section>
+ <div class="foot">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
+</div>
 </main>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -110,7 +160,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  const $=s=>document.querySelector(s);
  let data={}, seen=null, soundOn=false, audioCtx=null, baseTitle=document.title;
  const IG_LABELS={volume:"15m volume",persistence:"Persistence",buyers:"Buyers",structure:"Price structure",strength:"vs BTC",context:"Daily context",quality:"Spread / room"};
- const PART_LABELS={volume:"Volume (24h)",technical:"Chart setup",narrative:"Narrative",tokenomics:"MC / FDV",futures:"Futures",liquidity:"Liquidity"};
+ const PART_LABELS={volume:"Volume (24h)",technical:"Chart setup",narrative:"Narrative",tokenomics:"Supply (n/a)",futures:"Futures",liquidity:"Liquidity"};
  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  const money=v=>v==null||!Number.isFinite(Number(v))?"—":Number(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Number(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Number(v)>=1e3?"$"+(v/1e3).toFixed(1)+"K":"$"+Number(v).toFixed(2);
  const price=v=>v==null?"—":Number(v)>=1000?"$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:2}):Number(v)>=1?"$"+Number(v).toFixed(3):"$"+Number(v).toPrecision(5);
@@ -125,6 +175,10 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  const moveLine=c=>`${pct1(c.ret15m)} 15m · ${pct1(c.ret1h)} 1h · ${pct1(c.change24h)} 24h`;
  const structure=c=>[c.breakout===true?"broke 12h high":c.breakout===false?"inside 12h range":"",c.trendUp?"4h trend rising":"",c.range6h!=null?"moves ~"+c.range6h.toFixed(1)+"% per 6h":""].filter(Boolean).join(" · ");
  const STATE={ignited:["Early ignition","strong"],heating:["Heating up","watch"],ran:["Already running","risk"]};
+ const flags=c=>(c.monitoring?' <span class="badge risk" title="On Binance\'s Monitoring list: delisting risk">Monitoring</span>':"")+(c.seed?' <span class="badge watch" title="Binance Seed tag: early-stage, very volatile">Seed</span>':"");
+ const rotTag=c=>{const r=c.rotation,ranked=r&&r.narratives?r.narratives.filter(x=>x.rank!=null):[];
+  if(ranked.length)return ranked.slice(0,2).map(x=>`<span class="${x.rank<=3?"green":""}">${esc(x.name)} #${x.rank}</span>`).join(", ")+'<span class="sub">rotation rank</span>';
+  return c.narrative?esc(c.narrative.names.slice(0,2).join(", ")):'<span class="muted">—</span>';};
 
  // ---------- ignition watch ----------
  function drawIgnite(){
@@ -136,13 +190,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    const [txt,k]=STATE[c.ignition];
    const sub=c.moved?`<span class="sub red">${esc((c.movedWhy||[]).slice(0,2).join(" · "))}</span>`:c.ignition==="heating"&&(c.missing||[]).length?`<span class="sub amber">needs: ${esc(c.missing.slice(0,3).join(", "))}</span>`:c.ignition==="ignited"?`<span class="sub green">${esc(structure(c))}</span>`:"";
    const held=c.persist==null?"":` · held ${c.persist}/${c.persistOf}`;
-   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button><span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
+   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
    <td><span class="badge ${k}">${txt}</span>${sub}</td>
    <td class="mono ${c.rvol15>=4?"green":""}">${c.rvol15==null?"—":c.rvol15.toFixed(1)+"×"}<span class="sub">1h: ${c.rvol1h==null?"—":c.rvol1h.toFixed(1)+"×"}${held}${c.tradesRatio!=null?" · trades "+c.tradesRatio.toFixed(1)+"×":""}</span></td>
    <td class="mono"><span class="${col(c.ret15m)}">${pct1(c.ret15m)}</span> 15m<span class="sub">${pct1(c.ret1h)} 1h · ${pct1(c.change24h)} 24h</span></td>
    <td class="mono ${c.buyRatio15m>=58?"green":c.buyRatio15m<50?"red":""}">${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)+"% buy"}${c.spreadBps!=null?`<span class="sub">spread ${c.spreadBps.toFixed(1)} bps</span>`:""}</td>
    <td class="mono">${c.igScore==null?"—":`<span class="score">${c.igScore}<span class="scorebar"><i style="width:${c.igScore}%"></i></span></span>`}<span class="sub">daily ${c.score} · ${esc(c.label)}</span></td>
-   <td>${c.narrative?esc(c.narrative.names.slice(0,2).join(", ")):'<span class="muted">—</span>'}</td></tr>`;
+   <td>${rotTag(c)}</td></tr>`;
   }).join(""):'<tr><td colspan="7" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:"Nothing is igniting right now. Quiet is normal.")+'</td></tr>';
  }
 
@@ -179,12 +233,12 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   $("#tbody").innerHTML=rows.length?rows.map(c=>{
    const klass=c.moved?"risk":c.score>=cfg().minScore?"strong":c.score>=55?"watch":"";
    const fut=c.fundingPct==null?'<span class="muted">no futures</span>':`<span class="mono ${c.fundingPct>0.05?"red":""}">${c.fundingPct.toFixed(3)}%</span><span class="sub">OI 24h ${c.oiChange24hPct==null?"—":pct(c.oiChange24hPct)}</span>`;
-   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}" title="See score breakdown">${esc(c.base)} ↗</button><span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
+   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}" title="See score breakdown">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
    <td><span class="score mono">${c.score}<span class="scorebar"><i style="width:${Math.max(0,Math.min(100,c.score))}%"></i></span></span></td>
    <td class="mono ${c.rvol>=2?"green":""}">${c.rvol==null?"—":c.rvol.toFixed(2)+"×"}<span class="sub">24h vs 20-day avg</span></td>
    <td>${esc(distText(c))}<span class="sub">${c.compressed?"volatility compressed":"normal volatility"}${c.aboveSma?" · above 20d avg":""}</span></td>
    <td class="mono ${c.rsi>72?"red":""}">${c.rsi==null?"—":c.rsi.toFixed(0)}</td>
-   <td class="mono ${c.mcFdv!=null&&c.mcFdv<0.3?"red":""}">${c.mcFdv==null?"—":Math.round(c.mcFdv*100)+"%"}</td>
+   <td class="mono">${money(c.marketCap)}</td>
    <td>${c.narrative?esc(c.narrative.names.slice(0,2).join(", "))+`<span class="sub green">coins ${pct(c.narrative.change24hPct)} 24h</span>`:'<span class="muted">—</span>'}</td>
    <td>${fut}</td><td class="mono">${money(c.quoteVolume)}<span class="sub ${c.change24h>=0?"green":"red"}">${pct(c.change24h)}</span></td>
    <td><span class="badge ${klass}">${esc(c.label)}</span><span class="sub">${esc(c.moved?(c.movedWhy||[]).join(" · "):c.slow?"moves too little for the target":(c.reasons||[]).slice(0,2).join(" · "))}</span></td></tr>`;
@@ -206,7 +260,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  function draw(){
   const cs=data.candidates||[],min=cfg().minScore,reg=data.regime||{},u=data.universe||{};
   $("#kScanned").textContent=data.universe?u.eligible:"—";
-  $("#kScannedHint").textContent=data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: ${data.warmup.loaded}/${data.warmup.total} daily charts loaded`:data.universe?`of ${u.coingecko||"n/a"} CoinGecko · ${u.binance} Binance USDT pairs${data.lastScanMs!=null?" · scan "+(data.lastScanMs/1000).toFixed(1)+"s":""}`:"";
+  $("#kScannedHint").textContent=data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: ${data.warmup.loaded}/${data.warmup.total} daily charts loaded`:data.universe?`of ${u.binance} Binance USDT pairs · ranked by ${u.rankedBy||"market cap"}${data.lastScanMs!=null?" · scan "+(data.lastScanMs/1000).toFixed(1)+"s":""}`:"";
   $("#kIgnite").textContent=cs.filter(c=>c.ignition==="ignited").length;
   $("#kAlert").textContent=cs.filter(c=>c.score>=min&&!c.moved).length;
   $("#kAlertHint").textContent=cfg().setupAlerts?"Score "+min+"+ · cooldown "+Math.round(cfg().cooldownHours*10)/10+"h per token":"Score "+min+"+ · watchlist only, alerts off";
@@ -222,11 +276,15 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   const cls=v=>v==="connected"?"green":v==="demo"||v==="stale"?"amber":"red";
   const minRange=cfg().minRange6hPct;
   $("#sources").innerHTML=`<div class="source-row"><span>Binance Spot (prices, volume, candles)</span><b class="status-pill ${cls(st==="binance_only"||st==="warming_up"?"connected":st)}">${esc(st||"starting")}</b></div>
-   <div class="source-row"><span>CoinGecko (rank, FDV, narratives)</span><b class="status-pill ${cls(data.cgStatus)}">${esc(data.cgStatus||"not checked")}</b></div>
+   ${(()=>{const m=data.metaStatus||{},src=m.source||"none",ok=src==="live"||src==="demo",d=m.at?new Date(m.at).toLocaleDateString():"";
+    const txt=src==="live"?`connected · ${m.coins} coins, ${m.sectors} sectors`:src==="demo"?"demo":src.startsWith("cached")?`saved copy from ${d}`:src==="built-in"?"built-in narrative lists":"not loaded yet";
+    return `<div class="source-row"><span>Binance asset info (market caps, sector tags)</span><b class="status-pill ${ok?"green":"amber"}">${esc(txt)}</b></div>`;})()}
    <div class="source-row"><span>Binance Futures (funding, OI)</span><b class="status-pill ${cls(data.futuresStatus)}">${esc(data.futuresStatus||"not checked")}</b></div>
    <div class="source-row"><span>Time-of-day baselines</span><b class="status-pill ${data.warmup&&data.warmup.seasonal>=0.8*data.warmup.total?"green":"amber"}">${data.warmup?data.warmup.seasonal+"/"+data.warmup.total+" tokens":"—"}</b></div>
-   <div class="source-row"><span title="${esc((u.excludedCategories||[]).join(", "))}">Left out: stablecoins, tokenized stocks/gold, wrapped</span><b class="status-pill">${u.excluded==null?"—":u.excluded+" tokens"}</b></div>
+   <div class="source-row"><span>Left out: stablecoins, tokenized stocks/gold, wrapped</span><b class="status-pill">${u.excluded==null?"—":u.excluded+" tokens"}</b></div>
    <div class="source-row"><span>Too slow for +${cfg().targetPct??4}% (typical 6h range under ${minRange==null?"—":minRange.toFixed(1)+"%"})</span><b class="status-pill">${u.slow==null?"—":u.slow+" tokens"}</b></div>
+   <div class="source-row"><span>Binance Monitoring list (never alerted)</span><b class="status-pill">${u.monitoring==null?"—":u.monitoring+" tokens"}</b></div>
+   ${data.binancePausedUntil?`<div class="source-row"><span>Binance rate limit</span><b class="status-pill red">Paused · resumes ${time(data.binancePausedUntil)}</b></div>`:""}
    <div class="source-row"><span>Setup alerts</span><b class="status-pill ${cfg().setupAlerts?"green":"amber"}">${cfg().setupAlerts?"On":"Off · watchlist only"}</b></div>
    <div class="source-row"><span>Telegram alerts</span><b class="status-pill">${data.telegramConfigured?"Configured":"Optional · env vars"}</b></div>
    <div class="source-row"><span>Last successful scan</span><b class="status-pill mono">${time(data.lastUpdated)}</b></div>`;
@@ -243,13 +301,14 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   if(!c)return;
   $("#mEyebrow").textContent=eyebrow||"Setup detail";
   $("#mTitle").textContent=`${c.base} / USDT · daily score ${c.score}/100`;
-  $("#mSub").textContent=`${c.name||c.base} · ${c.rank?"market cap rank #"+c.rank:"rank n/a"} · ${c.label}${c.moved&&c.movedWhy?" ("+c.movedWhy.join(", ")+")":""}`;
+  const rot=c.rotation&&c.rotation.regimeLabel?` · ${c.rotation.regimeLabel}${c.rotation.narratives.filter(x=>x.rank!=null).slice(0,2).map(x=>`, ${x.name} #${x.rank}`).join("")}`:"";
+  $("#mSub").textContent=`${c.name||c.base} · ${c.rank?"market cap rank #"+c.rank:"rank n/a"} · ${c.label}${c.moved&&c.movedWhy?" ("+c.movedWhy.join(", ")+")":""}${rot}`;
   const stat=(l,v,k="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong></div>`;
   $("#mStats").innerHTML=stat("Price",price(c.price))+stat("Ignition score",c.igScore==null?"—":c.igScore+"/100",c.igScore>=65?"green":"")+stat("15m volume",c.rvol15==null?"—":c.rvol15.toFixed(1)+"× normal",c.rvol15>=4?"green":"")+stat("Move 15m / 1h",pct1(c.ret15m)+" / "+pct1(c.ret1h))
    +stat("Buyers (15m)",c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)+"%",c.buyRatio15m>=58?"green":"")+stat("Volume held",c.persist==null?"—":c.persist+"/"+c.persistOf+" candles",c.persist>=2?"green":"")+stat("Trades vs normal",c.tradesRatio==null?"—":c.tradesRatio.toFixed(1)+"×")+stat("Spread",c.spreadBps==null?"—":c.spreadBps.toFixed(1)+" bps")
    +stat("4h trend",yesNo(c.trendUp,"Rising","Not rising"),c.trendUp?"green":c.trendUp===false?"red":"")+stat("12h high",c.breakout==null?"—":c.breakout?"Broken":pct1(c.distTo12hHigh)+" away",c.breakout?"green":"")+stat("Off spike high",c.fadePct==null?"—":c.fadePct.toFixed(1)+"%",c.fadePct>1?"red":"")+stat("Typical 6h range",c.range6h==null?"—":c.range6h.toFixed(1)+"%",c.slow?"red":"")
    +stat("24h change",pct(c.change24h),col(c.change24h))+stat("24h volume",c.rvol==null?"—":c.rvol.toFixed(2)+"× avg",c.rvol>=2?"green":"")+stat("RSI (14d)",c.rsi==null?"—":c.rsi.toFixed(0))+stat("vs 20d high",c.distToHigh==null?"—":pct(c.distToHigh*100))
-   +stat("MC / FDV",c.mcFdv==null?"—":Math.round(c.mcFdv*100)+"%")+stat("Funding / 8h",c.fundingPct==null?"none":c.fundingPct.toFixed(3)+"%")+stat("OI 24h",c.oiChange24hPct==null?"—":pct(c.oiChange24hPct))+stat("vs BTC (15m)",c.rs15==null?"—":pct1(c.rs15),col(c.rs15));
+   +stat("Market cap",money(c.marketCap))+stat("Funding / 8h",c.fundingPct==null?"none":c.fundingPct.toFixed(3)+"%")+stat("OI 24h",c.oiChange24hPct==null?"—":pct(c.oiChange24hPct))+stat("vs BTC (15m)",c.rs15==null?"—":pct1(c.rs15),col(c.rs15));
   $("#mIgWrap").style.display=c.igParts?"block":"none";
   $("#mIgParts").innerHTML=Object.entries(c.igParts||{}).map(([k,p])=>`<div class="part"><span>${esc(IG_LABELS[k]||k)}</span><span class="bar"><i style="width:${Math.min(100,Math.abs(p.pts)/p.max*100)}%"></i></span><b class="mono">${p.pts}/${p.max}</b></div>`).join("");
   $("#mParts").innerHTML=Object.entries(c.parts||{}).map(([k,p])=>{const w=Math.min(100,Math.abs(p.pts)/p.max*100);return `<div class="part"><span>${esc(PART_LABELS[k]||k)}</span><span class="bar"><i class="${p.pts<0?"neg":""}" style="width:${w}%"></i></span><b class="mono ${p.pts<0?"red":""}">${p.pts}/${p.max}</b></div>`;}).join("");
@@ -308,6 +367,104 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  $("#notifyBtn").onclick=async()=>{if("Notification" in window&&Notification.permission==="default"){try{await Notification.requestPermission();}catch{}}syncNotify();};
  syncNotify();
 
+ // ---------- tabs ----------
+ const LEDES={ignition:$("#lede").innerHTML,rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ let tab="ignition",rot=null,rotTimer=null;
+ function setTab(t){
+  tab=t;
+  for(const [k,b] of [["ignition","#tabIgnition"],["rotation","#tabRotation"]]){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
+  $("#lede").innerHTML=LEDES[t];
+  const want=t==="rotation"?"#rotation":"";
+  if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
+  clearInterval(rotTimer);
+  if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
+ }
+ $("#tabIgnition").onclick=()=>setTab("ignition");$("#tabRotation").onclick=()=>setTab("rotation");
+ document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;setTab(tab==="ignition"?"rotation":"ignition");$(tab==="ignition"?"#tabIgnition":"#tabRotation").focus();});
+ window.addEventListener("hashchange",()=>setTab(location.hash==="#rotation"?"rotation":"ignition"));
+
+ // ---------- BTC rotation ----------
+ async function loadRot(){
+  try{const r=await fetch("/api/rotation",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);rot=await r.json();drawRot();}
+  catch(e){$("#rotErrors").style.display="block";$("#rotErrors").textContent="Cannot load /api/rotation: "+e.message;}
+ }
+ const COLORS={combined:"var(--green)",tokens:"var(--blue)",btc:"var(--ink)",equal:"var(--amber)"};
+ const SHORT={combined:"Rotation ranking",tokens:"Token picks",btc:"Hold BTC",equal:"All narratives"};
+ const conf=c=>c==="high"?'<span class="green">high</span>':c==="medium"?'<span class="amber">medium</span>':'<span class="muted">low</span>';
+ const holdName=x=>x==="CASH"?"Cash":x;
+ const rName=(RG,k)=>{const t=((RG||{})[k]||{label:k}).label.replace("BTC ","");return t[0].toUpperCase()+t.slice(1);};
+ function drawRot(){
+  const r=rot||{},hm=t=>new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  let msg="";
+  if(r.error)msg=`History refresh failed: ${r.error}.${r.nextRetryAt?` Retrying automatically at ${hm(r.nextRetryAt)}.`:""}${r.ranking?" Showing the last good data.":""}`;
+  else if(r.warning)msg=`${r.warning}. Retrying ${r.nextRetryAt?"at "+hm(r.nextRetryAt):"later"}; everything that did load is used below.`;
+  if(r.binancePausedUntil)msg+=` Binance asked to slow down, so Binance calls resume at ${hm(r.binancePausedUntil)}.`;
+  const box=$("#rotErrors");box.className=r.error?"error":"notice";box.style.display=msg?"block":"none";box.style.margin=msg?"0 0 14px":"";box.textContent=msg.trim();
+  if(!r.ranking){
+   const p=r.progress,queue="";
+   $("#rRegime").textContent=r.status==="error"?"Could not load history yet":"Loading history…";
+   $("#rRegimeDesc").textContent=(p?`${p.step}: ${p.done} of ${p.total}.`:"The first load downloads daily candles for every narrative coin from Binance and takes a few minutes.")+queue+(r.status==="error"?"":" Later loads use the cache.");
+   return;
+  }
+  const RG=r.regimes||{},now=r.regimeNow,b=r.btc||{};
+  $("#rAsOf").textContent=`· daily close ${r.asOf}`;
+  $("#rRegime").textContent=now?now.label:"Not enough history";
+  $("#rRegimeDesc").textContent=now?now.desc+(now.riskOff?" The rules hold cash in this regime.":""):"";
+  $("#rStrip").innerHTML=Object.keys(RG).map(k=>`<span class="${now&&k===now.key?"on"+(RG[k].riskOff?" off":""):""}" title="${r.heatmap.regimeWeeks[k]} weeks of history">${esc(rName(RG,k))}</span>`).join("");
+  const stat=(l,v,k="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong></div>`;
+  $("#rBtcStats").innerHTML=stat("BTC now",price(r.btcNow||b.close))+stat("7 days",pct1(b.ret7),col(b.ret7))+stat("30 days",pct1(b.ret30),col(b.ret30))
+   +stat("vs 20-day avg",pct1(b.vsSma20),col(b.vsSma20))+stat("vs 50-day avg",pct1(b.vsSma50),col(b.vsSma50))+stat("Volatility 14d / 60d",b.vol14==null?"—":b.vol14.toFixed(1)+"% / "+b.vol60.toFixed(1)+"%");
+  $("#rHoldDays").textContent=r.holdDays;
+  const h=r.holdingsNow||{};
+  $("#rHold").innerHTML=`<div><div class="big">${esc((h.combined||[]).join(" + "))}</div><small>Narrative rule: the top 2 ranked narratives that are in an uptrend, equal weight.</small></div><div><div class="big">${esc((h.tokens||[]).join(", "))}</div><small>Token rule: up to 5 coins scoring 65+ inside those narratives, equal weight.</small></div>`;
+  $("#rBest").innerHTML=Object.keys(RG).map(k=>{const x=r.heatmap.bestByRegime[k];return `<tr><td>${esc(rName(RG,k))}${now&&k===now.key?' <span class="badge strong">now</span>':""}</td><td><b>${x?esc(x.name):'<span class="muted">not enough data</span>'}</b></td><td class="mono ${x?col(x.avgPct):""}">${x?pct(x.avgPct):"—"}</td><td class="mono">${x?x.hitPct+"%":"—"}</td><td class="mono">${x?x.weeks:"—"}</td><td>${x?conf(x.confidence):"—"}</td></tr>`;}).join("");
+  $("#rRankCount").textContent=r.ranking.length+" narratives";
+  $("#rRank").innerHTML=r.ranking.map(x=>{const s=x.regimeStat;return `<tr><td class="mono">${x.rank}</td><td><b>${esc(x.name)}</b><span class="sub">${x.members} coins · ${esc(x.category||"")}</span></td>
+   <td class="mono"><span class="score">${x.score}<span class="scorebar"><i style="width:${x.score}%"></i></span></span></td>
+   <td class="mono ${s?col(s.avgPct):""}">${s?pct(s.avgPct)+" / week":"—"}<span class="sub">${s?`beat BTC ${s.hitPct}% · ${s.weeks} weeks · ${s.confidence} confidence`:"no history in this regime"}</span></td>
+   <td class="mono ${col(x.mom14)}">${pct1(x.mom14)}</td><td class="mono ${col(x.ret30)}">${pct1(x.ret30)}</td><td class="mono">${x.breadthPct}%</td>
+   <td class="${x.trend?"green":"red"}">${x.trend?"Up":"Down"}</td><td>${x.held?'<span class="badge strong">Held</span>':""}</td></tr>`;}).join("");
+  $("#rPickCount").textContent=r.picks.length+" coins";
+  $("#rPicks").innerHTML=r.picks.length?r.picks.map(t=>`<tr><td><b>${esc(t.base)}</b></td><td>${esc(t.narratives.join(", "))}</td>
+   <td class="mono"><span class="score">${t.score}<span class="scorebar"><i style="width:${t.score}%"></i></span></span></td>
+   <td class="mono ${col(t.rs14)}">${pct1(t.rs14)}</td><td class="mono">${pct1(t.distHigh)}</td><td class="mono ${t.ext>15?"red":""}">${pct1(t.ext)}</td>
+   <td class="mono ${t.volTrend>=1.15?"green":""}">${t.volTrend==null?"—":t.volTrend.toFixed(2)+"×"}</td>
+   <td>${t.aboveSma20?"above 20d":"below 20d"} · ${t.aboveSma50?"above 50d":"below 50d"}</td><td>${t.inStrategy?'<span class="badge strong">Bought</span>':""}</td></tr>`).join("")
+   :'<tr><td colspan="9" class="empty">No coins with enough history in the top narratives.</td></tr>';
+  drawBacktest(r);drawHeat(r);
+ }
+ function drawBacktest(r){
+  const bt=r.backtest;
+  if(!bt){$("#rBtChip").textContent="not enough history";$("#rChart").innerHTML='<div class="empty">The backtest needs about 300 days of narrative history.</div>';$("#rStrats").innerHTML="";$("#rLegend").innerHTML="";$("#rRecent").innerHTML="";return;}
+  $("#rBtChip").textContent=`${bt.from} to ${bt.to} · ${bt.weeks} decisions`;
+  $("#rBtNote").textContent=`Every ${r.holdDays} days each rule decides using only what was known that day, pays ${r.feePct}% per round trip and holds until the next decision. Log scale.`;
+  const show=["combined","tokens","equal","btc"],S=Object.fromEntries(bt.strategies.map(s=>[s.key,s])),n=bt.weeks+1;
+  const W=900,H=270,P={l:52,r:12,t:12,b:28};
+  const all=show.flatMap(k=>S[k]?S[k].curve:[]).filter(v=>v>0);
+  let lo=Math.log(Math.min(...all)),hi=Math.log(Math.max(...all));if(hi-lo<0.1){hi+=0.05;lo-=0.05;}
+  const x=i=>P.l+(i/(n-1))*(W-P.l-P.r),y=v=>P.t+(1-(Math.log(v)-lo)/(hi-lo))*(H-P.t-P.b);
+  const ticks=[0.25,0.5,0.75,1,1.5,2,3,5,10,20,50,100].filter(v=>Math.log(v)>=lo&&Math.log(v)<=hi);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Growth of each strategy since ${bt.from}">`;
+  for(const v of ticks)svg+=`<line x1="${P.l}" x2="${W-P.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--line)"${v===1?"":' stroke-dasharray="3 4"'}/><text x="${P.l-8}" y="${(y(v)+4).toFixed(1)}" fill="var(--muted)" font-size="11" text-anchor="end">${v===1?"start":(v>1?"+":"")+Math.round((v-1)*100)+"%"}</text>`;
+  const mid=Math.floor((n-1)/2);
+  [[0,bt.dates[0],"start"],[mid,bt.dates[mid],"middle"],[n-1,bt.to,"end"]].forEach(([i,d,a])=>svg+=`<text x="${x(i).toFixed(1)}" y="${H-8}" fill="var(--muted)" font-size="11" text-anchor="${a}">${d}</text>`);
+  for(const k of [...show].reverse()){const s=S[k];if(!s)continue;svg+=`<polyline fill="none" stroke="${COLORS[k]}" stroke-width="${k==="combined"?2.6:1.5}" stroke-linejoin="round" points="${s.curve.map((v,i)=>x(i).toFixed(1)+","+y(v).toFixed(1)).join(" ")}"/>`;}
+  $("#rChart").innerHTML=svg+"</svg>";
+  $("#rLegend").innerHTML=show.filter(k=>S[k]).map(k=>`<span><i style="background:${COLORS[k]}"></i>${SHORT[k]} <b class="mono ${col(S[k].totalPct)}">${pct1(S[k].totalPct)}</b></span>`).join("");
+  $("#rStrats").innerHTML=bt.strategies.map(s=>`<tr><td><b>${esc(s.label)}</b></td><td class="mono ${col(s.totalPct)}">${pct1(s.totalPct)}</td><td class="mono ${col(s.cagrPct)}">${pct1(s.cagrPct)}</td><td class="mono red">${pct1(s.maxDdPct)}</td><td class="mono">${s.sharpe??"—"}</td><td class="mono">${s.key==="btc"?"—":s.beatBtcPct+"%"}</td><td class="mono">${s.cashPct}%</td><td class="mono">${s.switches}</td></tr>`).join("");
+  $("#rRecent").innerHTML=(bt.recent||[]).map(w=>`<tr><td class="mono">${w.date}</td><td>${esc(((r.regimes||{})[w.regime]||{}).label||w.regime||"—")}</td><td>${esc(w.hold.map(holdName).join(" + ")||"—")}</td><td class="mono ${col(w.combinedPct)}">${pct1(w.combinedPct)}</td><td>${esc(w.tokens.map(holdName).join(", "))}</td><td class="mono ${col(w.tokensPct)}">${pct1(w.tokensPct)}</td><td class="mono ${col(w.btcPct)}">${pct1(w.btcPct)}</td></tr>`).join("");
+ }
+ function drawHeat(r){
+  const RG=r.regimes,keys=r.heatmap.regimes,now=r.regimeNow&&r.regimeNow.key;
+  const max=Math.max(1,...r.heatmap.rows.flatMap(row=>keys.map(k=>Math.abs((row.cells[k]||{}).avgPct||0))));
+  $("#rHeatHead").innerHTML=`<tr><th>Narrative</th>${keys.map(k=>`<th class="${k===now?"now":""}">${esc(rName(RG,k))}<span class="sub">${r.heatmap.regimeWeeks[k]} weeks</span></th>`).join("")}</tr>`;
+  $("#rHeat").innerHTML=r.heatmap.rows.map(row=>`<tr><td><b>${esc(row.name)}</b></td>${keys.map(k=>{
+   const c=row.cells[k];if(!c)return'<td class="cell muted">—</td>';
+   const a=(Math.min(1,Math.abs(c.avgPct)/max)*0.55+0.05).toFixed(2),bg=c.avgPct>=0?`rgba(54,211,153,${a})`:`rgba(251,113,133,${a})`;
+   return `<td class="cell ${c.confidence==="low"?"lowconf":""}" style="background:${bg}${k===now?";box-shadow:inset 0 0 0 1px var(--green)":""}" title="${esc(row.name)} when ${esc(RG[k].label)}: ${pct(c.avgPct)} vs BTC per week on average, beat BTC ${c.hitPct}% of weeks, ${c.weeks} weeks, ${c.confidence} confidence">${pct1(c.avgPct)}<small>${c.hitPct}% · ${c.weeks}w</small></td>`;
+  }).join("")}</tr>`).join("");
+ }
+
  // ---------- polling (3s keeps popup latency low) ----------
  async function load(){
   try{
@@ -319,6 +476,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  ["minScore","narrOnly","hideMoved","sortBy","rowLimit"].forEach(id=>$("#"+id).onchange=drawTable);
  const scopeSaved=store.get("screenerPerfScope");if(scopeSaved==="all"||scopeSaved==="current")$("#perfScope").value=scopeSaved;
  $("#perfScope").onchange=()=>{store.set("screenerPerfScope",$("#perfScope").value);drawPerf();};
+ if(location.hash==="#rotation")setTab("rotation");
  load();setInterval(load,3000);
 })();
 </script></body></html>

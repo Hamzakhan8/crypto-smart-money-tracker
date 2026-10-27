@@ -4,9 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test",
+    "screener": "node screener.js",
+    "backtest": "node screener-backtest.js"
   },
   "dependencies": {
     "@google/genai": "^2.30.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

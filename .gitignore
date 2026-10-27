@@ -6,3 +6,12 @@ whales_state.demo.json
 backtest_cache/
 backtest_report.json
 screener_state.demo.json
+# Installed packages and files the app rewrites while it runs. Already-tracked copies stay tracked until removed
+# with `git rm --cached` (see README, "Keeping git clean").
+node_modules/
+rotation_cache/
+rotation_cache_demo/
+binance_meta.json
+binance_meta.demo.json
+coingecko_cache.json
+screener_state.json

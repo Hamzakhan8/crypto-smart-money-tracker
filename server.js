@@ -8,8 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
-import { startScreener, handleScreenerRequest, serveScreenerPage } from "./screener.js";
-import { handleAiRequest } from "./ai-trade.js";
+import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent } from "./screener.js";
+import { handleAiRequest, reviewAlert } from "./ai-trade.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -25,6 +25,21 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Gemini using environment variable securely
 const ai = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;
+
+// Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP), saved with the alert, so the screener's
+// performance panel can show whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off;
+// AI_REVIEWS_PER_HOUR caps the cost (default 12).
+const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
+const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
+let aiReviewTimes = [];
+if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
+  const now = Date.now();
+  aiReviewTimes = aiReviewTimes.filter((t) => now - t < 3_600_000);
+  if (aiReviewTimes.length >= AI_REVIEWS_PER_HOUR) return;
+  aiReviewTimes.push(now);
+  try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol) }); }
+  catch (e) { annotateEvent(ev.id, { ai: { error: e.message, at: Date.now() } }); }
+});
 
 const state = {
   startedAt: Date.now(),
@@ -81,7 +96,8 @@ function candleMetrics(klines) {
     openTime: n(k[0]), open: n(k[1]), high: n(k[2]), low: n(k[3]),
     close: n(k[4]), baseVolume: n(k[5]) || 0, quoteVolume: n(k[7]) || 0,
     trades: n(k[8]) || 0, takerBuyQuote: n(k[10]) || 0,
-  })).filter(c => c.close !== null && c.quoteVolume !== null);
+  })).filter(c => c.close !== null && c.quoteVolume !== null)
+    .filter(c => c.openTime + 60_000 <= Date.now()); // finished minutes only: a half-built candle made scores depend on timing
   if (!candles.length) throw new Error("No usable candles");
   const last = candles[candles.length - 1];
   const closed = candles.slice(0, -1);
@@ -166,7 +182,7 @@ async function fetchMarket() {
   if (!Array.isArray(tickerData)) throw new Error("Unexpected 24h ticker response");
   const tickers = tickerData.filter(isUsdtSpot).sort((a, b) => Number(b.quoteVolume) - Number(a.quoteVolume)).slice(0, MAX_SYMBOLS);
   const rows = await mapLimit(tickers, 5, async (t) => {
-    const klines = await fetchJson(`https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(t.symbol)}&interval=1m&limit=21`);
+    const klines = await fetchJson(`https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(t.symbol)}&interval=1m&limit=22`);
     const m = candleMetrics(klines);
     const signal = scoreCoin(t, m);
     return {
@@ -286,7 +302,7 @@ async function poll() {
   } finally { polling = false; }
 }
 const jsonResponse = (res, code, data) => {
-  res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "same-origin" });
+  res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(data));
 };
 // One server for everything: Market Flow Radar at /, the Early Setup Screener (with its BTC rotation and whale tracker
@@ -316,6 +332,10 @@ const server = http.createServer(async (req, res) => {
 
   // NEW RECURSIVE GEMINI API ENDPOINT
   if (url.pathname === "/api/analyze" && req.method === "POST") {
+    // Paid Gemini call: only from this site (JSON content type and same-host Origin), so other web pages cannot trigger it.
+    const sameSite = String(req.headers["content-type"] || "").includes("application/json") &&
+      (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
+    if (!sameSite) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site." });
     if (!ai) return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
     try {
       const body = await readJsonBody(req);
@@ -369,7 +389,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  Early Setup Screener   ${base}/screener`);
   console.log(`  BTC rotation           ${base}/screener#rotation`);
   console.log(`  Whale tracker          ${base}/screener#whales`);
-  console.log(`  AI trade desk          ${base}/ai${ai ? "" : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
+  console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");

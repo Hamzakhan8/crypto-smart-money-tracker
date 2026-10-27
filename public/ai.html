@@ -87,9 +87,9 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   if(!modelsFilled&&c.models){modelsFilled=true;for(const m of [...new Set([c.models.analyst,c.models.reviewer])]){const o=document.createElement("option");o.value=m;o.textContent=m+(m===c.models.analyst?" (default)":"");$("#model").appendChild(o);}}
   $("#liveChip").innerHTML=`<span class="dot ${c.screenerStatus==="error"?"bad":""}"></span>${c.demo?"Screener: DEMO data":"Screener: "+esc(c.screenerStatus||"starting")}`;
   const m=c.market||{},br=(c.baseRates||{}),rep=br.replay||{},live=br.live||{};
-  const liveTxt=(b,n)=>b&&b.resolved?`${n} <b>${num(b.winRatePct,0)}%</b> of ${b.resolved}`:`${n} no resolved alerts yet`;
+  const liveTxt=(b,n)=>b&&b.resolved?`${n} <b>${num(b.profitablePct??b.winRatePct,0)}%</b> in profit of ${b.resolved}`:`${n} no resolved alerts yet`;
   $("#strip").innerHTML=`<span>BTC <b class="${col(m.btc1hPct)}">${pct(m.btc1hPct)}</b> 1h · <b class="${col(m.btc4hPct)}">${pct(m.btc4hPct)}</b> 4h · <b class="${col(m.btcChange24hPct)}">${pct(m.btcChange24hPct)}</b> 24h</span>${m.marketWide?'<span class="amber">Market-wide surge: signals are less token-specific</span>':""}`+
-   (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Past win rate (replay): confirmed <b>${rep.confirmed.winRatePct}%</b>, early <b>${rep.early.winRatePct}%</b></span>`:"")+
+   (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Replay: confirmed hit target <b>${rep.confirmed.hitTargetPct}%</b>, closed in profit <b>${rep.confirmed.profitablePct}%</b>, avg <b>${pct(rep.confirmed.avgNetPct,2)}</b> · early avg <b>${pct(rep.early.avgNetPct,2)}</b></span>`:"")+
    `<span>Live: ${liveTxt(live.ignition,"confirmed")} · ${liveTxt(live.early,"early")}</span>`;
   const list=c.coins||[];
   $("#listHint").textContent=`${list.filter(x=>x.state==="ignited").length} igniting, ${list.filter(x=>x.state==="heating").length} heating up. Refreshes every 20 seconds.`;

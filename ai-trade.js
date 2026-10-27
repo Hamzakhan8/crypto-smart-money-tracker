@@ -30,11 +30,12 @@ const MIN = 60_000, HOUR = 3_600_000;
 const DOSSIER_TTL = 60_000, RESULT_TTL = 3 * MIN;
 const BATCH_MAX = 12;
 const LEVELS = ["low", "medium", "high"];
-// From the 60-day replay of 65 tokens (screener-backtest.js), +target before -stop within the outcome window, after fees.
+// From the 60-day replay of 51 crypto tokens on 5-minute candles (screener v6 exit rule, 0.2% fees + 0.1% slippage).
+// hitTargetPct = reached the target before the stop; profitablePct = closed with a profit after costs.
 const REPLAY = {
-  source: "60-day replay of 65 Binance tokens on 5-minute candles (screener-backtest.js)",
-  rule: `win = +${CONFIG.targetPct}% before -${CONFIG.stopPct}% within ${CONFIG.outcomeHours}h, ${CONFIG.feePct}% round-trip fees`,
-  early: { winRatePct: 22, avgNetPct: 0.18 }, confirmed: { winRatePct: 26, avgNetPct: 0.45 },
+  source: "60-day replay of 51 Binance crypto tokens on 5-minute candles (screener-backtest.js)",
+  rule: `take profit +${CONFIG.targetPct}%, stop -${CONFIG.stopPct}%, else exit after ${CONFIG.outcomeHours}h; ${CONFIG.feePct}% fees + ${CONFIG.slippagePct}% slippage`,
+  confirmed: { hitTargetPct: 31, profitablePct: 51, avgNetPct: 1.09 }, early: { hitTargetPct: 23, profitablePct: 45, avgNetPct: 0.19 },
 };
 
 const r = (v, d = 2) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
@@ -198,8 +199,9 @@ const RULES = `
 - This is a long-only spot setup flagged by a volume-ignition screener. Decide whether to buy now.
 - Use ONLY numbers in the DOSSIER and quote them exactly. No news, no invented levels or targets. If something is null or
   unavailable, say so and do not guess.
-- Base rates matter: most ignitions fail (see baseRates: roughly a quarter reach the target first). A trade only pays if
-  losses stay small, so reward:risk and a clear invalidation level matter more than excitement.
+- Base rates matter: most ignitions do not reach the target (see baseRates: about a quarter to a third do), and only about
+  half close in profit. A trade only pays if losses stay small, so reward:risk and a clear invalidation level matter more
+  than excitement. Early-tier signals barely break even on average; confirmed ones did clearly better.
 - Weigh together: the screener tier (confirmed > early > not igniting), 1h and 4h trend alignment, room to resistance vs
   distance to the stop, order-book support, futures crowding (funding above ~0.05% per 8h, open interest jumping while
   price stalls, a high long/short ratio), whale deposits to exchanges (supply), DEX net selling, BTC falling or a
@@ -411,6 +413,16 @@ const tgSingle = (x) => [`AI TRADE DESK: ${x.symbol} -> ${x.decision} (${x.confi
   x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk}` : null,
   x.decision === "WAIT" && x.waitFor ? `Wait for: ${x.waitFor}` : null, `Key risk: ${x.keyRisk}`, ...x.guardNotes,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
+
+// Automatic review of a new screener alert (called by server.js): one analysis with the default model, a short summary
+// saved with the alert, and a Telegram follow-up unless AI_REVIEW_TELEGRAM=0.
+export async function reviewAlert(ai, symbol) {
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, deep: false };
+  const out = await cached(`one:${symbol}:${opts.model}:-`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
+  if (env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached) telegram(`(AI review of the new ${symbol.replace(/USDT$/, "")} alert)\n${tgSingle(out)}`);
+  return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
+    model: out.meta.model, at: Date.now() };
+}
 
 // ───────────────────────────── API ─────────────────────────────
 const jsonResponse = (res, code, data) => {

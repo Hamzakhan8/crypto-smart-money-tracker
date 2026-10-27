@@ -1,4 +1,4 @@
-// Early-Setup Screener v5 (port of screener.py + fast intraday layer). Node.js 18+, no dependencies.
+// Early-Setup Screener v6 (port of screener.py + fast intraday layer). Node.js 18+, no dependencies.
 //
 // Two layers:
 //   SETUP layer (slow context): Binance USDT spot tokens (largest 500 by market cap), scored 0-100 on
@@ -35,6 +35,17 @@
 //     confirmed tier 26% wins, +0.55% avg (positive in all six 10-day blocks; v4 was negative in four).
 //   - The 5-minute features use finished candles only, exactly like the replay.
 //
+// v6 (same signals, new exit and honest measurement), from the same replay on crypto only (51 tokens, tokenized stocks
+// removed), with 0.2% fees plus 0.1% slippage:
+//   - Exit +6% / -3% within 12h (was +4% / -2.5% within 6h). Only 45% of confirmed signals ever reached +4% in 12h, so
+//     the old box cut winners short. Confirmed tier: avg +1.09% per trade (was +0.45%), target hit 31% (27%), closed in
+//     profit 51% (52%); early tier +0.19% (-0.03%). Neighbouring settings (+5..+7 / -3..-3.5 / 12..16h) agree. Trailing
+//     stops won more often (60-70% in profit) but made almost nothing in the unseen period, so they were not used.
+//   - Outcomes are judged on 1-minute candles (high / low, stop checked first inside a candle) instead of a price sample
+//     every 20s, and every result is net of fees and an estimated slippage (SCREENER_SLIPPAGE_PCT).
+//   - "Closed in profit" is reported next to "hit target", and each alert can carry an AI review (TAKE / WAIT / SKIP)
+//     so the performance panel shows whether the AI's calls actually do better.
+//
 // Whale tracker ("Whale tracker" tab): whales.js follows every large Ethereum transfer with Arkham-style labels
 // (/api/whales), flows.js follows DEX swaps and token rotations (/api/flows). SCREENER_WHALES=0 switches both off.
 //
@@ -62,7 +73,7 @@ import { startWhales, handleWhalesRequest } from "./whales.js";
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
 const LIBRARY_ONLY = env.SCREENER_LIBRARY_ONLY === "1"; // set by screener-backtest.js: export the logic, start nothing
-export const LOGIC_VERSION = 5;
+export const LOGIC_VERSION = 6;
 const HOST = env.SCREENER_HOST || env.HOST || "127.0.0.1";
 const PORT = num("SCREENER_PORT", 3001);
 const DEMO = env.DEMO === "1";
@@ -95,10 +106,14 @@ const REQUIRE_TREND = env.SCREENER_REQUIRE_TREND !== "0";       // price above a
 const MAX_EXTENSION = num("SCREENER_MAX_EXTENSION", 4);        // % max distance above the 4h average (stretched = late)
 const MAX_FADE = num("SCREENER_MAX_FADE", 1);                  // % max pullback from the last 15m high (burst fading)
 const MAX_WICK = num("SCREENER_MAX_WICK", 0.55);               // max share of the last 15m range that is upper wick (selling)
-const TARGET_PCT = num("SCREENER_TARGET_PCT", 4);              // outcome tracking: win = +target% before -stop%
-const STOP_PCT = num("SCREENER_STOP_PCT", 2.5);
-const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 6) * 3_600_000;
+const TARGET_PCT = num("SCREENER_TARGET_PCT", 6);              // exit / outcome tracking: win = +target% before -stop%
+const STOP_PCT = num("SCREENER_STOP_PCT", 3);
+const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 12) * 3_600_000;
 const FEE_PCT = num("SCREENER_FEE_PCT", 0.2);                  // round-trip fees subtracted from every result (0.1% in + 0.1% out)
+const SLIPPAGE_PCT = num("SCREENER_SLIPPAGE_PCT", 0.1);        // estimated fill cost per trade, also subtracted
+const COST_PCT = FEE_PCT + SLIPPAGE_PCT;
+const ROOM_REF_PCT = 4;                                         // move the "too slow" check and the score's room points were tuned on
+const LEGACY_RULE = { targetPct: 4, stopPct: 2.5, hz: 6 * 3_600_000 }; // how alerts before v6 were tracked
 const EXCLUDE_NONCRYPTO = env.SCREENER_EXCLUDE_NONCRYPTO !== "0";
 const REGIME_GATE = env.SCREENER_REGIME_GATE === "1";          // hold ignition alerts while BTC's daily regime is a downtrend
 const HOURLY_REFRESH_MS = 6 * 3_600_000;
@@ -131,12 +146,12 @@ const MAX_EVENTS = 400;
 // Ignition rules as one object, so the backtest can replay them with other values.
 export const DEFAULT_IGNITION = {
   rvol: IGNITE_RVOL, rvol1h: IGNITE_RVOL_1H, minRet15: MIN_RET15, maxRet15: MAX_RET15, maxRet1h: MAX_RET1H, maxMove24h: MAX_MOVED_24H,
-  minBuy: MIN_BUY_RATIO, minPersist: MIN_PERSIST, maxSpread: MAX_SPREAD_BPS, minRangeRatio: MIN_RANGE_RATIO, targetPct: TARGET_PCT,
+  minBuy: MIN_BUY_RATIO, minPersist: MIN_PERSIST, maxSpread: MAX_SPREAD_BPS, minRangeRatio: MIN_RANGE_RATIO, targetPct: ROOM_REF_PCT,
   btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExt: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
   earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, maxRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
 };
 export const CONFIG = {
-  version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT,
+  version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
   igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, igniteMinScore: IGNITE_MIN_SCORE, btcDropPausePct: BTC_DROP_PAUSE,
   minMove15m: MIN_RET15, maxMove15m: MAX_RET15, marketWideShare: MARKET_WIDE_SHARE, minQuoteVolume: MIN_QUOTE_VOLUME,
 };
@@ -163,9 +178,9 @@ const state = {
     version: LOGIC_VERSION, minScore: MIN_SCORE_ALERT, setupAlerts: SETUP_ALERTS, cooldownHours: COOLDOWN_MS / 3_600_000,
     minQuoteVolume: MIN_QUOTE_VOLUME, topN: TOP_N, btcDropPausePct: BTC_DROP_PAUSE, igniteRvol: IGNITE_RVOL, igniteRvol1h: IGNITE_RVOL_1H,
     minBuyRatio: MIN_BUY_RATIO, maxMove15m: MAX_RET15, maxMove1h: MAX_RET1H, maxMove24h: MAX_MOVED_24H, igniteMinScore: IGNITE_MIN_SCORE,
-    maxSpreadBps: MAX_SPREAD_BPS, minPersist: MIN_PERSIST, minRangeRatio: MIN_RANGE_RATIO, minRange6hPct: MIN_RANGE_RATIO * TARGET_PCT,
+    maxSpreadBps: MAX_SPREAD_BPS, minPersist: MIN_PERSIST, minRangeRatio: MIN_RANGE_RATIO, minRange6hPct: MIN_RANGE_RATIO * ROOM_REF_PCT,
     btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExtension: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
-    targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT,
+    targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
   },
@@ -891,7 +906,7 @@ async function fastLayer(ready) {
   const [w15, spreads] = await Promise.all([windowTickers(ready.map(([b]) => b + "USDT"), "15m"), bookSpreads()]);
   if (w15.error) state.errors["15m windows"] = w15.error; else delete state.errors["15m windows"];
   let seasonal = 0, slow = 0;
-  const slowBelow = MIN_RANGE_RATIO * TARGET_PCT;
+  const slowBelow = MIN_RANGE_RATIO * ROOM_REF_PCT;
   for (const [base, info] of ready) {
     const w = w15.map.get(base + "USDT");
     const d = dailyCache.get(base);
@@ -959,12 +974,13 @@ function persist() {
   }, 500);
 }
 // Alerts saved while the process was down get a best-effort outcome from their recorded high/low.
+const ruleOf = (e) => e.track?.rule || LEGACY_RULE;
 function resolveLegacy(e) {
-  const t = e.track;
-  if (!t || t.outcome || !t.entry || Date.now() - e.time < OUTCOME_MS) return;
+  const t = e.track, rule = ruleOf(e);
+  if (!t || t.outcome || !t.entry || Date.now() - e.time < rule.hz) return;
   const hi = t.hiW ?? t.high, lo = t.loW ?? t.low;
-  const up = (hi / t.entry - 1) * 100, dn = (lo / t.entry - 1) * 100;
-  t.outcome = up >= TARGET_PCT && dn > -STOP_PCT ? "win" : dn <= -STOP_PCT && up < TARGET_PCT ? "loss" : up >= TARGET_PCT && dn <= -STOP_PCT ? "unclear" : "flat";
+  const up = (hi / t.entry - 1) * 100, dn = (lo / t.entry - 1) * 100, T = rule.targetPct, S = rule.stopPct;
+  t.outcome = up >= T && dn > -S ? "win" : dn <= -S && up < T ? "loss" : up >= T && dn <= -S ? "unclear" : "flat";
   t.estimated = true;
 }
 async function loadPersisted() {
@@ -992,7 +1008,8 @@ function updateEvents(results) {
     fresh.push({
       id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score,
       label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : c.label,
-      time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price },
+      time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price,
+        rule: { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS } },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
     if (!DEMO && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
@@ -1042,7 +1059,20 @@ function updateEvents(results) {
   if (fresh.length) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
+    for (const ev of fresh) if (ev.tier !== "setup") for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
+}
+
+// Other modules can react to new ignition alerts (server.js runs the AI review) and attach results to them.
+const alertHooks = [];
+export const onIgnitionAlert = (fn) => { alertHooks.push(fn); };
+export function annotateEvent(id, patch) {
+  const e = state.events.find((x) => x.id === id);
+  if (!e) return false;
+  Object.assign(e, patch);
+  if (e.detail && patch.ai) e.detail.aiDecision = patch.ai.decision; // lets the performance groups split by AI call
+  persist();
+  return true;
 }
 
 // Follows every alert (sampled at each scan). Outcome: win = +TARGET% reached first (exit at the target),
@@ -1054,40 +1084,85 @@ function updateTracking(priceByBase) {
   for (const e of state.events) {
     const t = e.track;
     if (!t || !e.detail || !t.entry) continue;
-    const p = priceByBase.get(e.detail.base), age = now - e.time;
+    const rule = ruleOf(e), p = priceByBase.get(e.detail.base), age = now - e.time;
     if (age <= DAY_MS && Number.isFinite(p)) {
       t.last = p; t.high = Math.max(t.high, p); t.low = Math.min(t.low, p); changed = true;
     }
     if (t.outcome) continue;
-    if (Number.isFinite(p)) { // the scan that closes the window still counts, so a hit is never labelled "flat"
+    // With 1-minute candles (trackWithCandles) the window's path decides. Otherwise, or if candles stop arriving for 10
+    // minutes past the window, fall back to the sampled price.
+    const candlesOk = t.candles && (t.lastCandleT ?? 0) + 60_000 >= Math.min(now, e.time + rule.hz) - 10 * 60_000;
+    const waitForCandles = !DEMO && !t.candles && age < 5 * 60_000; // the first candles arrive a minute or two after the alert
+    if (!candlesOk && !waitForCandles && Number.isFinite(p)) { // the scan that closes the window still counts, so a hit is never labelled "flat"
       t.hiW = Math.max(t.hiW ?? t.entry, p); t.loW = Math.min(t.loW ?? t.entry, p);
       const r = (p / t.entry - 1) * 100;
-      if (r >= TARGET_PCT) { t.outcome = "win"; t.exitPct = TARGET_PCT; }
-      else if (r <= -STOP_PCT) { t.outcome = "loss"; t.exitPct = round(r, 2); }
+      if (r >= rule.targetPct) { t.outcome = "win"; t.exitPct = rule.targetPct; }
+      else if (r <= -rule.stopPct) { t.outcome = "loss"; t.exitPct = round(r, 2); }
     }
-    if (!t.outcome && age >= OUTCOME_MS) {
-      t.outcome = "flat";
-      const lp = Number.isFinite(p) ? p : t.last;
-      t.exitPct = round((lp / t.entry - 1) * 100, 2);
+    if (!t.outcome && age >= rule.hz) {
+      const covered = t.candles && (t.lastCandleT ?? 0) + 60_000 >= e.time + rule.hz - 60_000;
+      if (covered || !candlesOk) {
+        t.outcome = "flat";
+        const lp = covered && Number.isFinite(t.lastClose) ? t.lastClose : Number.isFinite(p) ? p : t.last;
+        t.exitPct = round((lp / t.entry - 1) * 100, 2);
+      }
     }
-    if (t.outcome) { t.outcomeAt = now; changed = true; }
+    if (t.outcome) { t.outcomeAt = t.outcomeAt || now; changed = true; }
   }
   if (changed) persist();
 }
 
-// Result of one resolved alert in %, before fees. Older alerts did not record flat exits, so those count as 0.
-const resultOf = (t) => (Number.isFinite(t.exitPct) ? t.exitPct : t.outcome === "win" ? TARGET_PCT : t.outcome === "loss" ? -STOP_PCT : 0);
+// Applies finished 1-minute candles {t, o, h, l, c} to an open alert in time order. Inside a candle the stop is checked
+// before the target (a candle touching both counts as a loss, as in the replay). Candles that started before the
+// alert's first full minute, or after its window, are ignored. Returns true when something changed.
+export function applyCandles(t, rule, alertTime, candles) {
+  const first = Math.ceil(alertTime / 60_000) * 60_000, end = alertTime + rule.hz;
+  const stopPx = t.entry * (1 - rule.stopPct / 100), targetPx = t.entry * (1 + rule.targetPct / 100);
+  let changed = false;
+  for (const c of candles) {
+    if (t.outcome || c.t >= end) break;
+    if (c.t < first || c.t <= (t.lastCandleT ?? -Infinity)) continue;
+    t.hiW = Math.max(t.hiW ?? t.entry, c.h); t.loW = Math.min(t.loW ?? t.entry, c.l);
+    t.lastCandleT = c.t; t.lastClose = c.c; t.candles = true; changed = true;
+    if (c.l <= stopPx) { t.outcome = "loss"; t.exitPct = round((Math.min(stopPx, c.o) / t.entry - 1) * 100, 2); t.outcomeAt = c.t + 60_000; }
+    else if (c.h >= targetPx) { t.outcome = "win"; t.exitPct = rule.targetPct; t.outcomeAt = c.t + 60_000; }
+  }
+  return changed;
+}
+
+// Fetches new 1-minute candles for open alerts (each at most once a minute, up to 25 per scan).
+async function trackWithCandles() {
+  if (DEMO) return;
+  const now = Date.now();
+  const open = state.events.filter((e) => e.track?.entry && !e.track.outcome && e.detail?.base && now - e.time <= ruleOf(e).hz + 15 * 60_000 &&
+    now - (e.track.checkedAt || 0) >= 60_000).slice(0, 25);
+  let changed = false;
+  await mapLimit(open, 4, async (e) => {
+    const t = e.track, start = t.lastCandleT != null ? t.lastCandleT + 60_000 : Math.ceil(e.time / 60_000) * 60_000;
+    t.checkedAt = now;
+    const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(e.detail.base)}USDT&interval=1m&startTime=${start}&limit=1000`, { retries: 0 });
+    if (!Array.isArray(raw)) return;
+    const done = raw.map((k) => ({ t: Number(k[0]), o: Number(k[1]), h: Number(k[2]), l: Number(k[3]), c: Number(k[4]) })).filter((k) => k.t + 60_000 <= now);
+    if (applyCandles(t, ruleOf(e), e.time, done)) changed = true;
+  });
+  if (changed) persist();
+}
+
+// Result of one resolved alert in %, before costs. Older alerts did not record flat exits, so those count as 0.
+const resultOf = (e) => { const t = e.track, r = ruleOf(e); return Number.isFinite(t.exitPct) ? t.exitPct : t.outcome === "win" ? r.targetPct : t.outcome === "loss" ? -r.stopPct : 0; };
 function summarize(evs) {
   const done = evs.filter((e) => ["win", "loss", "flat"].includes(e.track?.outcome));
   const wins = done.filter((e) => e.track.outcome === "win").length, losses = done.filter((e) => e.track.outcome === "loss").length;
   const tracked = evs.filter((e) => e.track && e.track.entry);
-  const gross = done.length ? mean(done.map((e) => resultOf(e.track))) : null;
+  const gross = done.length ? mean(done.map(resultOf)) : null;
+  const inProfit = done.filter((e) => resultOf(e) - COST_PCT > 0).length;
   return {
     total: evs.length, resolved: done.length, wins, losses, flat: done.length - wins - losses,
     pending: evs.filter((e) => e.track && !e.track.outcome).length, unclear: evs.filter((e) => e.track?.outcome === "unclear").length,
-    winRatePct: done.length ? round((wins / done.length) * 100, 1) : null,
-    expectancyPct: round(gross, 2),                                    // gross, before fees
-    netPct: gross == null ? null : round(gross - FEE_PCT, 2),          // after round-trip fees
+    winRatePct: done.length ? round((wins / done.length) * 100, 1) : null,   // hit the target
+    inProfit, profitablePct: done.length ? round((inProfit / done.length) * 100, 1) : null, // closed with a profit after costs
+    expectancyPct: round(gross, 2),                                    // gross, before costs
+    netPct: gross == null ? null : round(gross - COST_PCT, 2),         // after fees and slippage
     avgPeakPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.hiW ?? e.track.high) / e.track.entry - 1) * 100)), 2) : null,
     avgLowPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.loW ?? e.track.low) / e.track.entry - 1) * 100)), 2) : null,
   };
@@ -1095,6 +1170,7 @@ function summarize(evs) {
 const BUCKETS = [
   ["Ignition score 80+", (c) => c.igScore >= 80], ["Ignition score 65-79", (c) => c.igScore >= 65 && c.igScore < 80],
   ["Ignition score under 65", (c) => c.igScore != null && c.igScore < 65],
+  ["AI said TAKE", (c) => c.aiDecision === "TAKE"], ["AI said WAIT", (c) => c.aiDecision === "WAIT"], ["AI said SKIP", (c) => c.aiDecision === "SKIP"],
   ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
   ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
   ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],
@@ -1115,14 +1191,14 @@ function statsBlock(evs) {
       setup: summarize(evs.filter((e) => e.tier === "setup")) },
     buckets: BUCKETS.map(([name, fn]) => {
       const s = summarize(ig.filter((e) => e.detail && fn(e.detail)));
-      return { name, resolved: s.resolved, winRatePct: s.winRatePct, expectancyPct: s.expectancyPct, netPct: s.netPct };
+      return { name, resolved: s.resolved, winRatePct: s.winRatePct, profitablePct: s.profitablePct, expectancyPct: s.expectancyPct, netPct: s.netPct };
     }).filter((b) => b.resolved > 0),
   };
 }
 function computeStats() {
   const evs = state.events;
   return {
-    targetPct: TARGET_PCT, stopPct: STOP_PCT, horizonHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, version: LOGIC_VERSION,
+    targetPct: TARGET_PCT, stopPct: STOP_PCT, horizonHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT, costPct: round(COST_PCT, 2), version: LOGIC_VERSION,
     olderCount: evs.filter((e) => e.v !== LOGIC_VERSION).length,
     current: statsBlock(evs.filter((e) => e.v === LOGIC_VERSION)), all: statsBlock(evs),
   };
@@ -1192,6 +1268,7 @@ async function scan() {
   updateEvents(results);
   const priceByBase = new Map([...tickers].map(([b, tk]) => [b, Number(tk.lastPrice)]));
   updateTracking(priceByBase);
+  await trackWithCandles().catch(() => {});
   rotation?.updatePrices(priceByBase);
   state.stats = computeStats();
   state.lastScanMs = Date.now() - t0;
@@ -1234,11 +1311,13 @@ function seedDemoHistory() {
     const base = DEMO_TOKENS[(i * 3) % DEMO_TOKENS.length], d = demoRoll(i, "ignite");
     const t = { rvol: d.rvol, distToHigh: d.dist, aboveSma: true, rsi: d.rsi, compressed: d.compressed };
     const c = buildCandidate(base, { name: base, rank: d.rank, mc: 1e9, fdv: 1e9 / d.ratio }, { quoteVolume: d.vol, priceChangePercent: d.chg, lastPrice: d.price }, t, d.narrative, d.funding, d.oi, d.f);
-    const entry = d.price, up = o === "win" ? 1 + rnd(0.045, 0.09) : 1 + rnd(0.004, 0.025), dn = o === "loss" ? 1 - rnd(0.026, 0.04) : 1 - rnd(0.003, 0.02);
-    const exitPct = o === "win" ? TARGET_PCT : o === "loss" ? -round(rnd(2.5, 2.9), 2) : round(rnd(-1.5, 1.5), 2);
+    const entry = d.price, up = o === "win" ? 1 + rnd(TARGET_PCT / 100, TARGET_PCT / 100 + 0.04) : 1 + rnd(0.004, 0.025),
+      dn = o === "loss" ? 1 - rnd(STOP_PCT / 100 + 0.001, STOP_PCT / 100 + 0.015) : 1 - rnd(0.003, 0.02);
+    const exitPct = o === "win" ? TARGET_PCT : o === "loss" ? -round(rnd(STOP_PCT, STOP_PCT + 0.4), 2) : round(rnd(-1.5, 1.5), 2);
     return { id: `ignition:${base}USDT-seed${i}`, type: "ignition", tier: "ignition", v: LOGIC_VERSION, symbol: base + "USDT", score: c.igScore ?? 70, label: "Early ignition",
       time: now - (7 + i * 1.1) * 3_600_000, message: "simulated", detail: c,
-      track: { entry, high: entry * up, low: entry * dn, hiW: entry * up, loW: entry * dn, last: entry * (o === "win" ? up * 0.99 : dn * 1.01), outcome: o, exitPct } };
+      track: { entry, high: entry * up, low: entry * dn, hiW: entry * up, loW: entry * dn, last: entry * (o === "win" ? up * 0.99 : dn * 1.01), outcome: o, exitPct,
+        rule: { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS } } };
   });
   state.events = seed;
 }
@@ -1283,7 +1362,7 @@ async function poll() {
 }
 
 const jsonResponse = (res, code, data) => {
-  res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "access-control-allow-origin": "same-origin" });
+  res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(data));
 };
 

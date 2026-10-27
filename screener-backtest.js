@@ -21,11 +21,11 @@ import { fileURLToPath } from "node:url";
 
 process.env.SCREENER_LIBRARY_ONLY = "1";
 const core = await import("./screener.js");
-const { fiveMinFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight,
+const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight,
   DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO } = core;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const BN = "https://api.binance.com";
+const BN = (process.env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, ""); // e.g. https://data-api.binance.vision
 const STEP = 300_000, HOUR = 3_600_000, DAY = 86_400_000;
 const argv = process.argv.slice(2);
 const arg = (name, d) => { const i = argv.indexOf("--" + name); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
@@ -41,22 +41,20 @@ const WARM_DAYS = 15;                               // 14 days for hour-of-day b
 const HORIZON = Math.round(CONFIG.outcomeHours * 12);
 const COOLDOWN = CONFIG.igniteCooldownHours * HOUR;
 const FEE = CONFIG.feePct;
-const LOOSE_RVOL = 3;                               // lowest 15m volume setting in the grid
+const LOOSE_R5 = 2.5;                               // lowest 5m volume setting in the grid
 
 // Exit rules compared at the end. The first one is the live rule.
 const RULES = [[CONFIG.targetPct, CONFIG.stopPct], [3, 2], [3, 3], [2, 2], [6, 3], [2, 4], [1.5, 4], [1, 5]]
   .filter((r, i, a) => a.findIndex((x) => x[0] === r[0] && x[1] === r[1]) === i);
 
-// The v3 ignition score, kept only so the replay can compare old and new logic on the same data.
-function legacyScore(f, ctxScore) {
-  const r = f.rvol15, per = f.persist ?? 0, tr = f.tradesRatio ?? 0, b = f.buy15 ?? 0, rp = f.rangePos ?? 0, rs = f.rs15 ?? 0;
-  return Math.round((r >= 8 ? 25 : r >= 6 ? 21 : r >= 4 ? 16 : r >= 3 ? 10 : 0)
-    + (per >= 3 ? 9 : per === 2 ? 6 : per === 1 ? 2 : 0) + (tr >= 2 ? 6 : tr >= 1.5 ? 4 : tr >= 1.2 ? 2 : 0)
-    + (b >= 70 ? 15 : b >= 64 ? 11 : b >= 58 ? 7 : b >= 52 ? 3 : 0)
-    + (rp >= 0.8 ? 8 : rp >= 0.6 ? 5 : 0) + (f.nearHigh ? 3 : 0) + (f.ret15 >= 0.2 && f.ret15 <= 2 ? 4 : f.ret15 > 2 ? 2 : 0)
-    + (rs >= 0.5 ? 5 : rs >= 0.1 ? 3 : 0) + Math.round(clamp(ctxScore, 0, 100) * 0.15) + 2 + 1);
+// The v4 rule (15-minute trigger), kept only so the replay can compare old and new logic on the same data.
+function v4Ignited(c) {
+  const g = classifyIgnition(c.f, c.change24h, c.distToHigh), f = c.f, p = DEFAULT_IGNITION;
+  if (g.moved || g.slow) return false;
+  return f.rvol15 >= 4 * (f.marketWide ? 1.5 : 1) && f.ret15 >= 0.2 && (f.rvol1h ?? 0) >= p.rvol1h && f.range6h != null && !(f.btc1h < p.btc1hMin) &&
+    f.buy15 >= 58 && f.persist >= 2 && f.trendUp === true && !(f.extPct > p.maxExt) && !(f.fadePct > p.maxFade) && !(f.wickShare > p.maxWick) &&
+    c.ig >= CONFIG.igniteMinScore;
 }
-const LEGACY = { ...DEFAULT_IGNITION, rvol: 4, minBuy: 58, minPersist: 2, minRangeRatio: 0, btc1hMin: -Infinity, requireTrend: false, maxExt: Infinity, maxFade: Infinity, maxWick: Infinity };
 
 // ───────────────────────────── download (cached) ─────────────────────────────
 async function throttle() { if (usedWeight() > 3500) { process.stdout.write(" (pausing for Binance rate limit)"); await sleep(30_000); } }
@@ -158,35 +156,36 @@ function replay(series) {
   for (let i = i0; i < N - HORIZON; i++) {
     const d = Math.floor((i - i0) / 288);
     if (i - 288 < btc.first) continue;
-    const btc24 = ret(btc, i, 288), btc15 = ret(btc, i, 3), btc1h = ret(btc, i, 12);
+    const btc24 = ret(btc, i, 288), btc15 = ret(btc, i, 3), btc1h = ret(btc, i, 12), btc4h = ret(btc, i, 48);
     if (!(btc24 > CONFIG.btcDropPausePct)) continue; // live alerts pause when BTC dumps
     let valid = 0, hot = 0;
     for (const s of series) {
-      s.r15 = null;
+      s.r15 = s.r5 = null;
       const prof = s.prof[d];
       if (!prof || i - 288 < s.first || !s.days[d]) continue;
       const e = expSum(prof, i - 2, i);
       if (!(e > 0)) continue;
-      s.r15 = qvSum(s, i - 2, i) / e; valid++;
+      s.r15 = qvSum(s, i - 2, i) / e; s.r5 = s.k.qv[i] / (prof.hours[hourOf(i)] / 12); valid++;
       if (s.r15 >= 2) hot++;
     }
     const marketWide = valid > 0 && hot / valid >= CONFIG.marketWideShare;
     for (const s of series) {
-      if (s.r15 == null || s.r15 < LOOSE_RVOL) continue;
+      if (s.r15 == null || !(s.r15 >= 2 || s.r5 >= LOOSE_R5)) continue;
       const ret15 = ret(s, i, 3);
-      if (!(ret15 >= CONFIG.minMove15m && ret15 <= CONFIG.maxMove15m)) continue;
+      if (!(ret15 >= -0.5 && ret15 <= CONFIG.maxMove15m)) continue;
       const prof = s.prof[d], close = s.k.close[i], qv24 = qvSum(s, i - 287, i), change24h = ret(s, i, 288);
       const tm = techMetrics(s.days[d], close, qv24);
       if (!tm) continue;
+      const expect5 = (endMs) => prof.hours[Math.floor((endMs - STEP) / HOUR) % 24] / 12;
       const f = {
         rvol15: s.r15, ret15, rvol1h: qvSum(s, i - 11, i) / expSum(prof, i - 11, i), ret1h: ret(s, i, 12), spreadBps: null,
-        marketWide, rs15: ret15 - btc15, btc1h, range6h: prof.range6h, seasonal: true,
-        ...fiveMinFeatures(s.k, i, tGrid[i] + STEP, (endMs) => prof.hours[Math.floor((endMs - STEP) / HOUR) % 24] / 12),
+        marketWide, rs15: ret15 - btc15, btc1h, btc4h, range6h: prof.range6h, seasonal: true, rsiD: tm.rsi,
+        ...fiveMinFeatures(s.k, i, tGrid[i] + STEP, expect5), early: earlyFeatures(s.k, i, expect5),
       };
       const ctx = scoreToken(tm, null, null, null, null, qv24, change24h).score;
       cands.push({
         s: s.name, i, t: tGrid[i], f, change24h, distToHigh: tm.distToHigh,
-        ig: ignitionScore(f, ctx, null, null).score, legacy: legacyScore(f, ctx),
+        ig: ignitionScore(f, ctx, null, null).score,
         out: RULES.map(([T, S]) => follow(s, i, T, S)),
       });
     }
@@ -237,30 +236,36 @@ async function main() {
   console.log(`${cands.length} raw candidate moments. Tuning period ${day(sigStart)} to ${day(split)}, unseen test period ${day(split)} to ${day(end)}.\n`);
 
   // 1) Old vs new logic, whole period, live exit rule
-  const v3 = select(cands, (c) => classifyIgnition(c.f, c.change24h, c.distToHigh, LEGACY).state === "ignited" && c.legacy >= 65);
-  const v4 = select(cands, (c) => classifyIgnition(c.f, c.change24h, c.distToHigh).state === "ignited" && c.ig >= CONFIG.igniteMinScore);
-  const W1 = [30, 8, 6, 6, 6, 12];
+  const ignited = (c) => classifyIgnition(c.f, c.change24h, c.distToHigh).state === "ignited";
+  const old = select(cands, v4Ignited);
+  const earlyTier = select(cands, ignited);
+  const v4 = select(cands, (c) => ignited(c) && c.ig >= CONFIG.igniteMinScore); // current confirmed tier
+  const W1 = [40, 8, 6, 6, 6, 12];
   console.log("OLD vs NEW LOGIC (whole period, live exit rule)");
   console.log(row(["", "Signals", "Win", "Loss", "Flat", "Avg net"], W1));
-  for (const [name, ev] of [["v3 logic (before)", v3], [`v${CONFIG.version} logic (current settings)`, v4]]) {
+  for (const [name, ev] of [["v4 logic (before, 15m trigger)", old], [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4]]) {
     const s = stats(ev);
     console.log(row([name, s.n, fmtW(s), s.n ? ((s.losses / s.n) * 100).toFixed(0) + "%" : "—", s.n ? ((s.flat / s.n) * 100).toFixed(0) + "%" : "—", fmtP(s.net)], W1));
   }
 
+  const firstEarly = new Map(); for (const c of earlyTier) { if (!firstEarly.has(c.s)) firstEarly.set(c.s, []); firstEarly.get(c.s).push(c); }
+  const gaps = old.map((v) => (firstEarly.get(v.s) || []).find((c) => c.t <= v.t && v.t - c.t <= 45 * 60_000)).map((c, j) => (c ? (old[j].t - c.t) / 60_000 : null)).filter((x) => x != null);
+  if (gaps.length) console.log(`Timing: on ${gaps.length} moves both caught, the v${CONFIG.version} early tier fired ${(gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(1)} min before v4 on average.`);
+
   // 2) Grid: tune on the first two thirds, judge on the last third
   const GRID = [];
-  for (const rvol of [3, 4, 5, 6]) for (const minBuy of [52, 58, 64]) for (const requireTrend of [true, false]) for (const minRangeRatio of [0.35, 0.5, 0.7])
-    GRID.push({ ...DEFAULT_IGNITION, rvol, minBuy, requireTrend, minRangeRatio });
+  for (const earlyRvol of [2.5, 3, 4]) for (const minBuy of [55, 58, 62]) for (const requireTrend of [true, false]) for (const maxRsi of [60, 65, 100])
+    GRID.push({ ...DEFAULT_IGNITION, earlyRvol, minBuy, requireTrend, maxRsi });
   const results = [];
   for (const p of GRID) {
     const passIg = cands.map((c) => classifyIgnition(c.f, c.change24h, c.distToHigh, p).state === "ignited");
-    for (const minScore of [55, 60, 65, 70, 75]) {
+    for (const minScore of [0, 60, 65, 70]) { // 0 = early tier
       const ev = select(cands, (c, idx) => passIg[idx] && c.ig >= minScore);
       results.push({ p, minScore, train: stats(ev.filter(isTrain)), test: stats(ev.filter((c) => !isTrain(c))) });
     }
   }
   const eligible = results.filter((r) => r.train.n >= MIN_N);
-  const desc = (r) => `vol ${r.p.rvol}x, buyers ${r.p.minBuy}%, trend ${r.p.requireTrend ? "on" : "off"}, range ${r.p.minRangeRatio}, score ${r.minScore}`;
+  const desc = (r) => `5m vol ${r.p.earlyRvol}x, buyers ${r.p.minBuy}%, trend ${r.p.requireTrend ? "on" : "off"}, RSI ${r.p.maxRsi >= 100 ? "any" : "<=" + r.p.maxRsi}, ${r.minScore ? "score " + r.minScore : "early tier"}`;
   const W2 = [66, 7, 6, 9, 6, 6, 9];
   console.log(`\nBEST SETTINGS ON THE TUNING PERIOD, THEN CHECKED ON THE UNSEEN PERIOD (at least ${MIN_N} tuning signals)`);
   console.log(row(["Settings", "Tune n", "Win", "Avg net", "Test n", "Win", "Avg net"], W2));
@@ -305,8 +310,8 @@ async function main() {
   console.log("\nVERDICT");
   if (pick) {
     console.log(`  Best setting that also made money on the unseen period: ${desc(pick)}`);
-    console.log(`  To use it: SCREENER_IGNITE_RVOL=${pick.p.rvol} SCREENER_MIN_BUY_RATIO=${pick.p.minBuy} SCREENER_REQUIRE_TREND=${pick.p.requireTrend ? 1 : 0} ` +
-      `SCREENER_MIN_RANGE_RATIO=${pick.p.minRangeRatio} SCREENER_IGNITE_MIN_SCORE=${pick.minScore} node screener.js`);
+    console.log(`  To use it: SCREENER_EARLY_RVOL=${pick.p.earlyRvol} SCREENER_MIN_BUY_RATIO=${pick.p.minBuy} SCREENER_REQUIRE_TREND=${pick.p.requireTrend ? 1 : 0} ` +
+      `SCREENER_MAX_DAILY_RSI=${pick.p.maxRsi} SCREENER_IGNITE_MIN_SCORE=${pick.minScore || CONFIG.igniteMinScore} node screener.js`);
     console.log("  Then let the live Alert performance panel confirm it over a few weeks before trusting it with size.");
   } else {
     console.log("  No setting stayed profitable after fees on the unseen period. Do not trade this signal on its own as is;");
@@ -315,8 +320,8 @@ async function main() {
   console.log("\nNot included: spread, funding, open interest, narratives. Universe = today's top tokens by volume, which flatters results a little.");
   await writeFile(path.join(here, "backtest_report.json"), JSON.stringify({
     generatedAt: new Date().toISOString(), days: DAYS, tokens: series.map((s) => s.name), split: day(split), config: CONFIG,
-    oldVsNew: { v3: stats(v3), v4: stats(v4) },
-    grid: results.map((r) => ({ ...r, p: { rvol: r.p.rvol, minBuy: r.p.minBuy, requireTrend: r.p.requireTrend, minRangeRatio: r.p.minRangeRatio } })),
+    oldVsNew: { v4: stats(old), early: stats(earlyTier), confirmed: stats(v4) },
+    grid: results.map((r) => ({ ...r, p: { earlyRvol: r.p.earlyRvol, minBuy: r.p.minBuy, requireTrend: r.p.requireTrend, maxRsi: r.p.maxRsi } })),
     exitRules: RULES.map(([T, S], r) => ({ target: T, stop: S, ...stats(v4, r) })),
     signals: v4.map((c) => ({ token: c.s, time: new Date(c.t).toISOString(), igScore: c.ig, outcome: c.out[0].o, resultPct: +c.out[0].r.toFixed(2) })),
   }, null, 1));

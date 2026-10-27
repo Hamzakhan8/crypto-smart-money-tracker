@@ -1,4 +1,4 @@
-// Early-Setup Screener v4 (port of screener.py + fast intraday layer). Node.js 18+, no dependencies.
+// Early-Setup Screener v5 (port of screener.py + fast intraday layer). Node.js 18+, no dependencies.
 //
 // Two layers:
 //   SETUP layer (slow context): Binance USDT spot tokens (largest 500 by market cap), scored 0-100 on
@@ -22,6 +22,18 @@
 //     above it, still near the spike high, no long upper wicks. Breaking the prior 12h high adds points.
 //   - Daily-setup alerts are off by default (9% win rate). The daily score still feeds the ignition score.
 //   - The signal functions are exported, so screener-backtest.js replays exactly this logic on past candles.
+//
+// v5, from a 60-day replay of 65 tokens on 5-minute candles (screener-backtest.js), keeping only changes that helped in
+// both the tuning period and the unseen period:
+//   - Earlier trigger: two hot finished 5-minute candles in a row (each SCREENER_EARLY_RVOL x normal for the hour),
+//     price up and buyers in control, instead of waiting for the 15-minute average. On moves both versions caught, v5's
+//     early tier fired up to ~13 min sooner (median 5 min) at a ~0.5% better price.
+//   - Quality gates: daily RSI <= 65 (overbought tokens failed), not an exhausted candle (last 5m candle closed at its high
+//     with a big body), not the top tick of the 2h range, BTC not falling over 4 hours, no market-wide surge.
+//   - Two alert tiers: "Early ignition" (first signal) and "Confirmed ignition" (same rule plus ignition score >= 65).
+//     Replay, +4% / -2.5% in 6h, 0.2% fees: v4 21% wins, -0.04% avg; early tier ~22% wins, about +0.2%;
+//     confirmed tier 26% wins, +0.55% avg (positive in all six 10-day blocks; v4 was negative in four).
+//   - The 5-minute features use finished candles only, exactly like the replay.
 //
 // Whale tracker ("Whale tracker" tab): whales.js follows every large Ethereum transfer with Arkham-style labels
 // (/api/whales), flows.js follows DEX swaps and token rotations (/api/flows). SCREENER_WHALES=0 switches both off.
@@ -49,7 +61,7 @@ import { startWhales, handleWhalesRequest } from "./whales.js";
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
 const LIBRARY_ONLY = env.SCREENER_LIBRARY_ONLY === "1"; // set by screener-backtest.js: export the logic, start nothing
-export const LOGIC_VERSION = 4;
+export const LOGIC_VERSION = 5;
 const HOST = env.SCREENER_HOST || env.HOST || "127.0.0.1";
 const PORT = num("SCREENER_PORT", 3001);
 const DEMO = env.DEMO === "1";
@@ -60,14 +72,19 @@ const MIN_SCORE_ALERT = num("SCREENER_MIN_SCORE", 70);
 const SETUP_ALERTS = env.SCREENER_SETUP_ALERTS === "1";        // daily-setup alerts: off by default (9% win rate so far)
 const COOLDOWN_MS = num("SCREENER_COOLDOWN_HOURS", 12) * 3_600_000;
 // ---- early-ignition tuning (all adjustable; screener-backtest.js shows which values hold up on past data) ----
-const IGNITE_RVOL = num("SCREENER_IGNITE_RVOL", 4);            // 15m volume vs normal 15m volume
+const IGNITE_RVOL = num("SCREENER_IGNITE_RVOL", 4);            // v4 15m trigger level (v5 triggers on 5m candles; kept for the replay)
 const IGNITE_RVOL_1H = num("SCREENER_IGNITE_RVOL_1H", 1.5);    // 1h volume vs normal 1h volume (sustained, not one print)
-const MIN_RET15 = num("SCREENER_MIN_MOVE_15M", 0.2);           // % price must have started turning up
+const MIN_RET15 = num("SCREENER_MIN_MOVE_15M", 0.2);           // v4: % 15m move needed (v5 uses SCREENER_EARLY_MIN_MOVE over 10m)
 const MAX_RET15 = num("SCREENER_MAX_MOVE_15M", 4);             // % above this in 15m = already running
 const MAX_RET1H = num("SCREENER_MAX_MOVE_1H", 8);              // % above this in 1h = already moved
 const MAX_MOVED_24H = num("SCREENER_MAX_MOVE_24H", 12);        // % above this in 24h = already moved
 const MIN_BUY_RATIO = num("SCREENER_MIN_BUY_RATIO", 58);       // % of 15m volume that was aggressive buying
 const IGNITE_MIN_SCORE = num("SCREENER_IGNITE_MIN_SCORE", 65); // minimum ignition confidence score (0-100) to alert
+const EARLY_RVOL = num("SCREENER_EARLY_RVOL", 3);              // v5 trigger: each of the last two finished 5m candles vs normal
+const EARLY_MIN_MOVE = num("SCREENER_EARLY_MIN_MOVE", 0.2);     // % price rise over those two candles
+const EARLY_ALERTS = env.SCREENER_EARLY_ALERTS !== "0";          // "Early ignition" tier (the confirmed tier needs the score too)
+const MAX_DAILY_RSI = num("SCREENER_MAX_DAILY_RSI", 65);        // overbought on the daily chart = no ignition
+const BTC_4H_MIN = num("SCREENER_BTC_4H_MIN", -0.1);            // % no ignition while BTC is falling over 4 hours
 const MIN_PERSIST = num("SCREENER_MIN_PERSIST", 2);            // of the last 3 five-minute candles, how many must run at 2x normal volume
 const MAX_SPREAD_BPS = num("SCREENER_MAX_SPREAD_BPS", 20);     // skip thin, wide-spread order books (noisy)
 const MARKET_WIDE_SHARE = num("SCREENER_MARKET_WIDE_SHARE", 0.3); // if this share of tokens surges at once, raise the bar
@@ -115,6 +132,7 @@ export const DEFAULT_IGNITION = {
   rvol: IGNITE_RVOL, rvol1h: IGNITE_RVOL_1H, minRet15: MIN_RET15, maxRet15: MAX_RET15, maxRet1h: MAX_RET1H, maxMove24h: MAX_MOVED_24H,
   minBuy: MIN_BUY_RATIO, minPersist: MIN_PERSIST, maxSpread: MAX_SPREAD_BPS, minRangeRatio: MIN_RANGE_RATIO, targetPct: TARGET_PCT,
   btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExt: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
+  earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, maxRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
 };
 export const CONFIG = {
   version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT,
@@ -132,7 +150,7 @@ const state = {
   metaStatus: { source: "none" },
   futuresStatus: "not_checked",
   errors: {},
-  regime: { btcChange24hPct: null, btc1hPct: null, ok: true },
+  regime: { btcChange24hPct: null, btc1hPct: null, btc4hPct: null, ok: true },
   universe: { binance: 0, eligible: 0, excluded: 0, slow: 0 },
   warmup: { loaded: 0, total: 0, seasonal: 0 },
   breadth: { hotShare: null, marketWide: false },
@@ -148,6 +166,7 @@ const state = {
     btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExtension: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
+    earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
   mainUrl: env.MAIN_URL || `http://${env.HOST || "127.0.0.1"}:${num("PORT", 3000)}`,
@@ -363,6 +382,20 @@ export function fiveMinFeatures(k, end, nowMs, expect5) {
   return out;
 }
 
+// v5 trigger features from the newest two finished 5-minute candles (end = the newest finished one).
+export function earlyFeatures(k, end, expect5) {
+  if (end < 3) return null;
+  const e1 = expect5(k.t[end] + 300_000), e0 = expect5(k.t[end - 1] + 300_000);
+  const span = k.high[end] - k.low[end], qv2 = k.qv[end] + k.qv[end - 1];
+  return {
+    r5: e1 > 0 ? k.qv[end] / e1 : null, prevR5: e0 > 0 ? k.qv[end - 1] / e0 : null,
+    ret10: (k.close[end] / k.close[end - 2] - 1) * 100,
+    buy10: qv2 > 0 ? ((k.buy[end] + k.buy[end - 1]) / qv2) * 100 : null,
+    closePos5: span > 0 ? (k.close[end] - k.low[end]) / span : null, // 1 = closed at the candle's high
+    body5: span > 0 ? (k.close[end] - k.open[end]) / span : 0,        // share of the range that is green body
+  };
+}
+
 // ───────────────────────────── scoring ─────────────────────────────
 // t = techMetrics; info = {mc, fdv} (fdv unknown on Binance: neutral); narrative = {change, names}; funding = per-8h rate.
 export function scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg) {
@@ -416,7 +449,8 @@ export function scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceCh
   return { score, reasons, parts };
 }
 
-// f = fast-layer metrics (or undefined). moved: the token has already run (hide / never alert).
+// f = fast-layer metrics (or undefined), with f.early = earlyFeatures, f.rsiD = daily RSI, f.btc4h = BTC % over 4h.
+// moved: the token has already run (hide / never alert).
 // state: ignited | heating | ran | null. miss = what a "heating" token still lacks (shown on the page).
 // slow = its typical 6h range is too small to reach the target, so it is never an ignition.
 export function classifyIgnition(f, change24h, distToHigh = 0, p = DEFAULT_IGNITION) {
@@ -427,26 +461,33 @@ export function classifyIgnition(f, change24h, distToHigh = 0, p = DEFAULT_IGNIT
   if (f && f.ret15 > p.maxRet15) movedWhy.push(`+${f.ret15.toFixed(1)}% in 15m`);
   const moved = movedWhy.length > 0;
   const slow = !!f && f.range6h != null && f.range6h < p.minRangeRatio * p.targetPct;
-  if (!f || !(f.rvol15 >= 2)) return { state: null, moved, movedWhy, miss: [], slow };
+  const e = f?.early;
+  if (!f || !(f.rvol15 >= 2 || e?.r5 >= p.earlyRvol)) return { state: null, moved, movedWhy, miss: [], slow };
   if (moved) return { state: "ran", moved, movedWhy, miss: [], slow };
   if (slow) return { state: null, moved, movedWhy, miss: [], slow };
-  const need = p.rvol * (f.marketWide ? 1.5 : 1); // a market-wide surge is not token-specific: raise the bar
   const miss = [];
-  if (f.rvol15 < need) miss.push(`15m volume ${need.toFixed(1)}x${f.marketWide ? " (market-wide surge)" : ""}`);
-  if (!(f.ret15 >= p.minRet15)) miss.push("price turning up");
+  // trigger: two hot finished 5-minute candles, price rising, buyers in control
+  if (!e) miss.push("5m check");
+  else {
+    if (!(e.r5 >= p.earlyRvol && e.prevR5 >= p.earlyRvol)) miss.push(`two 5m candles at ${p.earlyRvol}x normal volume`);
+    if (!(e.ret10 >= p.earlyMinMove)) miss.push("price turning up");
+    if (e.buy10 == null) miss.push("buyer check"); else if (e.buy10 < p.minBuy) miss.push(`buyers ${p.minBuy}%+`);
+    if (e.closePos5 >= 0.9 && e.body5 >= 0.6) miss.push("a calmer candle (the last one closed at its high)");
+  }
+  if (f.marketWide) miss.push("no market-wide surge");
   if ((f.rvol1h ?? 0) < p.rvol1h) miss.push("1h volume");
   if (f.range6h == null) miss.push("volatility history");
   if (f.btc1h != null && f.btc1h < p.btc1hMin) miss.push(`steady BTC (BTC ${f.btc1h.toFixed(1)}% 1h)`);
+  if (f.btc4h != null && f.btc4h < p.btc4hMin) miss.push(`BTC not falling (BTC ${f.btc4h.toFixed(1)}% 4h)`);
+  if (f.rsiD != null && f.rsiD > p.maxRsi) miss.push(`daily RSI under ${p.maxRsi} (now ${Math.round(f.rsiD)})`);
   if (f.regimeOff) miss.push(`BTC daily trend (${f.regimeOff})`);
   if (f.monitoring) miss.push("off Binance's Monitoring list (delisting risk)");
-  if (f.buy15 == null) miss.push("buyer check"); else if (f.buy15 < p.minBuy) miss.push(`buyers ${p.minBuy}%+`);
-  if (f.persist == null) miss.push("persistence check");
-  else {
-    if (f.persist < p.minPersist) miss.push("volume persistence");
+  if (f.persist != null) {
     if (p.requireTrend && f.trendUp !== true) miss.push("rising 4h trend");
     if (f.extPct != null && f.extPct > p.maxExt) miss.push(`less stretched (${f.extPct.toFixed(1)}% above 4h avg)`);
     if (f.fadePct > p.maxFade) miss.push(`holding the spike (faded ${f.fadePct.toFixed(1)}%)`);
     if (f.wickShare > p.maxWick) miss.push("no selling wicks");
+    if (f.rangePos >= 0.96 && f.fadePct < 0.08) miss.push("a small pause below the top of the 2h range");
   }
   if (f.spreadBps != null && f.spreadBps > p.maxSpread) miss.push("tighter spread");
   return { state: miss.length ? "heating" : "ignited", moved, movedWhy, miss, slow };
@@ -485,6 +526,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
   const quoteVol = n(tk.quoteVolume) || 0;
   const priceChg = n(tk.priceChangePercent) || 0;
   const s = scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg);
+  if (fast) fast.rsiD = t.rsi;
   const ig = classifyIgnition(fast, priceChg, t.distToHigh);
   let score = s.score, label = labelFor(score);
   if (ig.moved) { score = Math.min(score, MOVED_SCORE_CAP); label = "Already moved"; }
@@ -508,6 +550,8 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
     range6h: round(fast?.range6h, 2), btc1h: round(fast?.btc1h, 2), trendUp: fast?.trendUp ?? null, extPct: round(fast?.extPct, 2),
     fadePct: round(fast?.fadePct, 2), wickShare: round(fast?.wickShare, 2), breakout: fast?.breakout ?? null,
     distTo12hHigh: round(fast?.distTo12hHigh, 2),
+    r5: round(fast?.early?.r5, 2), prevR5: round(fast?.early?.prevR5, 2), ret10m: round(fast?.early?.ret10, 2), buyRatio10m: round(fast?.early?.buy10, 1),
+    closePos5: round(fast?.early?.closePos5, 2), btc4h: round(fast?.btc4h, 2),
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
     igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
     rotation: rotation ? rotation.context(base) : null,
@@ -816,14 +860,16 @@ export const columns5m = (raw) => ({
   close: raw.map((c) => Number(c[4])), qv: raw.map((c) => Number(c[7])), trades: raw.map((c) => Number(c[8])), buy: raw.map((c) => Number(c[10])),
 });
 
-// 5-minute candle confirmation for the strongest few (last 24h of 5m candles: buyers, persistence, trades, trend, 12h high).
+// 5-minute candle check for the hottest tokens, on finished candles (as in the replay) (last 24h of 5m candles: buyers, persistence, trades, trend, 12h high).
 async function analyze5m(base, f) {
   try {
     const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=5m&limit=289`, { retries: 0 });
-    if (!Array.isArray(raw) || raw.length < 12) return;
+    if (!Array.isArray(raw) || raw.length < 13) return;
     const expect5 = (endMs) => (f.hourly ? expectedQuoteVolume(f.hourly, 5, endMs) : f.avgDaily / 288);
-    const feats = fiveMinFeatures(columns5m(raw), raw.length - 1, Date.now(), expect5);
+    const k = columns5m(raw), end = raw.length - 2; // newest finished candle: the last one is still forming
+    const feats = fiveMinFeatures(k, end, k.t[end] + 300_000, expect5);
     if (feats) Object.assign(f, feats);
+    f.early = earlyFeatures(k, end, expect5);
   } catch { /* leave unconfirmed: the token stays "heating", never "ignited" */ }
 }
 
@@ -869,20 +915,21 @@ async function fastLayer(ready) {
   const heating = [...out.entries()].filter(([, f]) => f.rvol15 >= 2 && !(f.range6h != null && f.range6h < slowBelow))
     .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, 60);
   if (heating.length) {
-    const w1h = await windowTickers([...new Set([...heating.map(([b]) => b + "USDT"), "BTCUSDT"])], "1h");
-    const btc1h = n(w1h.map.get("BTCUSDT")?.priceChangePercent);
-    state.regime.btc1hPct = round(btc1h, 2);
+    const [w1h, w4h] = await Promise.all([windowTickers([...new Set([...heating.map(([b]) => b + "USDT"), "BTCUSDT"])], "1h"),
+      windowTickers(["BTCUSDT"], "4h")]);
+    const btc1h = n(w1h.map.get("BTCUSDT")?.priceChangePercent), btc4h = n(w4h.map.get("BTCUSDT")?.priceChangePercent);
+    state.regime.btc1hPct = round(btc1h, 2); state.regime.btc4hPct = round(btc4h, 2);
     for (const [base, f] of heating) {
-      f.btc1h = btc1h;
+      f.btc1h = btc1h; f.btc4h = btc4h;
       const w = w1h.map.get(base + "USDT");
       if (w) {
         const exp1h = f.hourly ? expectedQuoteVolume(f.hourly, 60.5) : f.avgDaily / 24;
         f.rvol1h = exp1h > 0 ? Number(w.quoteVolume) / exp1h : null; f.ret1h = Number(w.priceChangePercent);
       }
     }
-    const need = IGNITE_RVOL * (marketWide ? 1.5 : 1);
-    const strong = heating.filter(([, f]) => f.rvol15 >= need && f.ret15 >= MIN_RET15 && f.ret15 <= MAX_RET15 && f.range6h != null &&
-      (f.spreadBps == null || f.spreadBps <= MAX_SPREAD_BPS)).slice(0, 8);
+    // 5m candles for the hottest 20 that have not already run (two hot 5m candles lift the 15m figure to ~2x+)
+    const strong = heating.filter(([, f]) => f.ret15 <= MAX_RET15 && (f.ret1h ?? 0) <= MAX_RET1H && f.range6h != null &&
+      (f.spreadBps == null || f.spreadBps <= MAX_SPREAD_BPS)).slice(0, 20);
     await mapLimit(strong, 4, async ([base, f]) => { await analyze5m(base, f); });
   }
   return out;
@@ -938,34 +985,43 @@ function updateEvents(results) {
   const fresh = [];
   const fire = (c, tier, score, message, lines) => {
     fresh.push({
-      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, label: tier === "ignition" ? "Early ignition" : c.label,
+      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score,
+      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : c.label,
       time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
     if (!DEMO && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-      sendTelegram(`${tier === "ignition" ? `EARLY IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})` : `Setup alert: ${c.base} (score ${score}/100)`}\n` +
+      const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
+        : tier === "early" ? `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)` : `Setup alert: ${c.base} (score ${score}/100)`;
+      sendTelegram(`${head}\n` +
         `Moved so far: ${sgn(c.ret15m)} 15m | ${sgn(c.ret1h)} 1h | ${sgn(c.change24h)} 24h\n` +
         lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${TARGET_PCT}% before -${STOP_PCT}% within ${OUTCOME_MS / 3_600_000}h.` +
         "\nSet entry, stop-loss and target first. Research signal only, not financial advice.");
     }
   };
-  // 1) Fast tier: confirmed ignition with a high enough confidence score, price not yet run.
+  // 1) Ignition tiers. "early": the v5 rule passed (first signal). "ignition" (confirmed): the same rule plus an ignition
+  // score >= IGNITE_MIN_SCORE. Separate cooldowns, so a confirmation still fires after an early alert.
   // Held back briefly at startup until the time-of-day baselines have loaded, so early alerts are not noisy.
   const exclusionsReady = DEMO || meta.loaded;
   const seasonalReady = exclusionsReady && (DEMO || state.warmup.seasonal >= 0.8 * state.warmup.total || now - state.startedAt > 180_000);
   const cd1 = DEMO ? 90_000 : IGNITE_COOLDOWN_MS;
+  const lines = (c) => [
+    c.r5 != null ? `last two 5m candles ${c.prevR5}x and ${c.r5}x normal volume${c.seasonalBaseline ? " for this hour" : ""}, 1h ${c.rvol1h ?? "n/a"}x` : null,
+    `${c.buyRatio10m ?? c.buyRatio15m}% of the last 10 min was aggressive buying${c.tradesRatio != null ? `, trades ${c.tradesRatio}x normal` : ""}`,
+    `price only ${sgn(c.ret10m ?? c.ret15m)} in 10m, ${sgn(c.change24h)} in 24h${c.rsi != null ? `, daily RSI ${Math.round(c.rsi)}` : ""}`,
+    structureLine(c), rotationLine(c),
+    ...c.reasons.slice(0, 2)].filter(Boolean);
   if (seasonalReady) {
-    results.filter((c) => c.ignition === "ignited" && !c.moved && (c.igScore ?? 0) >= IGNITE_MIN_SCORE)
-      .sort((a, b) => b.igScore - a.igScore)
+    results.filter((c) => c.ignition === "ignited" && !c.moved)
+      .sort((a, b) => (b.igScore ?? 0) - (a.igScore ?? 0))
       .forEach((c) => {
-        if (fresh.length >= MAX_ALERTS_PER_SCAN || now - (lastAlertAt.get(`ignition:${c.symbol}`) || 0) < cd1) return;
-        fire(c, "ignition", c.igScore, `${c.base} early ignition (score ${c.igScore}/100)`, [
-          `15m volume ${c.rvol15}x normal${c.seasonalBaseline ? " for this hour" : ""}, 1h ${c.rvol1h ?? "n/a"}x`,
-          `volume held in ${c.persist}/${c.persistOf} recent 5m candles${c.tradesRatio != null ? `, trades ${c.tradesRatio}x normal` : ""}`,
-          `${c.buyRatio15m}% of recent volume was aggressive buying`,
-          `price only ${sgn(c.ret15m)} in 15m, ${sgn(c.change24h)} in 24h${c.rangePos != null ? `, ${Math.round(c.rangePos * 100)}% up its 2h range` : ""}`,
-          structureLine(c), rotationLine(c),
-          ...c.reasons.slice(0, 2)].filter(Boolean));
+        if (fresh.length >= MAX_ALERTS_PER_SCAN) return;
+        if ((c.igScore ?? 0) >= IGNITE_MIN_SCORE && now - (lastAlertAt.get(`ignition:${c.symbol}`) || 0) >= cd1) {
+          lastAlertAt.set(`early:${c.symbol}`, now); // a confirmed alert also covers the early tier
+          fire(c, "ignition", c.igScore, `${c.base} confirmed ignition (score ${c.igScore}/100)`, lines(c));
+        } else if (EARLY_ALERTS && now - (lastAlertAt.get(`early:${c.symbol}`) || 0) >= cd1) {
+          fire(c, "early", c.igScore ?? 0, `${c.base} early ignition (score ${c.igScore ?? "n/a"}/100)`, lines(c));
+        }
       });
   }
   // 2) Setup tier (off unless SCREENER_SETUP_ALERTS=1): strong daily context that has NOT already moved.
@@ -1033,6 +1089,8 @@ function summarize(evs) {
 }
 const BUCKETS = [
   ["Ignition score 80+", (c) => c.igScore >= 80], ["Ignition score 65-79", (c) => c.igScore >= 65 && c.igScore < 80],
+  ["Ignition score under 65", (c) => c.igScore != null && c.igScore < 65],
+  ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
   ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
   ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],
   ["Buyers 65%+", (c) => c.buyRatio15m >= 65], ["Buyers under 65%", (c) => c.buyRatio15m < 65],
@@ -1045,9 +1103,11 @@ const BUCKETS = [
   ["BTC regime up or sideways", (c) => !!c.rotation?.regime && !c.rotation.riskOff], ["BTC regime downtrend", (c) => !!c.rotation?.riskOff],
 ];
 function statsBlock(evs) {
-  const ig = evs.filter((e) => e.tier === "ignition");
+  const ig = evs.filter((e) => e.tier === "ignition" || e.tier === "early");
   return {
-    overall: summarize(evs), byTier: { ignition: summarize(ig), setup: summarize(evs.filter((e) => e.tier !== "ignition")) },
+    overall: summarize(evs),
+    byTier: { ignition: summarize(evs.filter((e) => e.tier === "ignition")), early: summarize(evs.filter((e) => e.tier === "early")),
+      setup: summarize(evs.filter((e) => e.tier === "setup")) },
     buckets: BUCKETS.map(([name, fn]) => {
       const s = summarize(ig.filter((e) => e.detail && fn(e.detail)));
       return { name, resolved: s.resolved, winRatePct: s.winRatePct, expectancyPct: s.expectancyPct, netPct: s.netPct };
@@ -1141,22 +1201,25 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 function demoRoll(i, kind) { // kind: "ignite" | "ran" | "cold"
   const hot = kind !== "cold";
   const names = hot || Math.random() < 0.35 ? [DEMO_NARR[Math.floor(Math.random() * DEMO_NARR.length)]] : null;
-  const common = { spreadBps: rnd(1, 9), marketWide: false, seasonal: true, range6h: hot ? rnd(3, 8) : rnd(1.2, 6), btc1h: rnd(-0.3, 0.6) };
+  const common = { spreadBps: rnd(1, 9), marketWide: false, seasonal: true, range6h: hot ? rnd(3, 8) : rnd(1.2, 6), btc1h: rnd(-0.3, 0.6), btc4h: rnd(0, 1.2) };
   return {
     kind, rank: i + 4,
     rvol: hot ? rnd(2.4, 4) : rnd(0.7, 2.2), dist: kind === "ran" ? rnd(0.1, 0.3) : hot ? rnd(-0.025, 0.05) : rnd(-0.12, 0.06),
-    rsi: hot ? rnd(50, 68) : rnd(32, 80), compressed: kind === "ignite" ? Math.random() < 0.6 : Math.random() < 0.2,
+    rsi: kind === "ignite" ? rnd(42, 64) : hot ? rnd(50, 68) : rnd(32, 80), compressed: kind === "ignite" ? Math.random() < 0.6 : Math.random() < 0.2,
     ratio: hot ? rnd(0.6, 1) : rnd(0.15, 1), narrative: names ? { change: hot ? rnd(5, 11) : rnd(3, 7), names } : null,
     funding: Math.random() < 0.85 ? rnd(-0.0002, hot ? 0.0003 : 0.0009) : null, oi: Math.random() < 0.7 ? rnd(-0.05, 0.13) : null,
     vol: rnd(8e6, 2.2e8), price: rnd(0.4, 180),
     chg: kind === "ran" ? rnd(16, 45) : kind === "ignite" ? rnd(0.5, 6) : rnd(-6, 6),
     f: kind === "ignite" ? { ...common, rvol15: rnd(4.2, 9), ret15: rnd(0.4, 3), rvol1h: rnd(1.8, 4), ret1h: rnd(0.8, 5), buy15: rnd(60, 74),
       persist: Math.random() < 0.6 ? 3 : 2, persistOf: 3, tradesRatio: rnd(1.5, 3.2), rangePos: rnd(0.65, 0.97), nearHigh: Math.random() < 0.5, rs15: rnd(0.1, 2),
-      trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: rnd(-1.5, 1.5) }
+      trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0.1, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: rnd(-1.5, 1.5),
+      early: { r5: rnd(3.2, 9), prevR5: rnd(3.1, 8), ret10: rnd(0.3, 2), buy10: rnd(59, 75), closePos5: rnd(0.5, 0.88), body5: rnd(0.2, 0.7) } }
       : kind === "ran" ? { ...common, rvol15: rnd(3, 6), ret15: rnd(3.5, 9), rvol1h: rnd(3, 6), ret1h: rnd(9, 20), buy15: rnd(55, 70),
         persist: 3, persistOf: 3, tradesRatio: rnd(2, 4), rangePos: 0.97, nearHigh: true, rs15: rnd(3, 8),
-        trendUp: true, extPct: rnd(5, 12), fadePct: rnd(0, 2), wickShare: rnd(0.2, 0.6), breakout: true, distTo12hHigh: rnd(3, 9) }
-        : { ...common, rvol15: rnd(2.1, 3.9), ret15: rnd(-1, 1), rvol1h: rnd(0.5, 1.6), ret1h: rnd(-2, 2), buy15: rnd(44, 56) },
+        trendUp: true, extPct: rnd(5, 12), fadePct: rnd(0, 2), wickShare: rnd(0.2, 0.6), breakout: true, distTo12hHigh: rnd(3, 9),
+        early: { r5: rnd(4, 9), prevR5: rnd(4, 9), ret10: rnd(2, 6), buy10: rnd(55, 70), closePos5: rnd(0.8, 1), body5: rnd(0.6, 0.9) } }
+        : { ...common, rvol15: rnd(2.1, 3.9), ret15: rnd(-1, 1), rvol1h: rnd(0.5, 1.6), ret1h: rnd(-2, 2), buy15: rnd(44, 56),
+          early: { r5: rnd(1, 4), prevR5: rnd(0.5, 3), ret10: rnd(-0.5, 0.5), buy10: rnd(44, 58), closePos5: rnd(0.2, 0.9), body5: rnd(-0.5, 0.5) } },
   };
 }
 // Simulated past alerts so the performance panel can be previewed. Demo only; never written to the real state file.
@@ -1243,7 +1306,7 @@ if (!LIBRARY_ONLY) {
   });
   server.listen(PORT, HOST, () => {
     console.log(`Early Setup Screener v${LOGIC_VERSION}: http://${HOST}:${PORT}`);
-    console.log(`Refresh: ${POLL_MS / 1000}s | ignition: 15m vol >= ${IGNITE_RVOL}x (time-of-day adjusted), score >= ${IGNITE_MIN_SCORE}, ` +
+    console.log(`Refresh: ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x (time-of-day adjusted), daily RSI <= ${MAX_DAILY_RSI}, early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE}, ` +
       `typical 6h range >= ${(MIN_RANGE_RATIO * TARGET_PCT).toFixed(1)}%, BTC 1h >= ${BTC_1H_MIN}% | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | ` +
       `top ${TOP_N} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
     console.log(`BTC rotation tab: http://${HOST}:${PORT}/#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"} | data: Binance only, no API key`);

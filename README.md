@@ -7,7 +7,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
 1. Make sure you have Node.js installed.
 2. Open your terminal in the project folder and run:
    ```bash
-   node server.js
+   node --env-file=.env Screener.js
 Open your web browser and go to: http://localhost:3000
 
 (Optional: To enable the AI features, add a .env file with GEMINI_API_KEY=your_api_key and run the app using node --env-file=.env Screener.js)

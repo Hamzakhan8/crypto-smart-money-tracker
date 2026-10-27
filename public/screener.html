@@ -40,6 +40,15 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .chart{padding:4px 18px 6px;overflow-x:auto}.chart svg{width:100%;min-width:620px;height:auto;display:block}.legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 18px 10px;font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .heat td.cell{text-align:center;font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}.heat td.cell small{display:block;font-size:10px;opacity:.75;margin-top:2px}.heat th.now{color:var(--green)}.heat td.lowconf{opacity:.55}
 .yes{color:var(--green);font-weight:800}
+/* whale moves view */
+.lower>*{min-width:0}  /* let side-by-side panels shrink on phones; wide tables scroll inside their panel */
+.wroute{font-weight:800}.wroute .arrow{color:var(--blue);margin:0 6px}.wtok.major{color:var(--muted);font-weight:700}.badge.net{color:var(--muted);font-weight:700;margin-left:6px}
+.badge.whale{color:var(--blue);border-color:#2c4a77;background:#111d30}.badge.watch{color:#c4b5fd;border-color:#4b3a7a;background:#1b1530}.badge.surge{color:var(--green);border-color:#236a53;background:#102a25}.badge.rotation{color:var(--amber);border-color:#6d5621;background:#2b2414}
+.wbar{height:5px;width:56px;background:#263443;border-radius:8px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:6px}.wbar i{display:block;height:100%;background:var(--blue)}
+.table tr.bot td{opacity:.45}a.wlink{color:var(--blue);text-decoration:none}a.wlink:hover{text-decoration:underline}
+.watchbar{padding:0 18px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.watchbar input[name=pair]{width:150px;text-transform:uppercase}.watchbar input[name=min]{width:120px}.wcheck{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}.wcheck input{padding:0}
+.watches{display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 16px}.wchip{display:inline-flex;align-items:center;gap:8px;border:1px solid #4b3a7a;background:#1b1530;border-radius:999px;padding:7px 8px 7px 12px;font-size:12px;font-weight:700}.wchip small{color:var(--muted);font-weight:600}.wchip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 4px}.wchip button:hover{color:var(--red)}
+.toast.whale{border-left-color:var(--blue)}.toast.watch{border-left-color:#a78bfa}.toast.surge{border-left-color:var(--green)}.toast.rotation{border-left-color:var(--amber)}.toast.whale .tag{color:var(--blue)}.toast.watch .tag{color:#c4b5fd}.toast.rotation .tag{color:var(--amber)}
 @keyframes slide{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.toast{animation:none}}
 @media(max-width:900px){.regime-hero{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
 </style></head>
@@ -57,6 +66,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 <nav class="tabs" role="tablist" aria-label="Screeners">
  <button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Early ignition</button>
  <button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button>
+ <button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whale moves</button>
 </nav>
 <div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
 <div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div>
@@ -139,6 +149,57 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   <div class="table-wrap"><table class="table"><thead><tr><th>Week of</th><th>BTC regime</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRecent"></tbody></table></div>
  </section>
  <div class="foot">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
+</div>
+<div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
+ <div class="notice"><b>What this shows:</b> real swaps on decentralized exchanges (who sold which token for which), from the free GeckoTerminal API. Wallets are anonymous addresses: this shows <i>what</i> big wallets did, not who they are or why. A whale buying is not a signal that price will rise.</div>
+ <div class="error" id="wErrors"></div>
+ <section class="panel" style="margin-bottom:14px">
+  <div class="section-head"><div><h2>Watch a pair</h2><p>Popup and Telegram message on every swap from one token into another, e.g. ETH-PEPE, SOL-BONK, USDC-ETH. The tracker finds and follows that token's busiest pools.</p></div></div>
+  <form class="watchbar" id="wForm">
+   <input name="pair" placeholder="ETH-PEPE" aria-label="Pair, FROM-TO" required>
+   <select name="network" id="wNet" aria-label="Network"><option value="*">Any network</option></select>
+   <input name="min" type="number" min="0" step="1000" value="10000" aria-label="Minimum swap in USD" title="Minimum swap size in USD">
+   <label class="wcheck"><input type="checkbox" name="both"> both directions</label>
+   <button class="btn" type="submit">Watch</button>
+   <span class="red" id="wFormErr" style="font-size:12px"></span>
+  </form>
+  <div class="watches" id="wWatches"></div>
+ </section>
+ <div class="kpis">
+  <div class="kpi"><div class="label">Swaps, last hour</div><div class="value" id="wkSwaps">—</div><div class="hint" id="wkSwapsHint">above the minimum size</div></div>
+  <div class="kpi"><div class="label">Value swapped, last hour</div><div class="value" id="wkUsd">—</div><div class="hint">bot-like wallets excluded</div></div>
+  <div class="kpi"><div class="label">Active wallets, last hour</div><div class="value" id="wkWallets">—</div><div class="hint" id="wkBots">—</div></div>
+  <div class="kpi"><div class="label">Pools followed</div><div class="value" id="wkPools">—</div><div class="hint" id="wkNets">—</div></div>
+ </div>
+ <section class="panel">
+  <div class="section-head">
+   <div><h2>Top rotations</h2><p>Money moving FROM one token TO another. One-way = share of the pair's two-way flow going this direction. vs normal = compared with this route's usual level today.</p></div>
+   <div class="filters">
+    <select id="wWin" aria-label="Time window"><option value="15m">Last 15 min</option><option value="1h" selected>Last hour</option><option value="24h">Last 24 hours</option></select>
+    <select id="wNetFilter" aria-label="Network filter"><option value="">All networks</option></select>
+    <input id="wQ" placeholder="Filter: PEPE or ETH-PEPE" aria-label="Filter by token or pair">
+    <label class="wcheck"><input type="checkbox" id="wMajors"> ETH/BTC/SOL ↔ stablecoins</label>
+   </div>
+  </div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Route</th><th>Value</th><th>Swaps</th><th>Wallets</th><th>One-way</th><th>vs normal</th><th>Largest swap</th></tr></thead><tbody id="wEdges"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <div class="lower">
+  <section class="panel"><div class="section-head"><div><h2>Money flowing into</h2><p>Bought minus sold in the selected window.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Net in</th><th>Bought</th><th>Sold</th><th>Wallets</th></tr></thead><tbody id="wIn"></tbody></table></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Money flowing out of</h2><p>Sold minus bought in the selected window.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Net out</th><th>Bought</th><th>Sold</th><th>Wallets</th></tr></thead><tbody id="wOut"></tbody></table></div></section>
+ </div>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Wallet rotations</h2><p id="wRotHint">Wallets that sold one token and bought another soon after (last 24 hours).</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Wallet</th><th>Rotation</th><th>Value</th><th>Gap</th><th>Transactions</th></tr></thead><tbody id="wRot"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Live swaps</h2><p>Newest first. Faded rows are bot-like wallets, left out of the numbers above.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Network</th><th>Swap</th><th>Value</th><th>Wallet</th><th>DEX</th><th>Tx</th></tr></thead><tbody id="wFeed"></tbody></table></div>
+ </section>
+ <div class="lower">
+  <section class="panel"><div class="section-head"><div><h2>Whale alert history</h2><p>Every whale alert that popped up and went to Telegram.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>What the tracker is following right now.</p></div></div><div class="source-list" id="wHealth"></div></section>
+ </div>
+ <div class="foot">How it works: every few seconds the tracker downloads the latest swaps of one followed pool from GeckoTerminal (free, no key), so each pool refreshes about once a minute. It follows the busiest token pools on each network plus the pools of every pair you watch. Swaps routed through several pools in one transaction are joined (ETH → USDC → PEPE counts as ETH → PEPE); loops back to the starting token are arbitrage and dropped. Wallets that round-trip within 5 minutes or make 40+ swaps an hour are treated as bots. Alerts: whale swaps, your watched pairs, sudden one-way rotation surges compared with the route's normal level, and wallets that sell one token and buy another within 30 minutes.</div>
 </div>
 </main>
 
@@ -368,20 +429,118 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  syncNotify();
 
  // ---------- tabs ----------
- const LEDES={ignition:$("#lede").innerHTML,rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ const LEDES={ignition:$("#lede").innerHTML,whales:"Follows big on-chain swaps on Ethereum, Base and Solana: which token wallets sold and which one they bought (for example ETH → PEPE). Watch any pair to get a popup and a Telegram message on every swap above your size. Whale alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  let tab="ignition",rot=null,rotTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["rotation","#tabRotation"],["whales","#tabWhales"]];
  function setTab(t){
   tab=t;
-  for(const [k,b] of [["ignition","#tabIgnition"],["rotation","#tabRotation"]]){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
+  for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
   $("#lede").innerHTML=LEDES[t];
-  const want=t==="rotation"?"#rotation":"";
+  const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   clearInterval(rotTimer);
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
+  if(t==="whales")loadW();
  }
- $("#tabIgnition").onclick=()=>setTab("ignition");$("#tabRotation").onclick=()=>setTab("rotation");
- document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;setTab(tab==="ignition"?"rotation":"ignition");$(tab==="ignition"?"#tabIgnition":"#tabRotation").focus();});
- window.addEventListener("hashchange",()=>setTab(location.hash==="#rotation"?"rotation":"ignition"));
+ for(const [k,b] of TABS)$(b).onclick=()=>setTab(k);
+ document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;const i=TABS.findIndex(x=>x[0]===tab),n=TABS[(i+(e.key==="ArrowRight"?1:TABS.length-1))%TABS.length];setTab(n[0]);$(n[1]).focus();});
+ const tabFromHash=()=>TABS.some(x=>"#"+x[0]===location.hash)?location.hash.slice(1):"ignition";
+ window.addEventListener("hashchange",()=>setTab(tabFromHash()));
+
+ // ---------- whale moves ----------
+ let wd={},wSeen=null,wNetsFilled=false;
+ const WTYPES={whale:"WHALE SWAP",watch:"PAIR WATCH",surge:"ROTATION SURGE",rotation:"WALLET ROTATION"};
+ const wusd=v=>v==null?"—":v>=1e6?"$"+(v/1e6).toFixed(2)+"M":v>=1e3?"$"+(v/1e3).toFixed(1)+"k":"$"+Math.round(v);
+ const wamt=v=>!Number.isFinite(v)?"":v>=1e9?(v/1e9).toFixed(2)+"B":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"k":v>=1?v.toFixed(2):v.toPrecision(3);
+ const wago=t=>{if(!t)return"—";const s=Math.max(0,Math.round((Date.now()-t)/1000));return s<60?s+"s ago":s<3600?Math.round(s/60)+"m ago":Math.round(s/3600)+"h ago";};
+ const wclock=t=>new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+ const wshort=a=>a&&a.length>12?a.slice(0,6)+"…"+a.slice(-4):a||"?";
+ const wlink=(url,text)=>url&&/^https:\/\//.test(url)?`<a class="wlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`:esc(text);
+ const wtok=t=>`<span class="wtok ${t.cls!=="token"?"major":""}">${esc(t.symbol)}</span>`;
+ const wroute=(f,t)=>`<span class="wroute">${wtok(f)}<span class="arrow">→</span>${wtok(t)}</span>`;
+ const wnet=id=>((wd.networks||[]).find(n=>n.id===id)||{}).name||id||"";
+ function wMatch(q,from,to){
+  if(!q)return true;
+  const m=q.toUpperCase().replace(/\s/g,"").split(/->|>|-|\/|→/).filter(Boolean);
+  if(m.length>=2)return (from===m[0]&&to===m[1])||(from===m[1]&&to===m[0]);
+  return from.includes(m[0])||to.includes(m[0]);
+ }
+ async function loadW(){
+  try{const r=await fetch("/api/flows?window="+encodeURIComponent($("#wWin").value),{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);wd=await r.json();drawW();checkW(wd.events);}
+  catch(e){$("#wErrors").style.display="block";$("#wErrors").textContent="Cannot load /api/flows: "+e.message;}
+ }
+ function drawW(){
+  const d=wd,q=$("#wQ").value.trim(),nf=$("#wNetFilter").value,majors=$("#wMajors").checked,S=x=>String(x||"").toUpperCase();
+  if(d.disabled){$("#wErrors").style.display="block";$("#wErrors").textContent="Whale moves is switched off (SCREENER_WHALES=0).";return;}
+  if(!wNetsFilled&&d.networks){wNetsFilled=true;for(const n of d.networks)for(const sel of ["#wNet","#wNetFilter"]){const o=document.createElement("option");o.value=n.id;o.textContent=n.name;$(sel).appendChild(o);}}
+  const errs=Object.entries(d.errors||{});
+  $("#wErrors").style.display=errs.length?"block":"none";$("#wErrors").innerHTML=errs.map(([k,v])=>`<b>${esc(k)}:</b> ${esc(v)}`).join("<br>");
+  const t=d.totals||{},h=d.health||{},c=d.config||{};
+  $("#wkSwaps").textContent=t.swaps1h??"—";$("#wkSwapsHint").textContent=(d.demo?"SIMULATED · ":"")+"swaps above "+wusd(c.minTradeUsd);
+  $("#wkUsd").textContent=wusd(t.usd1h);$("#wkWallets").textContent=t.wallets1h??"—";$("#wkBots").textContent=(h.bots??0)+" bot-like wallets excluded";
+  $("#wkPools").textContent=t.pools??"—";$("#wkNets").textContent=(d.networks||[]).map(n=>n.name).join(" · ");
+  $("#wWatches").innerHTML=(d.watches||[]).length?d.watches.map(w=>`<span class="wchip">${esc(w.from)} ${w.both?"⇄":"→"} ${esc(w.to)} <small>${w.net==="*"?"any network":esc(wnet(w.net))} · from ${wusd(w.minUsd)} · ${esc(w.status||"")}</small><button type="button" title="Stop watching" data-unwatch="${esc(w.id)}">×</button></span>`).join(""):'<span class="muted" style="font-size:12px">No pairs watched. Add one above.</span>';
+  const edges=(d.edges||[]).filter(e=>(majors||!e.majors)&&(!nf||e.net===nf)&&wMatch(q,S(e.from.symbol),S(e.to.symbol))).slice(0,40);
+  $("#wEdges").innerHTML=edges.length?edges.map(e=>{
+   const vs=e.vsNormal==="new"?'<span class="green">new today</span>':e.vsNormal==null?'<span class="muted">building history</span>':`<span class="${e.vsNormal>=3?"green":e.vsNormal<1?"muted":""}">${e.vsNormal.toFixed(1)}x</span>`,ow=Math.round(e.oneWay*100);
+   return `<tr><td>${wroute(e.from,e.to)}<span class="badge net">${esc(e.chain)}</span></td><td class="mono"><b>${wusd(e.usd)}</b><span class="sub">${wusd(e.reverse)} went back</span></td><td class="mono">${e.n}</td><td class="mono">${e.wallets}</td><td class="mono ${ow>=70?"green":ow<50?"muted":""}">${ow}%<span class="wbar"><i style="width:${ow}%"></i></span></td><td class="mono">${vs}</td><td class="mono">${wusd(e.largest)}</td></tr>`;
+  }).join(""):`<tr><td colspan="7" class="empty">${(d.edges||[]).length?"Nothing matches the filter.":"No swaps recorded in this window yet. The first minutes fill in as pools are fetched."}</td></tr>`;
+  const flowRows=(rows,out)=>{const r=rows.filter(f=>(!nf||f.net===nf)&&wMatch(q,S(f.token.symbol),""));return r.length?r.slice(0,10).map(f=>`<tr><td><b>${esc(f.token.symbol)}</b><span class="badge net">${esc(f.chain)}</span></td><td class="mono ${out?"red":"green"}"><b>${wusd(Math.abs(f.netUsd))}</b></td><td class="mono">${wusd(f.inUsd)}</td><td class="mono">${wusd(f.outUsd)}</td><td class="mono">${f.wallets}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Nothing yet.</td></tr>';};
+  $("#wIn").innerHTML=flowRows(d.inflow||[],false);$("#wOut").innerHTML=flowRows(d.outflow||[],true);
+  $("#wRotHint").textContent=`Wallets that sold one token and bought another within ${c.rotationMinutes??30} minutes (last 24 hours). Alerts from ${wusd(c.rotationUsd)}.`;
+  const rots=(d.rotations||[]).filter(r=>(!nf||r.net===nf)&&wMatch(q,S(r.from.symbol),S(r.to.symbol)));
+  $("#wRot").innerHTML=rots.length?rots.slice(0,20).map(r=>`<tr><td class="mono">${wclock(r.t)}<span class="sub">${esc(wago(r.t))}</span></td><td class="mono">${wlink(r.walletUrl,wshort(r.wallet))}<span class="sub">${esc(r.chain)}</span></td><td>${wroute(r.from,r.to)}<span class="sub">via ${esc(r.via.symbol)}</span></td><td class="mono"><b>${wusd(r.usd)}</b><span class="sub">sold ${wusd(r.sellUsd)} · bought ${wusd(r.buyUsd)}</span></td><td class="mono">${r.gapMin} min</td><td class="mono">${wlink(r.sellTxUrl,"sell")} · ${wlink(r.buyTxUrl,"buy")}</td></tr>`).join(""):'<tr><td colspan="6" class="empty">No wallet rotations seen yet.</td></tr>';
+  const feed=(d.feed||[]).filter(r=>(!nf||r.net===nf)&&wMatch(q,S(r.from.symbol),S(r.to.symbol)));
+  $("#wFeed").innerHTML=feed.length?feed.slice(0,60).map(r=>`<tr class="${r.bot?"bot":""}"><td class="mono">${wclock(r.t)}<span class="sub">${esc(wago(r.t))}</span></td><td>${esc(r.chain)}</td><td>${wroute(r.from,r.to)}<span class="sub mono">${esc(wamt(r.from.amount))} ${esc(r.from.symbol)} → ${esc(wamt(r.to.amount))} ${esc(r.to.symbol)}${r.hops>1?" · "+r.hops+" hops":""}</span></td><td class="mono"><b>${wusd(r.usd)}</b></td><td class="mono">${wlink(r.walletUrl,wshort(r.wallet))}${r.bot?'<span class="sub">bot-like</span>':""}</td><td>${esc(r.dex)}</td><td class="mono">${wlink(r.txUrl,"view")}</td></tr>`).join(""):'<tr><td colspan="7" class="empty">No swaps yet.</td></tr>';
+  $("#wEvents").innerHTML=(d.events||[]).length?d.events.slice(0,25).map(e=>`<div class="event" style="cursor:default"><div><strong><span class="badge ${esc(e.type)}">${esc(WTYPES[e.type]||e.type)}</span> ${esc(e.title)}</strong><small>${(e.lines||[]).map(esc).join(" · ")}${(e.links||[]).length?"<br>"+e.links.map(l=>wlink(l.url,l.label)).join(" · "):""}</small></div><small class="mono">${when(e.time)}</small></div>`).join(""):'<div class="empty">No whale alerts yet. Quiet is normal.</div>';
+  $("#wHealth").innerHTML=[
+   ["GeckoTerminal requests",`${h.callsLastMin??0}/min (limit ${c.callsPerMin??"—"})${h.pausedUntil?' <span class="red">rate limited, pausing</span>':""}`],
+   ["Telegram",d.telegramConfigured?'<span class="green">configured</span>':'<span class="amber">not set</span>'],
+   ["Swaps kept (24h)",h.swaps24h??0],
+   ["Alert sizes",`whale ${wusd(c.whaleUsd)} · surge ${wusd(c.surgeUsd)} from ${c.surgeWallets}+ wallets at ${c.surgeMult}x normal · rotation ${wusd(c.rotationUsd)}`],
+   ...(d.pools||[]).slice(0,40).map(p=>[`${wlink(p.url,p.name)} <span class="muted">· ${esc(p.chain)} · ${esc(p.dex)}${p.watch?" · watched":""}${p.wash?" · mostly bots, dropped at next refresh":""}</span>`,p.error?`<span class="red">${esc(p.error)}</span>`:`${p.swaps24h} swaps · ${esc(wago(p.lastPoll))}`]),
+  ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
+ }
+ function wPopup(e,test){
+  const el=document.createElement("div");
+  el.className="toast "+(test?"test":String(e.type).replace(/[^a-z]/g,""));
+  el.innerHTML=`<h4><span><span class="tag">${esc(test?"TEST · ":"")}${esc(WTYPES[e.type]||e.type)}</span> &nbsp;${esc(wnet(e.net))}</span><button class="x" aria-label="Dismiss">✕</button></h4><p><b style="color:var(--ink)">${esc(e.title)}</b></p>${(e.lines||[]).map(l=>`<p>${esc(l)}</p>`).join("")}${(e.links||[]).length?`<p>${e.links.map(l=>wlink(l.url,l.label)).join(" · ")}</p>`:""}`;
+  const kill=()=>el.remove();
+  el.addEventListener("click",ev=>{if(ev.target.closest(".x")){kill();return;}if(ev.target.closest("a"))return;setTab("whales");kill();});
+  $("#toasts").prepend(el);
+  while($("#toasts").children.length>4)$("#toasts").lastChild.remove();
+  setTimeout(kill,25000);
+  beep();
+  if(!test){
+   if(document.hidden)document.title="● "+(e.from||"")+" → "+(e.to||"")+" "+wusd(e.usd)+" | "+baseTitle;
+   if("Notification" in window&&Notification.permission==="granted"){try{new Notification(`${WTYPES[e.type]||e.type}: ${e.title}`,{body:(e.lines||[]).join(" | ")});}catch{}}
+  }
+ }
+ function checkW(ev){
+  ev=ev||[];
+  if(wSeen===null){wSeen=new Set(ev.map(e=>e.id));return;}   // first load: do not replay old alerts
+  ev.filter(e=>!wSeen.has(e.id)).reverse().forEach(e=>{wSeen.add(e.id);wPopup(e,false);});
+ }
+ // Whale alerts pop up on every tab: the full data loads only while the tab is open, otherwise just the alert list.
+ async function pollW(){
+  if(tab==="whales")return loadW();
+  try{const r=await fetch("/api/flows?only=events",{cache:"no-store"});if(r.ok)checkW((await r.json()).events);}catch{}
+ }
+ async function wPost(path,body){
+  const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"HTTP "+r.status);return j;
+ }
+ $("#wForm").onsubmit=async ev=>{
+  ev.preventDefault();const f=ev.target;$("#wFormErr").textContent="";
+  try{await wPost("/api/flows/watch",{pair:f.pair.value,network:f.network.value,minUsd:Number(f.min.value)||0,both:f.both.checked});f.pair.value="";loadW();}
+  catch(e){$("#wFormErr").textContent=e.message;}
+ };
+ $("#wWatches").addEventListener("click",async ev=>{const id=ev.target?.dataset?.unwatch;if(!id)return;try{await wPost("/api/flows/unwatch",{id});loadW();}catch(e){$("#wFormErr").textContent=e.message;}});
+ for(const s of ["#wQ","#wNetFilter","#wMajors"])$(s).addEventListener("input",drawW);
+ $("#wWin").onchange=loadW;
+ const igTest=$("#testBtn").onclick;   // on this tab the test button previews a whale popup instead
+ $("#testBtn").onclick=()=>tab==="whales"?wPopup({type:"watch",net:"eth",from:"ETH",to:"PEPE",usd:42500,title:"$42.5k ETH → PEPE",lines:["Wallet 0x47b9…658b · uniswap_v2","Watch: ETH-PEPE from $10.0k"],links:[]},true):igTest();
+ pollW();setInterval(pollW,6000);
 
  // ---------- BTC rotation ----------
  async function loadRot(){
@@ -476,7 +635,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  ["minScore","narrOnly","hideMoved","sortBy","rowLimit"].forEach(id=>$("#"+id).onchange=drawTable);
  const scopeSaved=store.get("screenerPerfScope");if(scopeSaved==="all"||scopeSaved==="current")$("#perfScope").value=scopeSaved;
  $("#perfScope").onchange=()=>{store.set("screenerPerfScope",$("#perfScope").value);drawPerf();};
- if(location.hash==="#rotation")setTab("rotation");
+ if(tabFromHash()!=="ignition")setTab(tabFromHash());
  load();setInterval(load,3000);
 })();
 </script></body></html>

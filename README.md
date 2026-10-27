@@ -54,6 +54,21 @@ Click it to have the AI instantly read the current top coins and wallet signals,
 
 Recursive Mode: If you check the "Recursive Agent" box before clicking the button, a second "Risk Manager" AI will review the first report and point out potential fake-outs, low-volume risks, or traps.
 
+6. Whale Moves tab (on-chain swaps)
+Open the screener at http://localhost:3001 and click the "Whale moves" tab (or go straight to http://localhost:3001/#whales). It starts together with `node server.js` or `node screener.js`.
+
+It follows real swaps on decentralized exchanges (Ethereum, Base and Solana by default) and shows where money is rotating: which token big wallets sold and which one they bought, for example ETH → PEPE.
+
+Watch a pair: type a pair like ETH-PEPE, SOL-BONK or USDC-ETH, choose a minimum swap size and click "Watch". Every swap on that route above your size pops up on screen and goes to Telegram.
+
+Top rotations: the biggest FROM → TO flows in the last 15 minutes, hour or day, how many wallets took part, how one-sided the flow was, and how it compares with that route's normal level.
+
+Wallet rotations: wallets that sold one token and bought another within 30 minutes.
+
+Alerts (popup on every tab + Telegram): whale swaps ($100k+), your watched pairs, sudden one-way rotation surges, and wallet rotations ($25k+). Bot-like wallets (MEV round trips, very high-frequency traders) are filtered out.
+
+Data comes from the free GeckoTerminal API, no key needed. Wallets are anonymous addresses: the tab shows what big wallets did, not who they are. Settings (all optional, in .env): FLOWS_NETWORKS=eth,base,solana · FLOWS_WHALE_USD=100000 · FLOWS_MIN_TRADE_USD=2000 · FLOWS_SURGE_USD=50000 · FLOWS_ROTATION_USD=25000 · SCREENER_WHALES=0 to switch it off. Telegram uses the same TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID as the other screeners. Run with DEMO=1 to preview with simulated data.
+
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.
 

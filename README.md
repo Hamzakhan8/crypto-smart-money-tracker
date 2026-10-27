@@ -10,7 +10,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
    node server.js
 Open your web browser and go to: http://localhost:3000
 
-(Optional: To enable the AI features, add a .env file with GEMINI_API_KEY=your_api_key and run the app using node --env-file=.env server.js)
+(Optional: To enable the AI features, add a .env file with GEMINI_API_KEY=your_api_key and run the app using node --env-file=.env Screener.js)
 
 📖 User Guide: How to use the app
 Once the dashboard is open, here is how you can use it to spot market trends:

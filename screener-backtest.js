@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 process.env.SCREENER_LIBRARY_ONLY = "1";
 const core = await import("./screener.js");
 const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight,
-  DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO } = core;
+  DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO, isNonCryptoInfo } = core;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BN = (process.env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, ""); // e.g. https://data-api.binance.vision
@@ -84,12 +84,23 @@ const klines1d = (sym, end) => cached(`${sym}_1d_${end}.json`, async () => {
   const k = await fetchJson(`${BN}/api/v3/klines?symbol=${sym}USDT&interval=1d&endTime=${end - 1}&limit=${DAYS + WARM_DAYS + 45}`);
   return Array.isArray(k) ? k.map((c) => [Number(c[0]), +c[2], +c[3], +c[4], +c[7]]) : [];
 });
+// Tokenized stocks / ETFs and other non-crypto, from the screener's saved copy of Binance's product list.
+async function nonCryptoBases() {
+  try {
+    const m = JSON.parse(await readFile(path.join(here, "binance_meta.json"), "utf8"));
+    return new Set((m.coins || []).filter(([, info]) => isNonCryptoInfo(info)).map(([b]) => b));
+  } catch {
+    console.log("  binance_meta.json not found: run the screener once first, so tokenized stocks and ETFs are left out of the replay.");
+    return new Set();
+  }
+}
 async function pickSymbols() {
   if (LIST.length) return [...new Set(["BTC", ...LIST])];
+  const skip = await nonCryptoBases();
   const t = await fetchJson(`${BN}/api/v3/ticker/24hr`, { timeoutMs: 20_000 });
   return ["BTC", ...t.filter((x) => /USDT$/.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol))
     .map((x) => [x.symbol.slice(0, -4), Number(x.quoteVolume)])
-    .filter(([b, v]) => b !== "BTC" && !STABLES.has(b) && !NONCRYPTO.has(b) && v >= CONFIG.minQuoteVolume)
+    .filter(([b, v]) => b !== "BTC" && !STABLES.has(b) && !NONCRYPTO.has(b) && !skip.has(b) && v >= CONFIG.minQuoteVolume)
     .sort((a, b) => b[1] - a[1]).slice(0, TOPN - 1).map(([b]) => b)];
 }
 

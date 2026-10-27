@@ -578,7 +578,11 @@ const TAG_NARRATIVES = [
   [/^zk|zero.?knowledge/i, "Zero knowledge"], [/solana/i, "Solana ecosystem"], [/polkadot/i, "Polkadot ecosystem"], [/^bitcoin.?eco|^btcfi/i, "Bitcoin ecosystem"],
 ];
 const TAG_IGNORE = /^(pos|pow|bsc|bnb.?chain|launchpool|launchpad|megadrop|hodler.*|mining.?zone|monitoring|seed|innovation.*|new.*|alpha|fan.?token|etf|margin|isolated|.*airdrop.*|.*pool.*|grayscale|a16z.*|.*holdings|.*portfolio|arbitrum|base|polygon|avalanche|ethereum|optimism)$/i;
-const NONCRYPTO_TAG = /stable|tokeni[sz]ed|xstock|\bstocks?\b|equit|\bgold\b|silver|commodit|wrapped|bridged/i;
+// Binance tags its tokenized stocks and ETFs "bStocks" (one word, so \bstocks\b alone misses it) and names them
+// "Tesla (bStocks)"; the name check is a backup in case a tag is missing.
+const NONCRYPTO_TAG = /stable|tokeni[sz]ed|[bx]stocks?|\bstocks?\b|equit|\bgold\b|silver|commodit|wrapped|bridged/i;
+const NONCRYPTO_NAME = /[bx]stocks?\b|\btokeni[sz]ed\b/i;
+export const isNonCryptoInfo = (info) => !!info && ((info.tags || []).some((t) => NONCRYPTO_TAG.test(t)) || NONCRYPTO_NAME.test(info.name || ""));
 const isMonitoring = (info) => !!info?.tags?.some((t) => /monitoring/i.test(t));
 const isSeed = (info) => !!info?.tags?.some((t) => /^seed$/i.test(t));
 // Used only when Binance's product list cannot be read and no saved copy exists. Coins that are not listed are skipped.
@@ -1143,7 +1147,7 @@ async function scan() {
     if (!tk || BLOCKLIST.has(base)) continue;
     if ((n(tk.quoteVolume) || 0) < MIN_QUOTE_VOLUME) continue;
     if (STABLES.has(base) || info.tags.some((t) => /stable/i.test(t)) ||
-      (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || info.tags.some((t) => NONCRYPTO_TAG.test(t))))) { excluded++; continue; }
+      (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || isNonCryptoInfo(info)))) { excluded++; continue; }
     eligible.push([base, info, tk]);
   }
   kickDaily(eligible);

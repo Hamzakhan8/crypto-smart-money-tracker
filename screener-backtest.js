@@ -40,7 +40,7 @@ const CACHE = path.join(here, "backtest_cache");
 const WARM_DAYS = 15;                               // 14 days for hour-of-day baselines + 1 day for 24h figures
 const HORIZON = Math.round(CONFIG.outcomeHours * 12);
 const COOLDOWN = CONFIG.igniteCooldownHours * HOUR;
-const FEE = CONFIG.feePct + (CONFIG.slippagePct || 0); // fees + estimated slippage, as in the live results
+const FEE = +(CONFIG.feePct + (CONFIG.slippagePct || 0)).toFixed(4); // fees + estimated slippage, as in the live results
 const LOOSE_R5 = 2.5;                               // lowest 5m volume setting in the grid
 
 // Exit rules compared at the end. The first one is the live rule.

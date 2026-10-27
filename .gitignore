@@ -1,3 +1,5 @@
 .env
 flows_state.json
 flows_state.demo.json
+whales_state.json
+whales_state.demo.json

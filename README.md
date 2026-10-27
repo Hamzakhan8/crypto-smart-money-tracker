@@ -54,20 +54,24 @@ Click it to have the AI instantly read the current top coins and wallet signals,
 
 Recursive Mode: If you check the "Recursive Agent" box before clicking the button, a second "Risk Manager" AI will review the first report and point out potential fake-outs, low-volume risks, or traps.
 
-6. Whale Moves tab (on-chain swaps)
-Open the screener at http://localhost:3001 and click the "Whale moves" tab (or go straight to http://localhost:3001/#whales). It starts together with `node server.js` or `node screener.js`.
+6. Whale Tracker tab (Arkham-style)
+Open the screener at http://localhost:3001 and click "Whale tracker" (or go to http://localhost:3001/#whales). It starts with `node server.js` or `node screener.js`. No API key needed.
 
-It follows real swaps on decentralized exchanges (Ethereum, Base and Solana by default) and shows where money is rotating: which token big wallets sold and which one they bought, for example ETH → PEPE.
+Live whale transfers: every Ethereum transfer of any token (or ETH) above $100k, read straight from the blockchain, with who sent it and who received it. About 10,000 addresses are labelled: exchanges (Binance, Coinbase, Kraken, OKX…), funds and market makers, stablecoin issuers (Tether, Circle), bridges, DeFi protocols, MEV bots, mixers and flagged hacker addresses. Each transfer gets a type: exchange deposit (often before selling), exchange withdrawal, exchange to exchange, mint / burn, DeFi, bridge or wallet to wallet.
 
-Watch a pair: type a pair like ETH-PEPE, SOL-BONK or USDC-ETH, choose a minimum swap size and click "Watch". Every swap on that route above your size pops up on screen and goes to Telegram.
+Exchange flows: how much of each token went onto and off exchanges, and each exchange's inflows and outflows.
 
-Top rotations: the biggest FROM → TO flows in the last 15 minutes, hour or day, how many wallets took part, how one-sided the flow was, and how it compares with that route's normal level.
+Most active entities and biggest unlabelled wallets: who moved the most money in the last hour or day.
 
-Wallet rotations: wallets that sold one token and bought another within 30 minutes.
+Click any address for its profile (label, transfers, top counterparties) with one-click links to Arkham, Etherscan and DeBank.
 
-Alerts (popup on every tab + Telegram): whale swaps ($100k+), your watched pairs, sudden one-way rotation surges, and wallet rotations ($25k+). Bot-like wallets (MEV round trips, very high-frequency traders) are filtered out.
+Watchlist: paste any wallet (give it your own label, it shows everywhere) or token (PEPE or its contract address) and get an alert on every move above your minimum.
 
-Data comes from the free GeckoTerminal API, no key needed. Wallets are anonymous addresses: the tab shows what big wallets did, not who they are. Settings (all optional, in .env): FLOWS_NETWORKS=eth,base,solana · FLOWS_WHALE_USD=100000 · FLOWS_MIN_TRADE_USD=2000 · FLOWS_SURGE_USD=50000 · FLOWS_ROTATION_USD=25000 · SCREENER_WHALES=0 to switch it off. Telegram uses the same TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID as the other screeners. Run with DEMO=1 to preview with simulated data.
+DEX rotations: swaps on Ethereum, Base and Solana DEXes, e.g. ETH → PEPE. Watch a pair to be alerted on every swap above your size.
+
+Alerts pop up on every tab and go to Telegram: transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges.
+
+Data: public Ethereum RPC nodes (blocks and transfers), DexScreener (prices, liquidity), GeckoTerminal (DEX swaps) and an open Etherscan label snapshot from June 2023 (data/eth-labels.json, rebuilt with `node scripts/build-labels.js`). Newer exchange wallets can show as unlabelled. Settings (optional, in .env): WHALES_MIN_USD=100000 · WHALES_ALERT_USD=1000000 · WHALES_STABLE_ALERT_USD=25000000 · WHALES_EXCHANGE_ALERT_USD=500000 · WHALES_MINT_ALERT_USD=10000000 · WHALES_TELEGRAM_PER_HOUR=30 · WHALES_RPC=your own node URL(s) · FLOWS_NETWORKS=eth,base,solana · SCREENER_WHALES=0 to switch it all off. Run with DEMO=1 to preview with simulated data.
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

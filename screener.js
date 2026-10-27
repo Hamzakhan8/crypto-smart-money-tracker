@@ -23,8 +23,8 @@
 //   - Daily-setup alerts are off by default (9% win rate). The daily score still feeds the ignition score.
 //   - The signal functions are exported, so screener-backtest.js replays exactly this logic on past candles.
 //
-// Whale moves (flows.js, "Whale moves" tab, /api/flows): on-chain DEX swaps from GeckoTerminal, whale / pair-watch /
-// rotation alerts. SCREENER_WHALES=0 switches it off.
+// Whale tracker ("Whale tracker" tab): whales.js follows every large Ethereum transfer with Arkham-style labels
+// (/api/whales), flows.js follows DEX swaps and token rotations (/api/flows). SCREENER_WHALES=0 switches both off.
 //
 // BTC rotation (rotation.js, "BTC rotation" tab, /api/rotation): ranks altcoin narratives by how they did vs BTC in
 // past weeks with the same BTC regime plus their current price action, backtested week by week. Every ignition
@@ -44,6 +44,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRotation } from "./rotation.js";
 import { startFlows, handleFlowsRequest } from "./flows.js";
+import { startWhales, handleWhalesRequest } from "./whales.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -1223,6 +1224,7 @@ if (!LIBRARY_ONLY) {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/api/screener") return jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) });
     if (url.pathname === "/api/rotation") return jsonResponse(res, 200, { ...rotation.api(), binancePausedUntil: binancePause() });
+    if (await handleWhalesRequest(req, res, url)) return;
     if (await handleFlowsRequest(req, res, url)) return;
     if (url.pathname === "/") {
       try {
@@ -1248,5 +1250,5 @@ if (!LIBRARY_ONLY) {
   });
   loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
   rotation.start();
-  if (env.SCREENER_WHALES !== "0") startFlows();
+  if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
 }

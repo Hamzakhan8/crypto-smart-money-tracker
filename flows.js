@@ -1,4 +1,4 @@
-// Whale moves (on-chain rotation tracker): follows DEX swaps (who swapped which token into which) and alerts on them.
+// DEX rotations (part of the "Whale tracker" tab): follows DEX swaps (who swapped which token into which) and alerts on them.
 // Node.js 18+, no dependencies, no API key: swaps come from the public GeckoTerminal API (about 30 calls/min free).
 //
 // What it tracks
@@ -15,7 +15,7 @@
 //     mostly one-way, and FLOWS_SURGE_MULT x its normal 15-minute level over the past day.
 //   - Wallet rotation: one wallet sells token A and buys token B within FLOWS_ROTATION_MINUTES, >= FLOWS_ROTATION_USD.
 //
-// Runs inside the Early Setup Screener: the "Whale moves" tab (public/screener.html, /api/flows), started by screener.js.
+// Runs inside the Early Setup Screener: the DEX section of the "Whale tracker" tab (/api/flows), started by screener.js.
 // Own state file. Set SCREENER_WHALES=0 to switch it off. It shows what wallets did; it cannot tell why or what comes
 // next. Not financial advice.
 
@@ -30,10 +30,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEMO = env.DEMO === "1";
 const NETWORKS = (env.FLOWS_NETWORKS || "eth,base,solana").split(",").map((s) => s.trim()).filter(Boolean);
-const POOLS_PER_NETWORK = num("FLOWS_POOLS_PER_NETWORK", 8);   // busiest token pools followed per network
+const POOLS_PER_NETWORK = num("FLOWS_POOLS_PER_NETWORK", 5);   // busiest token pools followed per network
 const MIN_TRADE_USD = num("FLOWS_MIN_TRADE_USD", 2000);        // smaller swaps are not fetched
 const MIN_RESERVE_USD = num("FLOWS_MIN_RESERVE_USD", 250_000); // skip thin pools (easy to fake volume)
-const CALLS_PER_MIN = clamp(num("FLOWS_CALLS_PER_MIN", 20), 1, 30); // slows down by itself after a rate-limit reply
+const CALLS_PER_MIN = clamp(num("FLOWS_CALLS_PER_MIN", 10), 1, 30); // free GeckoTerminal tier; slows down further after a 429
 const WHALE_USD = num("FLOWS_WHALE_USD", 100_000);
 const SURGE_USD = num("FLOWS_SURGE_USD", 50_000);
 const SURGE_WALLETS = num("FLOWS_SURGE_WALLETS", 3);
@@ -47,7 +47,7 @@ const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
 const GT = "https://api.geckoterminal.com/api/v2";
 const DAY = 86_400_000, HOUR = 3_600_000, MIN = 60_000;
-const DISCOVERY_MS = 10 * MIN;
+const DISCOVERY_MS = 30 * MIN;
 const FRESH_MS = 10 * MIN;       // only swaps newer than this can alert (a pool's first fetch returns up to 24h of history)
 const BASELINE_MIN_MS = 3 * HOUR; // surge "vs normal" needs at least this much history
 const BOT_SWAPS_PER_HOUR = 40;
@@ -177,7 +177,7 @@ async function discover(net) {
     delete state.errors[`Pools ${chain(net).name}`];
   } catch (e) {
     discoverRetryAt.set(net, Date.now() + 2 * MIN);
-    state.errors[`Pools ${chain(net).name}`] = e.message;
+    if (!/429/.test(e.message)) state.errors[`Pools ${chain(net).name}`] = e.message; // a 429 just slows the queue down
   }
 }
 
@@ -192,8 +192,8 @@ async function pollPool(p) {
     rows = Array.isArray(json?.data) ? json.data : [];
     p.error = null;
   } catch (e) {
-    p.error = e.message; p.lastPoll = now;
-    state.errors.GeckoTerminal = `${p.name}: ${e.message}`;
+    p.error = /429/.test(e.message) ? "rate limited, will retry" : e.message; p.lastPoll = now;
+    if (!/429/.test(e.message)) state.errors.GeckoTerminal = `${p.name}: ${e.message}`;
     return;
   }
   delete state.errors.GeckoTerminal;
@@ -590,7 +590,7 @@ let started = false;
 export function startFlows() {
   if (started) return;
   started = true;
-  console.log(`Whale moves tab: networks ${NETWORKS.join(", ")} | swaps >= ${fmtUsd(MIN_TRADE_USD)} | whale >= ${fmtUsd(WHALE_USD)} | data: GeckoTerminal, no API key`);
+  console.log(`DEX rotations: networks ${NETWORKS.join(", ")} | swaps >= ${fmtUsd(MIN_TRADE_USD)} | whale >= ${fmtUsd(WHALE_USD)} | data: GeckoTerminal, no API key`);
   loadPersisted().finally(() => { if (DEMO) demoInit(); loop(); });
 }
 

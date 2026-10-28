@@ -40,6 +40,7 @@ const MIN_USD = num("WHALES_MIN_USD", 100_000);                    // transfers 
 const ALERT_USD = num("WHALES_ALERT_USD", 1_000_000);                 // non-stablecoin transfers
 const STABLE_ALERT_USD = num("WHALES_STABLE_ALERT_USD", 25_000_000);  // stablecoins move in size all day; alert only on very large ones
 const TELEGRAM_PER_HOUR = num("WHALES_TELEGRAM_PER_HOUR", 30);        // all alerts still show on the page
+const TELEGRAM_ON = env.WHALES_TELEGRAM === "1";                      // off by default: Telegram is for ignition alerts and the AI
 const EXCHANGE_ALERT_USD = num("WHALES_EXCHANGE_ALERT_USD", 500_000);
 const MINT_ALERT_USD = num("WHALES_MINT_ALERT_USD", 10_000_000);
 const MIN_LIQUIDITY = num("WHALES_MIN_LIQUIDITY_USD", 250_000);
@@ -284,7 +285,7 @@ function fire(key, type, tr, title, extra = []) {
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, net: "eth", from: tr.symbol, to: "", usd: tr.usd,
     title, lines, links: links(tr) };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && state.telegramConfigured && env.WHALES_TELEGRAM !== "0" && telegramSent.length < TELEGRAM_PER_HOUR) {
+  if (!DEMO && TELEGRAM_ON && state.telegramConfigured && telegramSent.length < TELEGRAM_PER_HOUR) {
     telegramSent.push(now);
     const label = { whale: "WHALE TRANSFER", deposit: "EXCHANGE DEPOSIT", withdrawal: "EXCHANGE WITHDRAWAL", mint: "STABLECOIN MINT", burn: "STABLECOIN BURN",
       issuer: "ISSUER MOVE", wallet: "WATCHED WALLET", token: "WATCHED TOKEN" }[type] || type.toUpperCase();
@@ -477,7 +478,7 @@ function snapshot(windowKey) {
   const sum = (arr) => arr.reduce((s, tr) => s + tr.usd, 0);
   const headLag = state.lastBlockTime ? Math.round((now - state.lastBlockTime) / 1000) : null;
   return {
-    demo: DEMO, status: state.status, errors: state.errors, lastUpdated: state.lastUpdated, telegramConfigured: state.telegramConfigured,
+    demo: DEMO, status: state.status, errors: state.errors, lastUpdated: state.lastUpdated, telegramConfigured: state.telegramConfigured, telegramOn: TELEGRAM_ON,
     window: windowKey === "24h" ? "24h" : "1h",
     chain: { name: "Ethereum", head: state.head, lastBlock: state.lastBlock, lagSec: headLag, backfill: state.backfill },
     config: { minUsd: MIN_USD, alertUsd: ALERT_USD, stableAlertUsd: STABLE_ALERT_USD, telegramPerHour: TELEGRAM_PER_HOUR, exchangeAlertUsd: EXCHANGE_ALERT_USD, mintAlertUsd: MINT_ALERT_USD, minLiquidity: MIN_LIQUIDITY,

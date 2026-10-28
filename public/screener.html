@@ -213,7 +213,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <h2 class="subhead">DEX rotations</h2>
  <p>Swaps on decentralized exchanges (Ethereum, Base, Solana) from GeckoTerminal's free API: which token wallets sold for which (e.g. ETH → PEPE). The free API allows only a few requests a minute, so each pool refreshes every few minutes.</p>
  <section class="panel" style="margin-bottom:14px">
-  <div class="section-head"><div><h2>Watch a pair</h2><p>Popup and Telegram message on every swap from one token into another, e.g. ETH-PEPE, SOL-BONK, USDC-ETH.</p></div><span class="chip" id="wkLine">—</span></div>
+  <div class="section-head"><div><h2>Watch a pair</h2><p>Popup on every swap from one token into another, e.g. ETH-PEPE, SOL-BONK, USDC-ETH.</p></div><span class="chip" id="wkLine">—</span></div>
   <form class="watchbar" id="wForm">
    <input name="pair" placeholder="ETH-PEPE" aria-label="Pair, FROM-TO" required>
    <select name="network" id="wNet" aria-label="Network"><option value="*">Any network</option></select>
@@ -242,7 +242,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  </div>
 
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Whale and DEX alerts that popped up and went to Telegram.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Whale and DEX alerts that popped up.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
   <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Where the data comes from right now.</p></div></div><div class="source-list" id="wHealth"></div></section>
  </div>
  <div class="foot">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
@@ -488,7 +488,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  syncNotify();
 
  // ---------- tabs ----------
- const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab and go to Telegram.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  let tab="ignition",rot=null,rotTimer=null;
  const TABS=[["ignition","#tabIgnition"],["rotation","#tabRotation"],["whales","#tabWhales"]];
  function setTab(t){
@@ -551,7 +551,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    ["Tokens priced (DexScreener)",`${h.tokensPriced??0} · ${h.dexCallsLastMin??0} requests/min`],
    ["Address labels",`${(c.labels||0).toLocaleString()} (public snapshot, ${esc(c.labelsAsOf||"")})`],
    ["Whale alerts",`transfers ${wusd(c.alertUsd)} (stablecoins ${wusd(c.stableAlertUsd)}) · exchange moves ${wusd(c.exchangeAlertUsd)} · mints ${wusd(c.mintAlertUsd)}`],
-   ["Telegram",wd.telegramConfigured?`<span class="green">configured</span> · max ${c.telegramPerHour}/hour`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'],
+   ["Telegram",wd.telegramOn||fd.telegramOn?(wd.telegramConfigured?`<span class="green">on</span> · ${[wd.telegramOn?`whales (max ${c.telegramPerHour}/hour)`:null,fd.telegramOn?"DEX":null].filter(Boolean).join(" · ")}`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'):'off · on screen only (Telegram gets ignition and AI messages; WHALES_TELEGRAM=1 / FLOWS_TELEGRAM=1 to send these)'],
    ["DEX data (GeckoTerminal)",`${fh.callsLastMin??0}/min of ${fc.callsPerMin??"—"}${fh.pausedUntil?' · <span class="amber">rate limited, slowing down</span>':""} · ${(fd.pools||[]).length} pools`],
   ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
  }

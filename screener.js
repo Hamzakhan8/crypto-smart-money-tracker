@@ -1012,9 +1012,9 @@ function updateEvents(results) {
         rule: { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS } },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
-    if (!DEMO && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+    if (!DEMO && tier !== "setup" && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) { // only ignition alerts go to Telegram
       const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
-        : tier === "early" ? `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)` : `Setup alert: ${c.base} (score ${score}/100)`;
+        : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)`;
       sendTelegram(`${head}\n` +
         `Moved so far: ${sgn(c.ret15m)} 15m | ${sgn(c.ret1h)} 1h | ${sgn(c.change24h)} 24h\n` +
         lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${TARGET_PCT}% before -${STOP_PCT}% within ${OUTCOME_MS / 3_600_000}h.` +

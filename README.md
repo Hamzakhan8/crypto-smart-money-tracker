@@ -22,7 +22,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
 
 3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
 
-Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): you get the screener's ignition alerts, the AI's verdict on each new alert, results you send from the AI desk, and the whale tracker's big alerts. The Market Flow Radar does not send messages; RADAR_TELEGRAM=1 turns its "Strong flow" messages back on. To keep other parts on screen only: WHALES_TELEGRAM=0 (whale transfers), FLOWS_TELEGRAM=0 (DEX rotations), AI_REVIEW_TELEGRAM=0 (AI follow-ups).
+Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition alerts (early and confirmed) and AI messages are sent: the AI's verdict on each new alert and results you send from the AI desk. Everything else stays on screen. To also send them: RADAR_TELEGRAM=1 (Market Flow Radar "Strong flow"), WHALES_TELEGRAM=1 (whale transfers), FLOWS_TELEGRAM=1 (DEX rotations). AI_REVIEW_TELEGRAM=0 stops the AI follow-ups.
 
 Tests: `npm test` checks the signal, outcome-tracking and AI safety logic (no internet or API key needed).
 
@@ -93,7 +93,7 @@ Watchlist: paste any wallet (give it your own label, it shows everywhere) or tok
 
 DEX rotations: swaps on Ethereum, Base and Solana DEXes, e.g. ETH → PEPE. Watch a pair to be alerted on every swap above your size.
 
-Alerts pop up on every tab and go to Telegram: transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges (WHALES_TELEGRAM=0 / FLOWS_TELEGRAM=0 keep them on screen only).
+Alerts pop up on every tab (Telegram only with WHALES_TELEGRAM=1 / FLOWS_TELEGRAM=1): transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges.
 
 Data: public Ethereum RPC nodes (blocks and transfers), DexScreener (prices, liquidity), GeckoTerminal (DEX swaps) and an open Etherscan label snapshot from June 2023 (data/eth-labels.json, rebuilt with `node scripts/build-labels.js`). Newer exchange wallets can show as unlabelled. Settings (optional, in .env): WHALES_MIN_USD=100000 · WHALES_ALERT_USD=1000000 · WHALES_STABLE_ALERT_USD=25000000 · WHALES_EXCHANGE_ALERT_USD=500000 · WHALES_MINT_ALERT_USD=10000000 · WHALES_TELEGRAM_PER_HOUR=30 · WHALES_RPC=your own node URL(s) · FLOWS_NETWORKS=eth,base,solana · SCREENER_WHALES=0 to switch it all off. Run with DEMO=1 to preview with simulated data.
 

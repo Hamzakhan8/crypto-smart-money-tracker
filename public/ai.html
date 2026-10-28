@@ -226,7 +226,7 @@ details.notice div{margin-top:8px}
    ${how}
    ${x.review?`<div class="sec">Risk review (${esc(x.meta.reviewModel||"")})</div><div class="callout ${x.review.verdict==="agree"?"blue":"red"}"><b>${esc(x.review.verdict)}</b>: ${esc(x.review.reason)}${(x.review.risks||[]).length?"<br>"+x.review.risks.map(esc).join("<br>"):""}</div>`:""}
    ${factsHtml(x.dossier||{})}${dossierHtml(x.dossier||{},false)}
-   <div class="meta">${esc(x.meta.model)}${x.meta.reviewModel?" + "+esc(x.meta.reviewModel):""} · ${num(x.meta.durationMs/1000,1)}s${x.telegram?(x.telegram.sent?' · <span class="green">sent to Telegram</span>':" · Telegram: "+esc(x.telegram.skipped||x.telegram.error)):""}<br>Long only. Risk at most 1% of your account. AI opinion on data, not financial advice.</div>`;
+   <div class="meta">${esc(x.meta.model)}${x.meta.reviewModel?" + "+esc(x.meta.reviewModel):""} · ${num(x.meta.durationMs/1000,1)}s${x.telegram?(x.telegram.sent?' · <span class="green">sent to Telegram</span>':" · Telegram: "+esc((x.telegram.skipped||x.telegram.error||"")+(x.telegram.queued?" (not sent yet, it will keep retrying)":""))):""}<br>Long only. Risk at most 1% of your account. AI opinion on data, not financial advice.</div>`;
  }
  function drawBatch(b){
   $("#resTitle").textContent="All ignition coins";$("#resSub").textContent=(b.meta&&b.meta.cached?"Saved result from "+ago(b.meta.at):"Fresh triage")+(b.meta&&b.meta.model?" · "+b.meta.model:"");
@@ -237,7 +237,7 @@ details.notice div{margin-top:8px}
     <td>${esc(c.reason)}${(c.guardNotes||[]).length?`<span class="sub amber">${c.guardNotes.map(esc).join(" ")}</span>`:""}</td><td class="muted">${esc(c.keyRisk)}</td>
     <td><button class="btn sm" data-an="${esc(c.symbol)}">Full analysis</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Nothing to analyze.</td></tr>'}</tbody></table></div>
    ${(b.failed||[]).length?`<div class="callout red">No data for: ${b.failed.map(f=>esc(f.symbol)+" ("+esc(f.error)+")").join(", ")}</div>`:""}
-   <div class="meta">Quick triage on the most important facts per coin, in one request. Open "Full analysis" for a trade plan with entry, stop and targets.${b.telegram?(b.telegram.sent?' · <span class="green">TAKE calls sent to Telegram</span>':" · Telegram: "+esc(b.telegram.skipped||b.telegram.error)):""}</div>`;
+   <div class="meta">Quick triage on the most important facts per coin, in one request. Open "Full analysis" for a trade plan with entry, stop and targets.${b.telegram?(b.telegram.sent?' · <span class="green">TAKE calls sent to Telegram</span>':" · Telegram: "+esc((b.telegram.skipped||b.telegram.error||"")+(b.telegram.queued?" (not sent yet, it will keep retrying)":""))):""}</div>`;
  }
 
  document.addEventListener("click",e=>{const b=e.target.closest("[data-an]");if(b&&!busy){if(!cand.configured){dataOnly(b.dataset.an);return;}analyze(b.dataset.an);}});

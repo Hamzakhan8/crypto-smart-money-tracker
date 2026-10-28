@@ -26,4 +26,6 @@ alpha_cache/
 alpha_report.json
 alpha_state.json
 journal.json
+telegram_state.json
+telegram_state.demo.json
 journal.demo.json

@@ -10,6 +10,7 @@ import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts } from "./screener.js";
 import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource } from "./ai-trade.js";
+import { sendTelegram as tgQueue, telegramWants, telegramConfigured } from "./telegram.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -17,8 +18,6 @@ const DEMO = env.DEMO === "1";
 const POLL_MS = Math.max(15, Number(env.POLL_SECONDS || 30)) * 1000;
 const MAX_SYMBOLS = Math.min(60, Math.max(10, Number(env.MAX_SYMBOLS || 40)));
 const MIN_QUOTE_VOLUME = Number(env.MIN_QUOTE_VOLUME || 1_000_000);
-const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
 const RADAR_TELEGRAM = env.RADAR_TELEGRAM === "1"; // Radar "Strong flow" messages are off by default: Telegram is for the screener and AI
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
 const WEB3_API = "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money/ai";
@@ -51,7 +50,7 @@ if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
 if (AI_AUTO_REVIEW && env.ALPHA_AI_REVIEW !== "0") onAlphaAlert(async (a) => {
   if (a.tier !== "confirmed" && env.ALPHA_AI_REVIEW !== "all") return;
   if (!aiBudget()) return;
-  try { annotateAlpha(a.id, { ai: await reviewAlpha(ai, a, { telegramOn: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all" }) }); }
+  try { annotateAlpha(a.id, { ai: await reviewAlpha(ai, a) }); }
   catch (e) { annotateAlpha(a.id, { ai: { error: e.message, at: Date.now() } }); }
 });
 // Saved with every alert: the share of Market Flow Radar coins whose last 5 minutes were mostly aggressive buying.
@@ -233,20 +232,15 @@ function updateEvents(coins) {
         time: now, type: "flow",
       });
       lastAlertAt.set(c.symbol, now);
-      if (RADAR_TELEGRAM && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only.`);
+      if (!DEMO && telegramWants("radar")) sendTelegram(`${c.symbol}: Strong flow score ${c.score}/100. ${c.reasons.join("; ")}. Research signal only.`);
     }
     previousScores.set(c.symbol, c.score);
   }
   state.events = [...fresh, ...state.events].slice(0, 100);
 }
-async function sendTelegram(message) {
-  try {
-    await fetchJson(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, disable_web_page_preview: true }),
-    });
-  } catch (e) { state.errors.Telegram = e.message; }
+async function sendTelegram(message) { // shared queue (telegram.js): retried until delivered
+  const r = await tgQueue(message, { kind: "radar" });
+  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
 }
 // Market Flow data for the AI trade desk: the Radar's live numbers for the coins it follows, and the same formula computed
 // on demand for any other coin (most ignition coins are smaller than the Radar's top coins).
@@ -358,7 +352,7 @@ const server = http.createServer(async (req, res) => {
   });
   
   if (url.pathname === "/api/signals") return jsonResponse(res, 200, {
-    ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals, aiVerdicts: freshAiVerdicts(),
+    ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals, aiVerdicts: freshAiVerdicts(), telegramConfigured: telegramConfigured(),
   });
 
   // NEW RECURSIVE GEMINI API ENDPOINT
@@ -370,7 +364,11 @@ const server = http.createServer(async (req, res) => {
     if (!ai) return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
     try {
       const body = await readJsonBody(req);
-      return jsonResponse(res, 200, await runAnalysis(ai, state, body));
+      const out = await runAnalysis(ai, state, body);
+      // "Send to Telegram" ticked: the brief as plain text, through the shared queue (sent even if other kinds are off)
+      const text = String(out.analysis || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)_(.+?)_(?=\s|$|[.,;])/g, "$1$2");
+      const tg = body.notify === true && text ? await tgQueue(`AI MARKET BRIEF\n${text}`, { kind: "system", force: true }) : null;
+      return jsonResponse(res, 200, tg ? { ...out, telegram: tg } : out);
     } catch (e) {
       const known = e instanceof AgentError;
       if (!known) console.error("Gemini agent error:", e);

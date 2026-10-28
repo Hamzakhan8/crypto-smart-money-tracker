@@ -137,25 +137,36 @@ Keep the terminal open while you use the app. Press `Ctrl + C` to stop it.
    TELEGRAM_CHAT_ID=123456789
    ```
 5. **Restart** the app (`Ctrl + C`, then `node server.js`).
-6. **Test it:** open http://localhost:3000/screener, scroll to **Data health**, and press **Send test message**.
+6. **Test it:** open http://localhost:3000/screener, press the **Telegram** tag at the top of the Ignition tab, and press **Send test message**. You also get a "Smart Money Tracker started" message each time the app starts.
 
 ### What is sent to Telegram
 
-By default only the most useful messages are sent, so your phone stays quiet:
+Switch each kind on or off in the **Telegram** section of the Ignition tab (press the **Telegram** tag). Your choice is saved and kept after a restart. The defaults:
 
-| Message | Default | How to change |
+| Message | Default | About how many |
 |---|---|---|
-| Ignition alerts (early and confirmed) | **On** | `SCREENER_EARLY_ALERTS=0` keeps only confirmed |
-| AI verdict on each new ignition alert | **On** (needs Gemini) | `AI_REVIEW_TELEGRAM=0` turns it off |
+| Ignition alerts (early and confirmed) | **On** | a few a day |
+| Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
+| Binance Alpha confirmed alerts | **On** | about 8 a day |
+| Early 2x high-priority candidates | **On** | a few a day |
+| AI verdict on each new ignition and confirmed Alpha alert | **On** (needs Gemini) | one per alert |
+| Startup message and daily check-in | **On** | one a day |
 | AI desk results you choose to send | On request | tick "send to Telegram" on the AI desk |
-| Big-move ignition alerts | Off | `SCREENER_BIGMOVE_ALERTS=1` |
-| Binance Alpha alerts | Off | `ALPHA_TELEGRAM=1` (confirmed) or `ALPHA_TELEGRAM=all` (early too) |
-| Early 2x candidates | Off | `EARLY2X_ALERTS=1` |
-| BTC rotation: regime or holdings changed | Off | `ROTATION_TELEGRAM=1` |
-| Whale transfers / DEX rotations | Off | `WHALES_TELEGRAM=1` / `FLOWS_TELEGRAM=1` |
-| Market Flow Radar "Strong flow" | Off | `RADAR_TELEGRAM=1` |
+| Binance Alpha early alerts | Off | about 50 a day, no proven edge |
+| BTC rotation: regime or holdings changed | Off | a few a month |
+| Whale transfers / DEX rotations | Off | many |
+| Market Flow Radar "Strong flow" | Off | many |
 
-Ignition alerts are rare (often one or two a day across all coins), so a quiet phone is normal. Not receiving anything? See [Troubleshooting](#10-troubleshooting).
+`.env` can change a default (for example `EARLY2X_ALERTS=0` or `ALPHA_TELEGRAM=all`, see [All settings](#9-all-settings)); a switch you flip on the page wins over `.env`.
+
+### How delivery works
+
+- **Nothing is lost when Telegram or the network fails.** Every message goes through one queue. It is sent at Telegram's pace (about one a second), retried with growing waits when it fails (a Telegram rate limit waits exactly as long as Telegram asks), and kept in `telegram_state.json` so a restart does not lose it.
+- **Late messages say so.** A message that goes out 2+ minutes late starts with "(delayed N min)". A message still not sent after 3 hours is dropped, because the alert is no longer useful; the delivery log shows it as "expired".
+- **Silence never means broken.** The startup message, and a daily check-in at 08:00 UTC (`TELEGRAM_CHECKIN_HOUR`) with how many alerts went out in the last 24 hours, show the connection works on days when no coin meets the rules.
+- **You can see every message.** The Telegram section shows the bot, the last message sent, anything waiting with the next try, the last error in plain words, and a delivery log (time, kind, message, status, tries, delay).
+
+Ignition alerts are rare (often a few a day across all coins), so a quiet phone is normal: the daily check-in tells you whether alerts fired. Not receiving anything? See [Troubleshooting](#10-troubleshooting).
 
 ---
 
@@ -280,7 +291,7 @@ Lists the coins the screener flags as igniting or heating up.
 
 - **Analyze:** Gemini gets everything that matters about the coin (the signal, 15m / 1h / 4h charts, support and resistance, order book, futures positioning, Market Flow Radar numbers, whale and DEX flows, BTC, and how often this kind of alert won before) and answers **TAKE, WAIT or NO TRADE** with entry, stop, targets, reward:risk and the reasons for and against.
 - **Analyze all:** ranks every igniting coin in one request. **Data only** shows the facts for free, without calling Gemini. **Risk review** adds a second model to double-check.
-- **Automatic review:** every new ignition alert, and every confirmed Alpha alert, gets one AI verdict saved with the alert (ignition verdicts also go to Telegram), so after a few weeks the performance panels show whether the AI's calls really do better.
+- **Automatic review:** every new ignition alert, and every confirmed Alpha alert, gets one AI verdict saved with the alert (verdicts also go to Telegram), so after a few weeks the performance panels show whether the AI's calls really do better.
 - **Alpha tokens:** press **Ask AI** on any row of the Alpha tab. The AI gets Alpha's own 1h / 4h candles, DexScreener buyers vs sellers, pool liquidity, holders and supply, with Alpha's own rule (+40% / -10% / 7 days, 1% costs) and its replay and live results. Extra hard stops: DEX sellers in control, pool under $50k.
 - **It learns from your live data:** the AI is shown how past alerts with the same conditions did (BTC trend, alt season, time of day, buyers…; groups with 10+ resolved alerts), so a condition that keeps losing lowers its chances.
 
@@ -382,9 +393,14 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the risk review |
 | `AI_AUTO_REVIEW` | on | `0` = no automatic verdict on new alerts |
 | `AI_REVIEWS_PER_HOUR` | `12` | Cost cap for automatic verdicts |
-| `AI_REVIEW_TELEGRAM` | on | `0` = do not send verdicts to Telegram |
+| `AI_REVIEW_TELEGRAM` | on | `0` = AI verdicts off on Telegram by default |
 | `AI_MIN_EV_PCT` | `0.5` | Minimum expected value per trade for TAKE |
-| `RADAR_TELEGRAM` | off | `1` = Market Flow Radar "Strong flow" messages |
+| `RADAR_TELEGRAM` | off | `1` = Market Flow Radar "Strong flow" messages on by default |
+| `SCREENER_TELEGRAM` | on | `0` = ignition alerts off on Telegram by default |
+| `TELEGRAM_CHECKIN` | on | `0` = no startup message or daily check-in by default |
+| `TELEGRAM_CHECKIN_HOUR` | `8` | Hour (UTC) of the daily check-in |
+
+The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches in the screener's Telegram section win.
 </details>
 
 <details>
@@ -402,7 +418,7 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |
 | `SCREENER_FEE_PCT` / `SCREENER_SLIPPAGE_PCT` | `0.2` / `0.1` | Costs used in the results |
 | `SCREENER_BIGMOVE` | on | `0` = no big-move tier |
-| `SCREENER_BIGMOVE_ALERTS` | off | `1` = big-move alerts on Telegram |
+| `SCREENER_BIGMOVE_ALERTS` | on | `0` = big-move alerts off on Telegram by default |
 | `SCREENER_BIGMOVE_TARGET_PCT` / `_STOP_PCT` / `_OUTCOME_HOURS` | `40` / `10` / `168` | Big-move tracking |
 | `SCREENER_BIGMOVE_MIN_VOLUME` / `_MAX_VOLUME` | `1000000` / `10000000` | Daily volume range for big-move coins |
 </details>
@@ -413,7 +429,7 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | Setting | Default | Meaning |
 |---|---|---|
 | `ALPHA` | on | `0` = turn the Alpha tab off |
-| `ALPHA_TELEGRAM` | off | `1` = confirmed alerts, `all` = early too |
+| `ALPHA_TELEGRAM` | on (confirmed) | `0` = off, `all` = early alerts too |
 | `ALPHA_VOL_MULT` | `5` | Volume multiple vs normal |
 | `ALPHA_MIN_5M_USD` / `ALPHA_MIN_TRADES` | `1000` / `10` | Minimum per 5-minute candle |
 | `ALPHA_MIN_24H_USD` | `1000000` | 24h volume for the confirmed tier |
@@ -429,7 +445,7 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | Setting | Default | Meaning |
 |---|---|---|
 | `EARLY2X` | on | `0` = turn the screen off |
-| `EARLY2X_ALERTS` | off | `1` = Telegram for new high-priority candidates |
+| `EARLY2X_ALERTS` | on | `0` = no Telegram for new high-priority candidates by default |
 | `EARLY2X_MCAP_MIN` / `_PREFERRED_MAX` / `_MAX` | `10000000` / `500000000` / `1000000000` | Market cap range |
 | `EARLY2X_MIN_QUOTE_VOLUME` | `1000000` | Minimum 24h volume |
 | `EARLY2X_MAX_SPREAD_PCT` | `0.3` | Maximum spread |
@@ -449,7 +465,7 @@ Every other threshold is listed at the top of `early2x.js`.
 | `WHALES_MIN_USD` | `100000` | Smallest transfer shown |
 | `WHALES_ALERT_USD` / `WHALES_STABLE_ALERT_USD` | `1000000` / `25000000` | Alert sizes (stablecoins separately) |
 | `WHALES_EXCHANGE_ALERT_USD` / `WHALES_MINT_ALERT_USD` | `500000` / `10000000` | Exchange flow and mint / burn alerts |
-| `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram |
+| `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram by default |
 | `WHALES_TELEGRAM_PER_HOUR` | `30` | Telegram cap |
 | `WHALES_RPC` | public nodes | Your own Ethereum node URL(s) |
 | `FLOWS_NETWORKS` | `eth,base,solana` | DEX networks |
@@ -460,7 +476,7 @@ Every other threshold is listed at the top of `early2x.js`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `ROTATION_TELEGRAM` | off | `1` = message when the regime or the holdings change |
+| `ROTATION_TELEGRAM` | off | `1` = message when the regime or the holdings change, by default |
 | `ROTATION_HOLD_DAYS` | `7` | Days between decisions |
 | `ROTATION_DAYS` | `1000` | Days of history |
 | `ROTATION_NARRATIVES` | all | For example `AI,Meme` to rank only these |
@@ -479,14 +495,16 @@ Another copy of the app is still running. Close that terminal window, or set `PO
 <details>
 <summary><b>No Telegram messages</b></summary>
 
-1. Look at the `Telegram:` line when the app starts. "bot @yourbot, sending to chat …" means the token is right.
-2. Press **Send test message** on the screener's **Data health** panel. The panel shows the last error in plain words.
+1. Look at the `Telegram:` line when the app starts. "bot @yourbot, sending to chat …" means the token is right; "PROBLEM: …" says what is wrong. It also lists which kinds are on.
+2. Open the screener, press the **Telegram** tag and press **Send test message**. The red "Not working" line explains any failure in plain words, and the delivery log shows every message.
 3. Common fixes:
    - **Wrong token:** copy it again from @BotFather.
    - **"chat not found":** open your bot and press **Start**, and check `TELEGRAM_CHAT_ID` (a group id starts with `-100` and the bot must be in the group).
    - **Blocked bot:** open it and press **Start** / **Unblock**.
-4. Restart the app after every change to `.env`.
-5. Remember: ignition alerts are rare, AI verdicts need `GEMINI_API_KEY`, and most other alert types are off until you turn them on ([table](#what-is-sent-to-telegram)).
+   - **Cannot reach api.telegram.org:** check the internet connection, firewall, VPN or proxy.
+4. Restart the app after every change to `.env`. Messages that failed are still waiting and go out once it works (up to 3 hours old).
+5. Check the switches: a kind that is off sends nothing. If the test message arrives but alerts do not, no coin met the rules: the daily check-in says how many alerts fired, and the Ignition, Alpha and Early 2x tabs show every alert on screen.
+6. AI verdicts need `GEMINI_API_KEY`. The app must keep running: a closed terminal or a sleeping computer sends nothing.
 </details>
 
 <details>
@@ -552,7 +570,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `whales.js`, `flows.js` | Whale tracker and DEX rotations |
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
-| `telegram.js` | Telegram sender and diagnostics |
+| `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |

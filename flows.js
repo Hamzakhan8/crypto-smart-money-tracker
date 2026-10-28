@@ -22,6 +22,7 @@
 import { readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sendTelegram as tgQueue, telegramWants } from "./telegram.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -45,7 +46,7 @@ const COOLDOWN_MS = num("FLOWS_COOLDOWN_MINUTES", 60) * 60_000; // per route, fo
 const DEFAULT_WATCH = env.FLOWS_WATCH ?? "eth:ETH-PEPE:10000"; // first run only: "network:FROM-TO:minUsd", comma-separated
 const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
-const TELEGRAM_ON = env.FLOWS_TELEGRAM === "1"; // off by default: Telegram is for ignition alerts and the AI
+const TELEGRAM_ON = () => telegramWants("flows"); // off by default (FLOWS_TELEGRAM=1 or the switch on the page)
 const GT = "https://api.geckoterminal.com/api/v2";
 const DAY = 86_400_000, HOUR = 3_600_000, MIN = 60_000;
 const DISCOVERY_MS = 30 * MIN;
@@ -337,7 +338,7 @@ function fire(key, type, ev, cooldown = 0) {
   lastAlertAt.set(key, now);
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, ...ev };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && TELEGRAM_ON && state.telegramConfigured) {
+  if (!DEMO && TELEGRAM_ON() && state.telegramConfigured) {
     const label = { whale: "WHALE SWAP", watch: "PAIR WATCH", surge: "ROTATION SURGE", rotation: "WALLET ROTATION" }[type] || type.toUpperCase();
     sendTelegram([`${label} · ${chain(e.net).name}`, e.title, ...(e.lines || []), ...(e.links || []).map((l) => `${l.label}: ${l.url}`),
       "Research signal only, not financial advice."].join("\n"));
@@ -383,15 +384,9 @@ function checkAlerts({ now, routes, rotations, edges }) {
   }
 }
 
-async function sendTelegram(text) {
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    delete state.errors.Telegram;
-  } catch (e) { state.errors.Telegram = e.message; }
+async function sendTelegram(text) { // shared queue (telegram.js): retried until delivered
+  const r = await tgQueue(text, { kind: "flows" });
+  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
 }
 
 // ───────────────────────────── watches ─────────────────────────────
@@ -551,7 +546,7 @@ function snapshot(windowKey) {
     netUsd: f.inUsd - f.outUsd, wallets: f.wallets.size }));
   return {
     demo: DEMO, status: state.status, startedAt: state.startedAt, lastUpdated: state.lastUpdated, errors: state.errors,
-    telegramConfigured: state.telegramConfigured, telegramOn: TELEGRAM_ON, window: w,
+    telegramConfigured: state.telegramConfigured, telegramOn: TELEGRAM_ON(), window: w,
     networks: NETWORKS.map((n) => ({ id: n, name: chain(n).name, pools: [...pools.values()].filter((p) => p.net === n).length, discoveredAt: discoveredAt.get(n) || null })),
     config: { minTradeUsd: MIN_TRADE_USD, whaleUsd: WHALE_USD, surgeUsd: SURGE_USD, surgeWallets: SURGE_WALLETS, surgeMult: SURGE_MULT,
       rotationUsd: ROTATION_USD, rotationMinutes: ROTATION_MS / MIN, callsPerMin: callRate, maxCallsPerMin: CALLS_PER_MIN, poolsPerNetwork: POOLS_PER_NETWORK },

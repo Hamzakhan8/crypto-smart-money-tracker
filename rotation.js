@@ -620,7 +620,7 @@ export function createRotation({ fetchJson, getNarratives, cacheDir, stables, no
     record.decisions = record.decisions.slice(-160);
     // 4) optional Telegram message when the regime or the holdings change (ROTATION_TELEGRAM=1)
     const now = { regime: result.regimeNow?.key ?? null, altState: result.altSeason?.state ?? null, holdings: (result.holdingsNow?.combined || []).join(" + ") };
-    if (telegramOn && sendTelegram && record.last && (record.last.regime !== now.regime || record.last.holdings !== now.holdings)) {
+    if ((typeof telegramOn === "function" ? telegramOn() : telegramOn) && sendTelegram && record.last && (record.last.regime !== now.regime || record.last.holdings !== now.holdings)) {
       const a = result.altSeason;
       sendTelegram([`BTC ROTATION: ${record.last.regime !== now.regime ? `regime changed: ${REGIMES[record.last.regime]?.label || "?"} -> ${REGIMES[now.regime]?.label || "?"}` : "holdings changed"}`,
         a ? `Alt season: ${a.label} (ETH/BTC ${a.ethBtc30 ?? "n/a"}% in 30d, median narrative ${a.altVsBtc30 ?? "n/a"}% vs BTC, ${a.breadthPct ?? "n/a"}% of coins above their 20-day average)` : null,
@@ -688,7 +688,7 @@ export function createRotation({ fetchJson, getNarratives, cacheDir, stables, no
       for (let j = decs.length - 1; j > 0; j--) if (holdOf(decs[j]) !== holdOf(decs[j - 1])) { changeAt = j; break; }
       return {
         status: st.status, progress: st.progress, error: st.error, warning: st.warning, nextRetryAt: st.nextRetryAt, updatedAt: st.updatedAt,
-        btcNow: st.btcNow, demo, regimes: REGIMES, altStates: ALT_STATES, stages: STAGES, telegramOn, ...(st.result || {}),
+        btcNow: st.btcNow, demo, regimes: REGIMES, altStates: ALT_STATES, stages: STAGES, telegramOn: typeof telegramOn === "function" ? telegramOn() : telegramOn, ...(st.result || {}),
         record: {
           since: decs[0]?.date ?? null, snapshots: Object.keys(record.memberships).length, firstSnapshot: Object.keys(record.memberships).sort()[0] ?? null,
           changes: record.changes.slice(0, 12), summary: recordSummary(decs),

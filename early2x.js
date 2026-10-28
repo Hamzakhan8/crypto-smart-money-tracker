@@ -24,6 +24,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchJson, mapLimit, STABLES, NONCRYPTO, isNonCryptoInfo, assetInfo, loadAssetInfo, assetInfoStatus } from "./screener.js";
 import { tokenWhaleSummary } from "./whales.js";
+import { sendTelegram as tgQueue, telegramWants } from "./telegram.js";
 import { tokenFlowSummary } from "./flows.js";
 
 const env = process.env;
@@ -73,7 +74,7 @@ export const CONFIG = Object.freeze({
   stopPct: num("EARLY2X_STOP_PCT", 20), feePct: num("EARLY2X_FEE_PCT", 0.2), slippagePct: num("EARLY2X_SLIPPAGE_PCT", 0.3),
   cooldownHours: num("EARLY2X_COOLDOWN_HOURS", 24), movedCooldownHours: num("EARLY2X_MOVED_COOLDOWN_HOURS", 72),
   maxSnapshotsPerDay: num("EARLY2X_MAX_SNAPSHOTS_PER_DAY", 150), minSample: num("EARLY2X_MIN_SAMPLE", 30),
-  alerts: env.EARLY2X_ALERTS === "1",                          // Telegram: off until explicitly enabled
+  alerts: env.EARLY2X_ALERTS !== "0",                          // Telegram default (on); the live switch is on the page (telegram.js)
   weights: Object.freeze(Object.fromEntries(Object.entries(DEFAULT_WEIGHTS).map(([k, d]) => [k, Math.max(0, num(`EARLY2X_W_${WEIGHT_ENV[k]}`, d))]))),
 });
 export const TARGETS = [25, 50, 100];
@@ -856,8 +857,8 @@ async function scan() {
     store.tracks[snap.id] = newTrack(snap.price, snap.at);
     store.last[x.u.symbol] = { ...(prev || {}), [st === "moved" ? "moved" : "main"]: { at: now, rank: rankOf(st, priority), state: st } };
     today++;
-    if (CONFIG.alerts && priority === "high" && !DEMO && state.telegramConfigured) {
-      sendTelegram(telegramText(snap)).then(() => { delete state.errors.Telegram; }).catch((e) => { state.errors.Telegram = e.message; });
+    if (priority === "high" && !DEMO && state.telegramConfigured && telegramWants("early2x")) { // queued and retried (telegram.js)
+      tgQueue(telegramText(snap), { kind: "early2x" }).then((r) => { if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error; });
     }
   }
   await trackSignals().catch((e) => { state.errors.Tracking = e.message; });
@@ -949,12 +950,6 @@ function onchainContext(base) {
     dex: d.tracked ? { networks: d.networks, netUsd24h: d.last24h.netUsd, swaps24h: d.last24h.swaps, wallets24h: d.last24h.wallets } : null,
   };
 }
-async function sendTelegram(text) {
-  await fetchJson(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST", headers: { "content-type": "application/json" }, retries: 1,
-    body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-  });
-}
 function telegramText(s) {
   const f = s.features;
   return [`EARLY 2X · ${STATES[s.state].toUpperCase()}: ${s.base} (score ${s.score}/100, high priority)`,
@@ -968,7 +963,7 @@ function telegramText(s) {
 const json = (res, code, d) => { res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(JSON.stringify(d)); };
 export function early2xSnapshot() {
   const recent = store.signals.slice(-60).reverse().map((s) => ({ ...s, track: store.tracks[s.id] || null }));
-  return { ...state, config: CONFIG, recent, signalCount: store.signals.length, telegramOn: CONFIG.alerts && state.telegramConfigured };
+  return { ...state, config: CONFIG, recent, signalCount: store.signals.length, telegramOn: telegramWants("early2x") && state.telegramConfigured };
 }
 export async function handleEarly2xRequest(req, res, url) {
   if (url.pathname === "/api/early2x") { json(res, 200, early2xSnapshot()); return true; }
@@ -985,7 +980,7 @@ async function tick() {
 export function startEarly2x() {
   if (started) return;
   started = true;
-  console.log(`Early 2x Movers: /screener#early2x | scan every ${CONFIG.scanMinutes} min | market cap ${fmtUsd(CONFIG.mcapMin)}-${fmtUsd(CONFIG.mcapMax)} | Telegram alerts: ${CONFIG.alerts ? "on" : "off (EARLY2X_ALERTS=1 to enable)"}`);
+  console.log(`Early 2x Movers: /screener#early2x | scan every ${CONFIG.scanMinutes} min | market cap ${fmtUsd(CONFIG.mcapMin)}-${fmtUsd(CONFIG.mcapMax)} | Telegram alerts: ${telegramWants("early2x") ? "on (high priority)" : "off"}`);
   readFile(CG_FILE, "utf8").then((t) => { const c = JSON.parse(t); if (c && c.map) cg = { ...cg, ...c, mapNext: 0 }; }).catch(() => {})
     .finally(() => loadStore().finally(() => { setTimeout(tick, 20_000); setInterval(tick, CONFIG.scanMinutes * MIN); }));
 }

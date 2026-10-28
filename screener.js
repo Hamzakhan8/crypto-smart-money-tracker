@@ -73,7 +73,7 @@ import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 import { createAlpha } from "./alpha.js";
 import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
 import { createJournal } from "./journal.js";
-import { sendTelegram as tgSend, telegramStatus, checkTelegram } from "./telegram.js";
+import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -121,7 +121,7 @@ const COST_PCT = FEE_PCT + SLIPPAGE_PCT;
 // -10% within 7 days (its own exit rule). Separate from the quick tiers above, which stay as they are. bigmove-backtest.js
 // replays it on every Binance USDT pair.
 const BIG_ON = env.SCREENER_BIGMOVE !== "0";
-const BIG_ALERTS = env.SCREENER_BIGMOVE_ALERTS === "1";        // Telegram for this tier: off until enabled (see README: it lost money in Oct)
+const BIG_ALERTS = () => telegramWants("bigmove");             // Telegram for this tier (on by default; switch on the page or SCREENER_BIGMOVE_ALERTS=0)
 const BIG_TARGET_PCT = num("SCREENER_BIGMOVE_TARGET_PCT", 40);
 const BIG_STOP_PCT = num("SCREENER_BIGMOVE_STOP_PCT", 10);
 const BIG_OUTCOME_MS = num("SCREENER_BIGMOVE_OUTCOME_HOURS", 168) * 3_600_000;
@@ -180,7 +180,7 @@ export const CONFIG = {
   version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
   igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, igniteMinScore: IGNITE_MIN_SCORE, btcDropPausePct: BTC_DROP_PAUSE,
   minMove15m: MIN_RET15, maxMove15m: MAX_RET15, marketWideShare: MARKET_WIDE_SHARE, minQuoteVolume: MIN_QUOTE_VOLUME,
-  bigmove: { on: BIG_ON, telegram: BIG_ALERTS, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
+  bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
 };
 
 const state = {
@@ -210,7 +210,7 @@ const state = {
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
-    bigmove: { on: BIG_ON, telegram: BIG_ALERTS, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
+    bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
   mainUrl: env.MAIN_URL || "/", // inside server.js the Market Flow Radar is on the same server; standalone sets it below
@@ -233,13 +233,13 @@ const rotation = LIBRARY_ONLY ? null : createRotation({
   only: (env.ROTATION_NARRATIVES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
   startDelayMs: num("ROTATION_START_DELAY_SECONDS", 45) * 1000, usedWeight: () => binanceWeight,
   recordFile: path.join(here, DEMO ? "rotation_record.demo.json" : "rotation_record.json"), // daily coin lists + live weekly picks
-  sendTelegram: (t) => tgSend(t), telegramOn: env.ROTATION_TELEGRAM === "1",                // regime / holdings change message: off by default
+  sendTelegram: (t) => tgSend(t, { kind: "rotation" }), telegramOn: () => telegramWants("rotation"), // regime / holdings change message: off by default
 });
 // Binance Alpha tokens (Binance Wallet), which are not spot pairs: same ignition idea on their 5m candles
 const alphaHooks = [];
 const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
   fetchJson, stateFile: path.join(here, "alpha_state.json"), reportFile: path.join(here, "alpha_report.json"),
-  sendTelegram: (t) => tgSend(t), telegramConfigured: () => telegramStatus().configured,
+  sendTelegram: (t, kind) => tgSend(t, { kind }), telegramConfigured: () => telegramStatus().configured, wantTelegram: telegramWants,
   context: () => marketContext(Date.now()), onAlert: (a) => { for (const h of alphaHooks) Promise.resolve().then(() => h(a)).catch(() => {}); },
 });
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
@@ -1052,9 +1052,9 @@ async function fastLayer(ready) {
 }
 
 // ───────────────────────────── alerts + outcomes ─────────────────────────────
-async function sendTelegram(text) {
-  const r = await tgSend(text);
-  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
+async function sendTelegram(kind, text) {
+  const r = await tgSend(text, { kind });
+  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = `${r.error}${r.queued ? " (will keep retrying)" : ""}`;
 }
 
 let persistTimer = null;
@@ -1115,12 +1115,12 @@ function updateEvents(results) {
       track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
-    if (!DEMO && tier !== "setup" && (tier !== "bigmove" || BIG_ALERTS) && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) { // only ignition alerts go to Telegram
+    if (!DEMO && tier !== "setup" && telegramWants(tier === "bigmove" ? "bigmove" : "ignition")) { // queued and retried until delivered (telegram.js)
       const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
         : tier === "bigmove" ? `BIG-MOVE IGNITION: ${c.base} (small coin waking up; research target +${BIG_TARGET_PCT}%, stop -${BIG_STOP_PCT}%)`
         : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)`;
       const hz = rule.hz / 3_600_000;
-      sendTelegram(`${head}\n` +
+      sendTelegram(tier === "bigmove" ? "bigmove" : "ignition", `${head}\n` +
         `Moved so far: ${sgn(c.ret15m ?? c.big?.ret10m)} ${c.ret15m != null ? "15m" : "10m"} | ${sgn(c.change24h)} 24h\n` +
         lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${rule.targetPct}% before -${rule.stopPct}% within ${hz >= 48 ? hz / 24 + " days" : hz + "h"}.` +
         "\nSet entry, stop-loss and target first. Research signal only, not financial advice.");
@@ -1178,7 +1178,7 @@ function updateEvents(results) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
     // AI review: the quick tiers, and big-move alerts when their Telegram alerts are on (the AI gets that tier's rule)
-    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early" || (ev.tier === "bigmove" && BIG_ALERTS)) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early" || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
 }
 
@@ -1548,8 +1548,19 @@ export async function handleScreenerRequest(req, res, url) {
     if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
     if (Date.now() - lastTgTest < 10_000) { jsonResponse(res, 429, { error: "Wait a few seconds between tests", telegram: telegramStatus() }); return true; }
     lastTgTest = Date.now();
-    const r = await tgSend("Smart Money Tracker: test message. Telegram works: ignition alerts and AI verdicts (TAKE / WAIT / NO TRADE) will arrive here.");
+    const on = Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label);
+    const r = await tgSend(`Smart Money Tracker: test message. Telegram works. On: ${on.join(", ") || "nothing"}.`, { kind: "system", force: true });
     jsonResponse(res, 200, { ...r, telegram: telegramStatus() }); return true;
+  }
+  if (url.pathname === "/api/telegram" && req.method === "GET") { jsonResponse(res, 200, telegramStatus()); return true; }
+  if (url.pathname === "/api/telegram/prefs" && req.method === "POST") { // switch one kind of Telegram message on or off (this site only)
+    const sameSite = String(req.headers["content-type"] || "").includes("application/json") && (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    let body = "";
+    for await (const chunk of req) { body += chunk; if (body.length > 2000) break; }
+    let b = {}; try { b = JSON.parse(body || "{}"); } catch { /* invalid */ }
+    if (!setTelegramPref(b.kind, b.on === true)) { jsonResponse(res, 400, { error: "Unknown kind" }); return true; }
+    jsonResponse(res, 200, telegramStatus()); return true;
   }
   if (await journal.handle(req, res, url)) return true;
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
@@ -1581,7 +1592,7 @@ export function startScreener(baseUrl = "") {
   console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, ` +
     `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
   console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
-  if (!DEMO) checkTelegram().then((m) => console.log(`Telegram: ${m}`));
+  if (!DEMO) startTelegram({ demo: DEMO }).then((m) => console.log(`Telegram: ${m} | on: ${Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label).join(", ")}`));
   else console.log("Telegram: off in demo mode");
   loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); if (!DEMO) atCandleClose(); });
   rotation.start();

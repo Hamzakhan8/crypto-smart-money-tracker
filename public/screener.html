@@ -53,6 +53,11 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
 [data-sec-hidden]{display:none!important}
+/* Telegram panel */
+.tgkinds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 18px 14px}.tgkinds label{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;cursor:pointer;background:#151f2b}
+.tgkinds label.on{border-color:#236a53;background:#102a25}.tgkinds input{margin-top:2px;accent-color:var(--green)}.tgkinds small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.tgstatus{padding:0 18px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px}.tgstatus .grow{flex:1;min-width:220px;line-height:1.55}
+@media(max-width:900px){.tgkinds{grid-template-columns:1fr 1fr}}@media(max-width:520px){.tgkinds{grid-template-columns:1fr}}
 /* state tabs inside a list: All · Strong flow · Heating up · Already running · AI: TAKE */
 .sttabs{display:flex;gap:6px;padding:0 18px 12px;overflow-x:auto;scrollbar-width:none}.sttabs::-webkit-scrollbar{display:none}
 .sttabs button{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
@@ -159,6 +164,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="sttabs" id="st-hist" role="tablist" aria-label="Filter alerts"></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
  <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of each Binance sector's coins</p></div></div><div class="chips" id="narrChips"></div></section>
 </div>
+<section data-sec="telegram" class="panel" style="margin-top:14px" id="tgPanel">
+ <div class="section-head"><div><h2>Telegram notifications</h2><p>Every alert goes through one delivery queue: sent at Telegram's pace, retried when Telegram or the network fails, kept across restarts, and dropped only when older than 3 hours (a late message says how late). Switch each kind on or off here; the choice is saved.</p></div><span class="chip" id="tgChip">—</span></div>
+ <div class="tgstatus"><div class="grow" id="tgStatus">—</div><button class="btn sm" id="tgTest2">Send test message</button></div>
+ <div class="tgkinds" id="tgKinds"></div>
+ <div class="subhead2"><div><h2>Delivery log</h2><p>The last messages and what happened to each. "Retrying" = Telegram or the network failed; the queue keeps trying.</p></div></div>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Time</th><th>Kind</th><th>Message</th><th>Status</th><th>Tries</th><th>Delay</th></tr></thead><tbody id="tgLog"></tbody></table></div>
+</section>
 <section data-sec="perf" class="panel" style="margin-top:14px">
  <div class="section-head"><div><h2>Alert performance</h2><p id="perfRule">How alerts actually turned out.</p></div>
   <div class="filters"><select id="perfScope" aria-label="Which alerts to include"><option value="current" selected>This version only</option><option value="all">All alerts, incl. older versions</option></select><span class="chip" id="perfChip">—</span></div></div>
@@ -536,7 +548,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    {strong:"Big-move ignition: the 5m trigger fired",heating:"Waking up: daily volume expanding, waiting for the trigger",running:"Already moved (or up 25%+ in 24h): do not chase",take:"The AI said TAKE in the last 2 hours"}),rows=bigAll?all:all.slice(0,8);
   $("#bigCount").textContent=all0.length+" coins";
   $("#bigMore").hidden=all.length<=8;$("#bigMore").textContent=bigAll?"Show fewer":`Show all ${all.length}`;
-  $("#bigHint").textContent=`Smaller coins (${money(b.minVolume)}-${money(b.maxVolume)} of 24h volume) whose daily volume is already ${b.minDailyRvol}×+ their 20-day average. Green = the 5-minute ignition fired too (alert); amber = waking up, waiting for the trigger. Tracked as +${b.targetPct}% before -${b.stopPct}% within ${b.outcomeHours/24} days, separately from the quick tiers. In a 90-day replay of every Binance USDT pair it made money in the Aug-Sep altcoin rally and lost in October: a research tier, not a proven edge. Telegram: ${b.telegram?"on":"off (SCREENER_BIGMOVE_ALERTS=1)"}.`;
+  $("#bigHint").textContent=`Smaller coins (${money(b.minVolume)}-${money(b.maxVolume)} of 24h volume) whose daily volume is already ${b.minDailyRvol}×+ their 20-day average. Green = the 5-minute ignition fired too (alert); amber = waking up, waiting for the trigger. Tracked as +${b.targetPct}% before -${b.stopPct}% within ${b.outcomeHours/24} days, separately from the quick tiers. In a 90-day replay of every Binance USDT pair it made money in the Aug-Sep altcoin rally and lost in October: a research tier, not a proven edge. Telegram: ${!b.telegram?"off (switch on in Ignition › Telegram)":(data.telegram||{}).configured?"on":"on, but Telegram is not set up"}.`;
   $("#bigBody").innerHTML=rows.length?rows.map(c=>{const g=c.big||{},ign=c.bigmove==="ignited";
    return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${price(c.price)}${c.core?"":" · small coin"}</span></td>
    <td><span class="badge ${ign?"strong":"watch"}">${ign?"Big-move ignition":"Waking up"}</span>${!ign&&(c.bigMissing||[]).length?`<span class="sub amber">needs: ${esc(c.bigMissing.slice(0,2).join(", "))}</span>`:""}</td>
@@ -680,27 +692,53 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <div class="source-row"><span>Setup alerts</span><b class="status-pill ${cfg().setupAlerts?"green":"amber"}">${cfg().setupAlerts?"On":"Off · watchlist only"}</b></div>
    ${(()=>{const t=data.telegram||{},res=tgTest&&Date.now()-tgTest.at<60000?tgTest:null;
     const st=!t.configured?'<span class="amber">not set up: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env</span>':t.lastError?`<span class="red">${esc(t.lastError)}</span>`:t.lastSentAt?`<span class="green">working · last message ${time(t.lastSentAt)}</span>`:`<span class="green">${t.bot?esc(t.bot)+" ready":"configured"}</span> · no alert sent yet`;
-    return `<div class="source-row"><span>Telegram (ignition alerts + AI verdicts)</span><b class="status-pill" style="white-space:normal">${st}</b></div>
-    <div class="source-row"><span>${t.sent||0} sent · ${t.failed||0} failed since start${res?` · test: <b class="${res.ok?"green":"red"}">${esc(res.text)}</b>`:""}</span><button class="btn sm" id="tgTest" ${t.configured?"":"disabled"}>Send test message</button></div>`;})()}
+    return `<div class="source-row"><span>Telegram</span><b class="status-pill" style="white-space:normal">${st}</b></div>
+    <div class="source-row"><span>${t.sent||0} sent · ${t.failed||0} failed tries since start${t.queued?` · <b class="amber">${t.queued} waiting to send</b>`:""}${res?` · test: <b class="${res.ok?"green":"red"}">${esc(res.text)}</b>`:""}</span><button class="btn sm" id="tgTest" ${t.configured?"":"disabled"}>Send test message</button></div>`;})()}
    <div class="source-row"><span>Last successful scan</span><b class="status-pill mono">${time(data.lastUpdated)}</b></div>`;
   const hn=data.hotNarratives||[];
   $("#narrChips").innerHTML=hn.length?hn.map(h=>`<span class="badge strong">${esc(h.name)} ${pct(h.change24hPct)}</span>`).join(""):'<span class="muted" style="font-size:12px">None above the threshold right now.</span>';
   if(data.mainUrl)$("#mainLink").href=data.mainUrl;
   const ev=data.events||[];
   drawHist();
-  drawIgnite();drawBig();drawTable();drawPerf();
+  drawIgnite();drawBig();drawTable();drawPerf();drawTg();
  }
 
  // ---------- Telegram test ----------
  let tgTest=null;
- $("#sources").addEventListener("click",async e=>{
-  if(!e.target.closest("#tgTest"))return;
-  e.target.disabled=true;e.target.textContent="Sending…";
+ document.addEventListener("click",async e=>{
+  const b=e.target.closest("#tgTest,#tgTest2");if(!b)return;
+  b.disabled=true;b.textContent="Sending…";
   try{const r=await fetch("/api/telegram/test",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});const j=await r.json();
-   tgTest={at:Date.now(),ok:!!j.sent,text:j.sent?"sent, check Telegram":(j.error||j.skipped||"not sent")};if(j.telegram)data.telegram=j.telegram;}
+   tgTest={at:Date.now(),ok:!!j.sent,text:j.sent?"sent, check Telegram":(j.error||j.skipped||"not sent")+(j.queued?" (it will keep retrying)":"")};if(j.telegram)data.telegram=j.telegram;}
   catch(err){tgTest={at:Date.now(),ok:false,text:err.message};}
   draw();
  });
+ // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
+ const TG_ORDER=["ignition","bigmove","alpha","alphaEarly","early2x","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",ai:"follow-up on each new alert (needs Gemini)",
+  system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
+ const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
+ function drawTg(){
+  const t=data.telegram||{},k=t.kinds||{},res=tgTest&&Date.now()-tgTest.at<60000?tgTest:null;
+  // a problem = something waiting with an error, or an error newer than the last message that went out
+  const err=t.waitingError||(t.lastError&&!(t.lastSentAt>t.lastErrorAt)?t.lastError:null);
+  const chip=!t.configured?["not set up","amber"]:err?["problem","red"]:t.queued?[`${t.queued} waiting`,"amber"]:t.lastSentAt?["working","green"]:["ready",""];
+  $("#tgChip").textContent=chip[0];$("#tgChip").className="chip "+chip[1];
+  $("#tgStatus").innerHTML=!t.configured?'<span class="amber"><b>Not set up.</b> Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env and restart (README: "Set up Telegram alerts").</span>'
+   :(err?`<b class="red">Not working: ${esc(err)}</b><br>`:"")+[t.bot?`Bot <b>${esc(t.bot)}</b>`:"Bot configured",t.lastSentAt?`last message ${time(t.lastSentAt)}`:"no message sent yet",`${t.sent||0} sent since start`,
+     t.queued?`<span class="amber">${t.queued} waiting${t.nextRetryAt?`, next try ${time(t.nextRetryAt)}`:""}</span>`:null,`daily check-in ${String(t.checkinHourUtc??8).padStart(2,"0")}:00 UTC`,
+     res?`test: <b class="${res.ok?"green":"red"}">${esc(!res.ok&&err&&res.text.startsWith(err)?"not sent yet (reason above), it will keep retrying":res.text)}</b>`:null].filter(Boolean).join(" · ");
+  $("#tgTest2").disabled=!t.configured;$("#tgTest2").textContent="Send test message";
+  $("#tgKinds").innerHTML=TG_ORDER.filter(x=>k[x]).map(x=>`<label class="${k[x].on?"on":""}"><input type="checkbox" data-tgkind="${x}" ${k[x].on?"checked":""}><span><b>${esc(k[x].label)}</b><small>${esc(TG_NOTE[x]||"")}${k[x].on!==k[x].def?" · changed from the default":""}</small></span></label>`).join("");
+  const log=t.log||[];
+  $("#tgLog").innerHTML=log.length?log.slice(0,25).map(x=>`<tr><td class="mono">${time(x.at)}</td><td>${esc((k[x.kind]||{}).label||x.kind)}</td><td>${esc(x.title)}${x.error?`<span class="sub red">${esc(x.error)}</span>`:""}</td><td>${TG_STATUS[x.status]||esc(x.status)}</td><td class="mono">${x.tries}</td><td class="mono">${x.delaySec<60?x.delaySec+" s":Math.round(x.delaySec/60)+" min"}</td></tr>`).join("")
+   :`<tr><td colspan="6" class="empty">${t.configured?"Nothing sent yet. Press \"Send test message\" to check the connection.":"Telegram is not set up yet."}</td></tr>`;
+ }
+ document.addEventListener("change",async e=>{const c=e.target.closest("[data-tgkind]");if(!c)return;
+  c.disabled=true;
+  try{const r=await fetch("/api/telegram/prefs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kind:c.dataset.tgkind,on:c.checked})});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);data.telegram={...(data.telegram||{}),...j};}
+  catch(err){c.checked=!c.checked;alert("Could not change it: "+err.message);}
+  drawTg();});
 
  // ---------- detail modal ----------
  function openDetail(c,eyebrow){
@@ -787,7 +825,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
-  ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["health","Data health"]],
+  ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
@@ -871,7 +909,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    ["Tokens priced (DexScreener)",`${h.tokensPriced??0} · ${h.dexCallsLastMin??0} requests/min`],
    ["Address labels",`${(c.labels||0).toLocaleString()} (public snapshot, ${esc(c.labelsAsOf||"")})`],
    ["Whale alerts",`transfers ${wusd(c.alertUsd)} (stablecoins ${wusd(c.stableAlertUsd)}) · exchange moves ${wusd(c.exchangeAlertUsd)} · mints ${wusd(c.mintAlertUsd)}`],
-   ["Telegram",wd.telegramOn||fd.telegramOn?(wd.telegramConfigured?`<span class="green">on</span> · ${[wd.telegramOn?`whales (max ${c.telegramPerHour}/hour)`:null,fd.telegramOn?"DEX":null].filter(Boolean).join(" · ")}`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'):'off · on screen only (Telegram gets ignition and AI messages; WHALES_TELEGRAM=1 / FLOWS_TELEGRAM=1 to send these)'],
+   ["Telegram",wd.telegramOn||fd.telegramOn?(wd.telegramConfigured?`<span class="green">on</span> · ${[wd.telegramOn?`whales (max ${c.telegramPerHour}/hour)`:null,fd.telegramOn?"DEX":null].filter(Boolean).join(" · ")}`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'):'off · on screen only (switch on "Whale transfers" / "DEX rotations" in Ignition › Telegram)'],
    ["DEX data (GeckoTerminal)",`${fh.callsLastMin??0}/min of ${fc.callsPerMin??"—"}${fh.pausedUntil?' · <span class="amber">rate limited, slowing down</span>':""} · ${(fd.pools||[]).length} pools`],
   ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
  }
@@ -1037,7 +1075,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    +`<div><small>Costs ${rp.cost}% per trade. ${rp.universe?`${rp.universe.traded} tokens traded in the window, ${rp.universe.delistedTraded??"some"} of them delisted since; Binance no longer serves candles for most long-delisted tokens, so those are missing.`:""}${ev?` EVAA: ${evl(ev.early,"early tier")}; ${evl(ev.confirmed,"confirmed tier")}.`:""} The $1M rule was picked after looking at these results, so the confirmed tier's record may be flattered: judge it by the live results above.</small></div>`
    :'<div class="empty" style="padding:18px">Run <span class="mono">node alpha-backtest.js</span> once (20-40 minutes the first time). This panel then shows how the same rule did on the last 60 days of Alpha candles.</div>';
   const so=d.sources||{},stat=(l,v)=>`<div class="book-stat"><span>${esc(l)}</span><strong>${v}</strong></div>`;
-  $("#aHealth").innerHTML=stat("Binance Alpha (list, candles)",esc(so.alpha||"—"))+stat("DexScreener (buys / sells)",esc(so.dex||"—"))+stat("Last scan",d.updatedAt?hm(d.updatedAt)+(d.scanMs?` · ${Math.round(d.scanMs/1000)}s`:""):"—")+stat("Telegram",d.telegramOn?'<span class="green">On</span>':'<span class="muted">Off (ALPHA_TELEGRAM=1)</span>');
+  $("#aHealth").innerHTML=stat("Binance Alpha (list, candles)",esc(so.alpha||"—"))+stat("DexScreener (buys / sells)",esc(so.dex||"—"))+stat("Last scan",d.updatedAt?hm(d.updatedAt)+(d.scanMs?` · ${Math.round(d.scanMs/1000)}s`:""):"—")+stat("Telegram",d.telegramOn?`<span class="green">On</span>${d.telegramKinds&&d.telegramKinds.early?" · early too":""}`:!(data.telegram||{}).configured?'<span class="amber">Telegram not set up</span>':'<span class="muted">Off (switch on in Ignition › Telegram)</span>');
   const exc=Object.entries(d.excluded||{}).sort((a,b)=>b[1]-a[1]);
   $("#aExcluded").innerHTML=exc.length?"<b>Left out:</b> "+exc.map(([k,v])=>`${esc(k)} ${v}`).join(" · "):"";
  }
@@ -1185,7 +1223,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <div class="stats">${stat("Next decision",rec.nextDecision?esc(rec.nextDecision):"—",rec.nextDecision?"":(r.demo?"not recorded in demo mode":"after the first live load"))}
    ${stat("Last change",rec.lastChange?esc(rec.lastChange.to):"—",rec.lastChange?`${esc(rec.lastChange.date)}, was ${esc(rec.lastChange.from)}`:"no change recorded yet")}
    ${stat("Alt season",a?`<span class="${a.state==="altsLead"?"green":a.state==="btcLeads"?"red":"amber"}">${esc(a.label)}</span>`:"—")}
-   ${stat("Telegram on change",r.telegramOn?'<span class="green">On</span>':'<span class="muted">Off</span>',r.telegramOn?"regime or holdings change":"set ROTATION_TELEGRAM=1 in .env")}</div>`;
+   ${stat("Telegram on change",r.telegramOn?'<span class="green">On</span>':'<span class="muted">Off</span>',r.telegramOn?"regime or holdings change":"switch on in Ignition › Telegram")}</div>`;
  }
  function drawAlt(r){
   const a=r.altSeason;
@@ -1335,7 +1373,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#xHealth").innerHTML=[["Binance Spot (candles, trades, order book)",so.spot],["Binance asset info (circulating supply)",ai.source?(ai.source==="live"?`live · ${ai.coins} coins`:ai.source):"—"],["CoinGecko (supply, market cap check)",so.coingecko],["Binance Futures (context only)",so.futures],["Verified unlocks and catalysts",so.events]]
    .map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill ${cls(v)}">${esc(v||"—")}</b></div>`).join("")
    +ex.map(([k,v])=>`<div class="source-row"><span>Left out: ${esc(k)}</span><b class="status-pill">${v}</b></div>`).join("")
-   +`<div class="source-row"><span>Telegram alerts</span><b class="status-pill ${xd.telegramOn?"green":"amber"}">${xd.telegramOn?"on (high priority only)":xd.config&&xd.config.alerts?"on, but Telegram is not set up":"off · EARLY2X_ALERTS=1 to enable"}</b></div>`
+   +`<div class="source-row"><span>Telegram alerts</span><b class="status-pill ${xd.telegramOn?"green":"amber"}">${xd.telegramOn?"on (high priority only)":!(data.telegram||{}).configured?"Telegram is not set up (README: Set up Telegram alerts)":"off · switch on in Ignition › Telegram"}</b></div>`
    +`<div class="source-row"><span>Last scan</span><b class="status-pill mono">${time(xd.lastScanAt)}${xd.lastScanMs!=null?" · "+(xd.lastScanMs/1000).toFixed(1)+"s":""}</b></div>`;
  }
  function openX(c){

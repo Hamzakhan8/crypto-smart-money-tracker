@@ -28,7 +28,7 @@ import { alphaKlinesUrl, parseKlines } from "./alpha.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
-import { sendTelegram } from "./telegram.js";
+import { sendTelegram, telegramWants } from "./telegram.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -566,7 +566,9 @@ function cached(key, ttl, refresh, run) {
 }
 
 // ───────────────────────────── Telegram ─────────────────────────────
-const telegram = (text) => sendTelegram(text); // shared sender: failures are logged and shown on the screener page
+// Shared queue (telegram.js): retried until delivered. Default: you asked for it (the "send to Telegram" box), so it is
+// sent even if AI verdicts are switched off; automatic reviews pass { kind: "ai" } and follow that switch.
+const telegram = (text, opts = { kind: "ai", force: true }) => sendTelegram(text, opts);
 export const LABEL = { TAKE: "TAKE", WAIT: "WAIT", SKIP: "NO TRADE" };
 const ICON = { TAKE: "🟢", WAIT: "🟡", SKIP: "🔴" };
 export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
@@ -578,11 +580,11 @@ export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
 // Automatic review of a new screener alert (called by server.js): one analysis with the default model, a short summary
-// saved with the alert, and a Telegram follow-up unless AI_REVIEW_TELEGRAM=0.
+// saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
 export async function reviewAlert(ai, symbol, tier = null) {
   const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, deep: false, tier: tier === "ignition" ? "confirmed" : tier };
   const out = await cached(`one:${symbol}:${opts.model}:-:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
-  const tg = env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`)) : null;
+  const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
   return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
@@ -717,11 +719,12 @@ async function analyzeAlpha(ai, key, opts) {
   };
 }
 // Automatic review of a new Alpha alert (server.js), saved with the alert. Telegram follow-up only when Alpha alerts
-// go to Telegram (ALPHA_TELEGRAM) and AI_REVIEW_TELEGRAM is not 0.
-export async function reviewAlpha(ai, alert, { telegramOn = false } = {}) {
+// go to Telegram and AI verdicts are switched on.
+export async function reviewAlpha(ai, alert) {
+  const telegramOn = telegramWants("ai") && telegramWants(alert.tier === "confirmed" ? "alpha" : "alphaEarly");
   const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, alert }));
-  const tg = telegramOn && env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached
-    ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`)) : null;
+  const tg = telegramOn && !out.meta.cached
+    ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`), { kind: "ai" }) : null;
   return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };

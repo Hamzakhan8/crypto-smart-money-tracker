@@ -255,8 +255,8 @@ details.notice div{margin-top:8px}
  }
  function tgNote(t){
   if(!t)return"";
-  const msg=t.sent?"Sent to Telegram"+(t.parts>1?" ("+t.parts+" messages)":""):t.skipped?"Telegram: "+t.skipped:"Telegram failed: "+(t.error||"unknown error");
-  return `<div class="ai-tg ${t.sent?"green":t.skipped?"muted":"red"}">${esc(msg)}</div>`;
+  const msg=t.sent?"Sent to Telegram":t.skipped?"Telegram: "+t.skipped:t.queued?"Telegram: not sent yet ("+(t.error||"error")+"), it will keep retrying":"Telegram failed: "+(t.error||"unknown error");
+  return `<div class="ai-tg ${t.sent?"green":t.skipped?"muted":t.queued?"amber":"red"}">${esc(msg)}</div>`;
  }
  $("#analyzeBtn").onclick=async()=>{
   if(aiAbort){$("#aiModal").classList.add("open");return;}   // a run is already in progress

@@ -146,7 +146,7 @@ export function alphaConfig() {
     min24hUsd: envNum("ALPHA_MIN_24H_USD", d.min24hUsd),
     targetPct: envNum("ALPHA_TARGET_PCT", d.targetPct), stopPct: envNum("ALPHA_STOP_PCT", d.stopPct), outcomeDays: envNum("ALPHA_OUTCOME_DAYS", d.outcomeDays),
     costPct: envNum("ALPHA_COST_PCT", d.costPct), minLiquidityUsd: envNum("ALPHA_MIN_LIQUIDITY", d.minLiquidityUsd), minHolders: envNum("ALPHA_MIN_HOLDERS", d.minHolders),
-    scanMinutes: Math.max(1, envNum("ALPHA_SCAN_MINUTES", 5)), alerts: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all", alertEarly: env.ALPHA_TELEGRAM === "all",
+    scanMinutes: Math.max(1, envNum("ALPHA_SCAN_MINUTES", 5)),
   });
 }
 
@@ -216,7 +216,7 @@ export const ALPHA_GROUPS = [
 ];
 const AFTER_MARKS_5M = [["m5", 5], ["m15", 15]];
 
-export function createAlpha({ fetchJson, stateFile = null, reportFile = null, sendTelegram = null, telegramConfigured = () => false, context = () => null, onAlert = null }) {
+export function createAlpha({ fetchJson, stateFile = null, reportFile = null, sendTelegram = null, telegramConfigured = () => false, context = () => null, onAlert = null, wantTelegram = () => false }) {
   const cfg = alphaConfig();
   // alternative exits followed on every alert next to its own rule (exits.js)
   const exitRules = exitRulesFor({ targetPct: cfg.targetPct, stopPct: cfg.stopPct, hours: cfg.outcomeDays * 24 });
@@ -347,7 +347,8 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
       ctx: { ...(context() || {}), lagSec: Math.round((now - f.t) / 1000) },
       track: { status: "open", checkedTo: f.t, peakPct: 0, lowPct: 0, last: f.close, exits: newExits(exitRules, f.close), after: {} } };
     store.alerts.push(a);
-    if (cfg.alerts && sendTelegram && (tier === "confirmed" || cfg.alertEarly)) sendTelegram(alphaTelegram(a, cfg, replay)).catch(() => {});
+    const kind = tier === "confirmed" ? "alpha" : "alphaEarly"; // confirmed: on by default; early: off (about 50 a day)
+    if (sendTelegram && wantTelegram(kind)) sendTelegram(alphaTelegram(a, cfg, replay), kind).catch(() => {});
     if (onAlert) Promise.resolve().then(() => onAlert(a)).catch(() => {});
   }
   // Live results: by tier, under each exit rule, by condition (with older / newer halves), speed, and the AI's calls.
@@ -381,14 +382,15 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
     config: cfg,
     start() {
       if (started) return; started = true;
-      console.log(`Binance Alpha ignition: /screener#alpha | scan every ${cfg.scanMinutes} min | volume ${cfg.volMult}x, $${cfg.minCandleUsd}+ per 5m, confirmed with ${fmtUsd(cfg.min24hUsd)}+ 24h volume | liquidity ${fmtUsd(cfg.minLiquidityUsd)}+ | Telegram: ${cfg.alerts ? (cfg.alertEarly ? "early + confirmed" : "confirmed only") : "off (ALPHA_TELEGRAM=1 to enable)"}`);
+      console.log(`Binance Alpha ignition: /screener#alpha | scan every ${cfg.scanMinutes} min | volume ${cfg.volMult}x, $${cfg.minCandleUsd}+ per 5m, confirmed with ${fmtUsd(cfg.min24hUsd)}+ 24h volume | liquidity ${fmtUsd(cfg.minLiquidityUsd)}+ | Telegram: ${wantTelegram("alpha") ? (wantTelegram("alphaEarly") ? "early + confirmed" : "confirmed") : wantTelegram("alphaEarly") ? "early" : "off"}`);
       load().finally(() => setTimeout(tick, 15_000));
       setInterval(loadReport, 10 * MIN); // picks up a fresh `node alpha-backtest.js` report
     },
     api() {
       const alerts = store.alerts.slice(-60).reverse();
       return { status: st.status, error: st.error, updatedAt: st.updatedAt, nextScanAt: st.nextScanAt, scanMs: st.scanMs, listed: st.listed, eligible: st.eligible, excluded: st.excluded,
-        sources: st.sources, config: cfg, telegramOn: cfg.alerts && telegramConfigured(), states: ALPHA_STATES,
+        sources: st.sources, config: cfg, telegramOn: (wantTelegram("alpha") || wantTelegram("alphaEarly")) && telegramConfigured(),
+        telegramKinds: { confirmed: wantTelegram("alpha"), early: wantTelegram("alphaEarly") }, states: ALPHA_STATES,
         counts: Object.fromEntries(Object.keys(ALPHA_STATES).map((k) => [k, st.rows.filter((r) => r.state === k).length])),
         rows: st.rows.slice(0, 80), alerts, results: alphaResults(store.alerts, "confirmed"), resultsEarly: alphaResults(store.alerts, "early"), replay, stats: statsNow() };
     },

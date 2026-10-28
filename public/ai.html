@@ -45,6 +45,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 details.notice summary{cursor:pointer;list-style:none}details.notice summary::-webkit-details-marker{display:none}
 details.notice summary::after{content:"Read more";margin-left:8px;text-decoration:underline;opacity:.75;white-space:nowrap}details.notice[open] summary::after{content:"Show less"}
 details.notice div{margin-top:8px}
+
+/* section tags: show one part of the page at a time */
+.sectags{position:sticky;top:52px;z-index:25;display:flex;gap:8px;overflow-x:auto;padding:10px 0 12px;margin:14px 0 2px;background:linear-gradient(var(--bg) 78%,rgba(10,15,22,0));scrollbar-width:none}
+.sectags::-webkit-scrollbar{display:none}
+.sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
+[data-sec-hidden]{display:none!important}.filtered .lower,.filtered .grid{grid-template-columns:1fr}
 </style></head>
 <body>
 <div class="appbar"><div class="appbar-in">
@@ -56,6 +63,7 @@ details.notice div{margin-top:8px}
 <header>
  <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, Market Flow taker data, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, smart-money wallets, BTC) and asks Gemini one question: <b>take the trade, wait, or skip?</b> Code checks every plan and overrides calls that break the rules.</p></div>
 </header>
+<nav class="sectags" id="secTags" aria-label="Sections of this page"></nav>
 <div class="notice" id="keyNotice" style="display:none"><b>Gemini is not set up.</b> Add <span class="mono">GEMINI_API_KEY=your_key</span> to the <span class="mono">.env</span> file in the project folder and restart <span class="mono">node server.js</span>. You can still open any coin's data with "Data only".</div>
 <div class="error" id="errors"></div>
 <div class="strip" id="strip"></div>
@@ -66,17 +74,17 @@ details.notice div{margin-top:8px}
 </div>
 
 <div class="grid">
- <section class="panel">
+ <section class="panel" data-sec="coins">
   <div class="section-head"><div><h2>Ignition coins</h2><p id="listHint">Igniting first, then heating up. Refreshes every 20 seconds.</p></div><button class="btn primary" id="allBtn">Analyze all</button></div>
   <form class="anyrow" id="anyForm"><input name="sym" placeholder="Any coin, e.g. SOL" aria-label="Coin symbol" required><button class="btn" type="submit">Analyze</button><button class="btn" type="button" id="dataBtn" title="Show the facts without calling Gemini">Data only</button></form>
   <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Signal</th><th>Move</th><th>AI</th><th></th></tr></thead><tbody id="coins"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
  </section>
- <section class="panel" id="resultPanel">
+ <section class="panel" id="resultPanel" data-sec="analysis">
   <div class="section-head"><div><h2 id="resTitle">Analysis</h2><p id="resSub">Choose a coin on the left, or analyze all of them at once.</p></div></div>
   <div class="result" id="result"><div class="empty">No analysis yet.<br>Each analysis is one Gemini request (two with risk review). Results are kept for 3 minutes.</div></div>
  </section>
 </div>
-<div class="foot">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Gemini only interprets that dossier, under rules that include how often this kind of signal won in the past. Afterwards code enforces: TAKE only for coins that are igniting now and have reward:risk of at least 1.2, never for coins that already ran; plans must fit the levels; confidence is capped for early signals, demo data and weak markets. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
+<div class="foot" data-sec="">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Gemini only interprets that dossier, under rules that include how often this kind of signal won in the past. Afterwards code enforces: TAKE only for coins that are igniting now and have reward:risk of at least 1.2, never for coins that already ran; plans must fit the levels; confidence is capped for early signals, demo data and weak markets. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
 </main>
 <script>
 (()=>{
@@ -124,7 +132,7 @@ details.notice div{margin-top:8px}
   }).join(""):`<tr><td colspan="5" class="empty">No igniting or heating coins right now.<br>The screener checks every 20 seconds; you can still analyze any coin above.</td></tr>`;
  }
 
- function loading(title,sub){busy=true;drawCandidates();$("#resTitle").textContent=title;$("#resSub").textContent=sub;$("#result").innerHTML=`<div class="empty"><span class="spin"></span>${esc(sub)}</div>`;}
+ function loading(title,sub){busy=true;if(window.applySec&&document.getElementById("resultPanel").hasAttribute("data-sec-hidden"))applySec("all");drawCandidates();$("#resTitle").textContent=title;$("#resSub").textContent=sub;$("#result").innerHTML=`<div class="empty"><span class="spin"></span>${esc(sub)}</div>`;}
  function done(){busy=false;drawCandidates();}
 
  async function analyze(symbol){
@@ -211,6 +219,23 @@ details.notice div{margin-top:8px}
  $("#anyForm").onsubmit=e=>{e.preventDefault();const s=e.target.sym.value.trim().toUpperCase().replace(/USDT$/,"");if(!s||busy)return;if(!cand.configured){dataOnly(s+"USDT");return;}analyze(s+"USDT");};
  $("#dataBtn").onclick=()=>{const s=$("#anyForm").sym.value.trim().toUpperCase().replace(/USDT$/,"");if(s&&!busy)dataOnly(s+"USDT");};
  loadCandidates();setInterval(()=>{if(!busy)loadCandidates();},20000);
+})();
+
+// Section tags: one button per part of the page; a click shows only that part (All shows everything), remembered in this browser.
+(function(){
+ const SECTIONS=[["coins","Ignition coins"],["analysis","Analysis"]],root=document.querySelector("main"),bar=document.getElementById("secTags"),KEY="sec:ai";
+ const get=()=>{try{return localStorage.getItem(KEY)||"all";}catch{return "all";}},put=v=>{try{localStorage.setItem(KEY,v);}catch{}};
+ window.applySec=function(key){
+  if(key!=="all"&&!SECTIONS.some(x=>x[0]===key))key="all";put(key);
+  root.classList.toggle("filtered",key!=="all");
+  root.querySelectorAll("[data-sec]").forEach(el=>el.toggleAttribute("data-sec-hidden",key!=="all"&&!el.dataset.sec.split(" ").includes(key)));
+  root.querySelectorAll(".lower,.grid").forEach(w=>{const kids=[...w.children].filter(c=>c.hasAttribute("data-sec"));if(kids.length)w.toggleAttribute("data-sec-hidden",kids.every(c=>c.hasAttribute("data-sec-hidden")));});
+  bar.innerHTML=[["all","All"],...SECTIONS].map(([k,l])=>`<button type="button" data-tag="${k}" class="${k===key?"on":""}" aria-pressed="${k===key}">${l}</button>`).join("");
+ };
+ const stick=()=>{bar.style.top=(document.querySelector(".appbar")?.offsetHeight||52)+"px";};stick();window.addEventListener("resize",stick);
+ bar.addEventListener("click",e=>{const b=e.target.closest("[data-tag]");if(!b)return;applySec(b.dataset.tag);
+  const top=bar.getBoundingClientRect().top+window.scrollY-(document.querySelector(".appbar")?.offsetHeight||52)-14;if(window.scrollY>top)window.scrollTo({top,behavior:"smooth"});});
+ applySec(get());
 })();
 </script>
 </body>

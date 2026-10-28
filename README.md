@@ -43,6 +43,8 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
+**Section tags:** every page has a row of tags under its title (for example *Live watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
+
 ---
 
 ## 2. Quick start (5 minutes)

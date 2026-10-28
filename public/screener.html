@@ -47,6 +47,12 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .stage{display:inline-block;font-size:10px;font-weight:800;border-radius:7px;padding:4px 7px;border:1px solid var(--line);color:var(--muted)}.stage.early{color:var(--green);border-color:#236a53;background:#102a25}.stage.running{color:var(--blue);border-color:#2c4a77;background:#111d30}.stage.late{color:var(--amber);border-color:#6d5621;background:#2b2414}.stage.cooling{color:var(--red);border-color:#6e2c3a;background:#2d1720}
 .changes{padding:0 18px 16px;font-size:12px;color:var(--muted);line-height:1.8}.changes b{color:var(--ink)}
 .stack{display:grid;gap:14px;margin-top:14px}.stack>*{min-width:0}
+/* section tags: show one part of the page at a time */
+.sectags{position:sticky;top:52px;z-index:25;display:flex;gap:8px;overflow-x:auto;padding:10px 0 12px;margin:14px 0 2px;background:linear-gradient(var(--bg) 78%,rgba(10,15,22,0));scrollbar-width:none}
+.sectags::-webkit-scrollbar{display:none}
+.sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
+[data-sec-hidden]{display:none!important}.filtered .lower,.filtered .stack,.filtered .watchrow{grid-template-columns:1fr}
 .btn.xs{padding:4px 9px;font-size:11px;border-radius:8px}.event .took{margin-top:6px}
 .subhead2{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px 6px;flex-wrap:wrap}.subhead2 h2{font-size:13px;margin:0}.subhead2 p{margin:3px 0 0;color:var(--muted);font-size:12px}
 .jform{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 18px 16px}.jform label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);font-weight:700}.jform input,.jform select{width:100%}.jform .wide{grid-column:span 2}.jform .actions{display:flex;gap:8px;align-items:end}
@@ -120,30 +126,31 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <button class="btn sm" id="testBtn" title="Preview what an alert popup looks like">Test popup</button>
  </div>
 </header>
+<nav class="sectags" id="secTags" aria-label="Sections of this page"></nav>
 <div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
 <details class="notice"><summary><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it.</summary><div>Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div></details>
 <div class="error" id="errors"></div>
-<div class="kpis">
+<div class="kpis" data-sec="watch big">
  <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="kScanned">—</div><div class="hint" id="kScannedHint">Binance USDT pairs, liquid only</div></div>
  <div class="kpi"><div class="label">Early ignitions now</div><div class="value green" id="kIgnite">—</div><div class="hint">Volume igniting, price not yet run</div></div>
  <div class="kpi"><div class="label">Big-move ignitions now</div><div class="value green" id="kBig">—</div><div class="hint" id="kBigHint">small coins waking up, +40% research tier</div></div>
  <div class="kpi"><div class="label">BTC (market filter)</div><div class="value" id="kBtc">—</div><div class="hint" id="kBtcHint">Alerts pause if BTC drops sharply</div></div>
 </div>
-<section class="panel" style="margin-bottom:14px">
+<section data-sec="watch" class="panel" style="margin-bottom:14px">
  <div class="section-head"><div><h2>Live ignition watch</h2><p>15-minute volume vs the token's normal for this hour of the day. Green = confirmed early, amber = building (shows what it still lacks), red = already running (do not chase).</p></div><span class="chip" id="igCount">—</span></div>
  <div class="notice" id="mwBanner" style="display:none;margin:0 18px 12px"><b>Market-wide volume surge:</b> many tokens are surging together, so the ignition bar is raised 50% to avoid alerting on a market move that is not specific to one token.</div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
 </section>
-<section class="panel" style="margin-bottom:14px" id="bigPanel">
+<section data-sec="big" class="panel" style="margin-bottom:14px" id="bigPanel">
  <div class="section-head"><div><h2>Big-move watch: +40% before -10%</h2><p id="bigHint">Smaller coins whose daily volume is already expanding.</p></div><span class="chip" id="bigCount">—</span></div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Daily volume</th><th>Last two 5m candles</th><th>Moved</th><th>Market cap</th><th>Target · stop</th></tr></thead><tbody id="bigBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
  <button class="btn sm more" id="bigMore" hidden></button>
 </section>
 <div class="lower">
- <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
- <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of each Binance sector's coins</p></div></div><div class="chips" id="narrChips"></div></section>
+ <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
+ <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of each Binance sector's coins</p></div></div><div class="chips" id="narrChips"></div></section>
 </div>
-<section class="panel" style="margin-top:14px">
+<section data-sec="perf" class="panel" style="margin-top:14px">
  <div class="section-head"><div><h2>Alert performance</h2><p id="perfRule">How alerts actually turned out.</p></div>
   <div class="filters"><select id="perfScope" aria-label="Which alerts to include"><option value="current" selected>This version only</option><option value="all">All alerts, incl. older versions</option></select><span class="chip" id="perfChip">—</span></div></div>
  <p class="perf-note" id="perfNote"></p>
@@ -165,7 +172,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <div class="table-wrap"><table class="table"><thead><tr><th>AI's chance of target</th><th>Alerts</th><th>AI said (avg)</th><th>Actually hit</th></tr></thead><tbody id="perfCal"></tbody></table></div></div>
  <div class="foot" style="padding:0 18px 16px;margin:12px 0 0">Prices are sampled at each scan (about every 20 seconds), so a fast spike can be missed. A flat alert counts at its price when the window ends, a loss at the price where the stop was seen. Slippage and your own entry delay are not included. For a much bigger sample than live alerts, run <span class="mono">node screener-backtest.js</span>.</div>
 </section>
-<section class="panel" style="margin-top:14px">
+<section data-sec="board" class="panel" style="margin-top:14px">
  <div class="section-head"><div><h2>Setup leaderboard</h2><p>Daily setup quality. Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
  <div class="section-head" style="padding-top:0"><div class="filters">
   <input id="search" placeholder="Search token, e.g. SUI" aria-label="Search tokens">
@@ -177,58 +184,58 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </div></div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>Market cap</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
 </section>
-<details class="foot"><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
+<details class="foot" data-sec=""><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
 </div>
 
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
- <section class="panel regime-hero">
+ <section data-sec="now" class="panel regime-hero">
   <div><div class="lbl">BTC regime now <span id="rAsOf"></span></div><h2 id="rRegime">Loading history…</h2><p id="rRegimeDesc">The first load downloads daily candles for every narrative coin and takes a few minutes. It refreshes once a day after the daily close.</p><p class="regime-age" id="rRegimeAge"></p><div class="regime-strip" id="rStrip"></div></div>
   <div class="regime-stats" id="rBtcStats"></div>
  </section>
  <div class="lower" style="margin-top:0">
-  <section class="panel"><div class="section-head"><div><h2>This week</h2><p>What the backtested rule holds. Re-decided every <span id="rHoldDays">7</span> days; cash when BTC is in a downtrend.</p></div></div><div class="week" id="rWeek"></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Alt season meter</h2><p>Is money moving from BTC into altcoins? Three signals vote: ETH/BTC trend, the typical narrative vs BTC, and how many coins are above their 20-day average.</p></div></div><div class="week" id="rAlt"></div></section>
+  <section data-sec="now" class="panel"><div class="section-head"><div><h2>This week</h2><p>What the backtested rule holds. Re-decided every <span id="rHoldDays">7</span> days; cash when BTC is in a downtrend.</p></div></div><div class="week" id="rWeek"></div></section>
+  <section data-sec="alt" class="panel"><div class="section-head"><div><h2>Alt season meter</h2><p>Is money moving from BTC into altcoins? Three signals vote: ETH/BTC trend, the typical narrative vs BTC, and how many coins are above their 20-day average.</p></div></div><div class="week" id="rAlt"></div></section>
  </div>
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>How BTC regimes behave</h2><p>From the daily history: how long each regime usually lasts and what came right after it.</p></div></div><div class="table-wrap"><table class="table cards"><thead><tr><th>BTC regime</th><th>Usually lasts</th><th>What came next</th></tr></thead><tbody id="rRegStats"></tbody></table></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Best narrative in each BTC regime</h2><p>Average return vs BTC over the following week, all history</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>BTC regime</th><th>Narrative</th><th>Avg vs BTC</th><th>Hit</th><th>Weeks</th><th>Confidence</th></tr></thead><tbody id="rBest"></tbody></table></div></section>
+  <section data-sec="regimes" class="panel"><div class="section-head"><div><h2>How BTC regimes behave</h2><p>From the daily history: how long each regime usually lasts and what came right after it.</p></div></div><div class="table-wrap"><table class="table cards"><thead><tr><th>BTC regime</th><th>Usually lasts</th><th>What came next</th></tr></thead><tbody id="rRegStats"></tbody></table></div></section>
+  <section data-sec="regimes" class="panel"><div class="section-head"><div><h2>Best narrative in each BTC regime</h2><p>Average return vs BTC over the following week, all history</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>BTC regime</th><th>Narrative</th><th>Avg vs BTC</th><th>Hit</th><th>Weeks</th><th>Confidence</th></tr></thead><tbody id="rBest"></tbody></table></div></section>
  </div>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="ranking" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Narrative ranking</h2><p>Score = 50% how it did vs BTC in past weeks with this same BTC regime + 30% its 14-day strength vs BTC now + 20% share of its coins above their 20-day average. Only narratives in an uptrend can be held. Money flow = its share of all altcoin trading volume over 7 days, with the arrow comparing it to 30 days (shown, not scored: adding it made the backtest worse). Stage: early (more coins turning up, few at highs yet), running, late (most coins at 30-day highs or money leaving a strong run), cooling, quiet.</p></div><span class="chip" id="rRankCount">—</span></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>#</th><th>Narrative</th><th>Score</th><th>In this regime (history)</th><th>14d vs BTC</th><th>30d</th><th>Coins above 20d avg</th><th>Money flow</th><th>Stage</th><th>Trend</th><th>Held</th></tr></thead><tbody id="rRank"></tbody></table></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="picks" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Token picks in the top 3 narratives</h2><p>Daily price action: trend, 14-day strength vs BTC, distance from the 30-day high, not stretched above the 20-day average, rising volume. "Bought" = what the token rule would hold now.</p></div><span class="chip" id="rPickCount">—</span></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Narrative</th><th>Score</th><th>14d vs BTC</th><th>vs 30d high</th><th>vs 20d avg</th><th>Volume 7d vs 30d</th><th>Trend</th><th>Rule</th></tr></thead><tbody id="rPicks"></tbody></table></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="record" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Forward record</h2><p id="rRecNote">Every week the screener saves what the rule holds, with that day's prices, and judges it a week later with prices that came afterwards. Unlike the backtest it cannot be fitted to the past, and coins that are later delisted keep their last price.</p></div><span class="chip" id="rRecChip">—</span></div>
   <div class="book-meta" id="rRecStats"></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Week of</th><th>BTC regime</th><th>Alt season</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRec"></tbody></table></div>
   <div class="changes" id="rChanges"></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="backtest" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Backtest</h2><p id="rBtNote">Each week the rules decide using only what was known that day.</p></div><span class="chip" id="rBtChip">—</span></div>
   <div class="chart" id="rChart"></div><div class="legend" id="rLegend"></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Strategy</th><th>Total</th><th>Per year</th><th>Worst drop</th><th>Sharpe</th><th>Weeks beating BTC</th><th>Time in cash</th><th>Switches</th><th>Older half</th><th>Newer half</th></tr></thead><tbody id="rStrats"></tbody></table></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="regimes" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Every narrative in every BTC regime</h2><p>Average return vs BTC over the following week · hit rate below. Faded cells have low confidence. The highlighted column is the regime BTC is in now.</p></div></div>
   <div class="table-wrap"><table class="table heat"><thead id="rHeatHead"></thead><tbody id="rHeat"></tbody></table></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="backtest" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Recent backtest decisions</h2><p>What the ranking held each week in the replay and how it did vs BTC</p></div></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Week of</th><th>BTC regime</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRecent"></tbody></table></div>
  </section>
- <div class="foot">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
+ <div class="foot" data-sec="">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
  <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it where the address is known (~10,000 labelled exchanges, funds, issuers, bridges and protocols from a public June 2023 Etherscan snapshot, plus your own labels).</summary><div>Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
  <div class="error" id="wErrors"></div>
  <div class="watchrow">
-  <section class="panel">
+  <section data-sec="watch" class="panel">
    <div class="section-head"><div><h2>Watchlist</h2><p>Alert on any move by a wallet (give it your own label, it shows everywhere) or any large transfer of a token.</p></div></div>
    <form class="watchbar" id="whForm">
     <input name="target" placeholder="0x… wallet / token, or PEPE" aria-label="Wallet address, token address or token symbol" required style="width:260px">
@@ -239,18 +246,18 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    </form>
    <div class="watches" id="whWatches"></div>
   </section>
-  <section class="panel">
+  <section data-sec="watch" class="panel">
    <div class="section-head"><div><h2>Look up an address</h2><p>Label, recent transfers and top counterparties seen by the tracker.</p></div></div>
    <form class="watchbar" id="whLookup"><input name="a" placeholder="0x…" aria-label="Ethereum address" required style="flex:1;min-width:180px"><button class="btn" type="submit">Look up</button></form>
   </section>
  </div>
- <div class="kpis">
+ <div class="kpis" data-sec="transfers">
   <div class="kpi"><div class="label">Whale transfers</div><div class="value" id="whkN">—</div><div class="hint" id="whkNHint">—</div></div>
   <div class="kpi"><div class="label">Deposited to exchanges</div><div class="value red" id="whkDep">—</div><div class="hint">non-stablecoin, possible selling</div></div>
   <div class="kpi"><div class="label">Withdrawn from exchanges</div><div class="value green" id="whkWd">—</div><div class="hint">non-stablecoin, moved off exchanges</div></div>
   <div class="kpi"><div class="label">Ethereum</div><div class="value" id="whkBlock">—</div><div class="hint" id="whkBlockHint">—</div></div>
  </div>
- <section class="panel">
+ <section data-sec="transfers" class="panel">
   <div class="section-head">
    <div><h2>Live whale transfers</h2><p>Newest first. Click any sender or receiver for its profile.</p></div>
    <div class="filters">
@@ -266,17 +273,17 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Token</th><th>Value</th><th>From</th><th>To</th><th>Type</th><th>Tx</th></tr></thead><tbody id="whFeed"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
  </section>
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Exchange flows by token</h2><p>Deposited minus withdrawn. Red = more going onto exchanges.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Deposited</th><th>Withdrawn</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whTok"></tbody></table></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Exchange flows by exchange</h2><p>All tokens, with the stablecoin part shown below.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Exchange</th><th>Deposited</th><th>Withdrawn</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whEx"></tbody></table></div></section>
+  <section data-sec="flows" class="panel"><div class="section-head"><div><h2>Exchange flows by token</h2><p>Deposited minus withdrawn. Red = more going onto exchanges.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Deposited</th><th>Withdrawn</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whTok"></tbody></table></div></section>
+  <section data-sec="flows" class="panel"><div class="section-head"><div><h2>Exchange flows by exchange</h2><p>All tokens, with the stablecoin part shown below.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Exchange</th><th>Deposited</th><th>Withdrawn</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whEx"></tbody></table></div></section>
  </div>
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Most active entities</h2><p>Labelled exchanges, funds, issuers and protocols by value moved.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Entity</th><th>Received</th><th>Sent</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whEnt"></tbody></table></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Biggest unlabelled wallets</h2><p>Addresses with no public label, by value moved. Open them on Arkham.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Wallet</th><th>Received</th><th>Sent</th><th>Net</th><th>Main token</th></tr></thead><tbody id="whWal"></tbody></table></div></section>
+  <section data-sec="entities" class="panel"><div class="section-head"><div><h2>Most active entities</h2><p>Labelled exchanges, funds, issuers and protocols by value moved.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Entity</th><th>Received</th><th>Sent</th><th>Net</th><th>Transfers</th></tr></thead><tbody id="whEnt"></tbody></table></div></section>
+  <section data-sec="entities" class="panel"><div class="section-head"><div><h2>Biggest unlabelled wallets</h2><p>Addresses with no public label, by value moved. Open them on Arkham.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Wallet</th><th>Received</th><th>Sent</th><th>Net</th><th>Main token</th></tr></thead><tbody id="whWal"></tbody></table></div></section>
  </div>
 
- <h2 class="subhead">DEX rotations</h2>
- <p>Swaps on decentralized exchanges (Ethereum, Base, Solana) from GeckoTerminal's free API: which token wallets sold for which (e.g. ETH → PEPE). The free API allows only a few requests a minute, so each pool refreshes every few minutes.</p>
- <section class="panel" style="margin-bottom:14px">
+ <h2 class="subhead" data-sec="dex">DEX rotations</h2>
+ <p data-sec="dex">Swaps on decentralized exchanges (Ethereum, Base, Solana) from GeckoTerminal's free API: which token wallets sold for which (e.g. ETH → PEPE). The free API allows only a few requests a minute, so each pool refreshes every few minutes.</p>
+ <section data-sec="dex" class="panel" style="margin-bottom:14px">
   <div class="section-head"><div><h2>Watch a pair</h2><p>Popup on every swap from one token into another, e.g. ETH-PEPE, SOL-BONK, USDC-ETH.</p></div><span class="chip" id="wkLine">—</span></div>
   <form class="watchbar" id="wForm">
    <input name="pair" placeholder="ETH-PEPE" aria-label="Pair, FROM-TO" required>
@@ -288,7 +295,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   </form>
   <div class="watches" id="wWatches"></div>
  </section>
- <section class="panel">
+ <section data-sec="dex" class="panel">
   <div class="section-head">
    <div><h2>Top rotations</h2><p>Money moving FROM one token TO another. One-way = share of the pair's two-way flow going this direction. vs normal = compared with this route's usual level today.</p></div>
    <div class="filters">
@@ -301,37 +308,37 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table"><thead><tr><th>Route</th><th>Value</th><th>Swaps</th><th>Wallets</th><th>One-way</th><th>vs normal</th><th>Largest swap</th></tr></thead><tbody id="wEdges"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
  </section>
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Wallet rotations</h2><p id="wRotHint">Wallets that sold one token and bought another soon after (last 24 hours).</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Wallet</th><th>Rotation</th><th>Value</th><th>Gap</th></tr></thead><tbody id="wRot"></tbody></table></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Live swaps</h2><p>Newest first. Faded rows are bot-like wallets.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Swap</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="wFeed"></tbody></table></div></section>
+  <section data-sec="dex" class="panel"><div class="section-head"><div><h2>Wallet rotations</h2><p id="wRotHint">Wallets that sold one token and bought another soon after (last 24 hours).</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Wallet</th><th>Rotation</th><th>Value</th><th>Gap</th></tr></thead><tbody id="wRot"></tbody></table></div></section>
+  <section data-sec="dex" class="panel"><div class="section-head"><div><h2>Live swaps</h2><p>Newest first. Faded rows are bot-like wallets.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Swap</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="wFeed"></tbody></table></div></section>
  </div>
 
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Whale and DEX alerts that popped up.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Where the data comes from right now.</p></div></div><div class="source-list" id="wHealth"></div></section>
+  <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Whale and DEX alerts that popped up.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
+  <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Where the data comes from right now.</p></div></div><div class="source-list" id="wHealth"></div></section>
  </div>
- <div class="foot">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
+ <div class="foot" data-sec="">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
 </div>
 <div id="view-alpha" role="tabpanel" aria-labelledby="tabAlpha" hidden>
  <details class="notice"><summary><b>Read this first:</b> Binance Alpha tokens are early on-chain tokens with thin pools; most volume ignitions fade.</summary><div>Data comes from the public endpoints Binance's own Alpha pages use (not documented, so they can change) and from DexScreener for buys vs sells, because Alpha trades carry no buyer/seller side. Pool liquidity is often a few hundred thousand dollars, so a market order moves the price; tokens can be delisted from Alpha. Every alert is tracked (+40% target before -10% stop within 7 days, after costs) so you can judge it, and the replay below shows how the same rule did in the past. Not financial advice.</div></details>
  <div class="error" id="aErrors"></div>
- <div class="kpis">
+ <div class="kpis" data-sec="cand">
   <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="aScanned">—</div><div class="hint" id="aScannedHint">Binance Alpha, not on spot</div></div>
   <div class="kpi"><div class="label">Ignited now</div><div class="value green" id="aIgnited">—</div><div class="hint" id="aIgnitedHint">early · confirmed</div></div>
   <div class="kpi"><div class="label">Heating up</div><div class="value amber" id="aHeating">—</div><div class="hint">Volume rising, not confirmed yet</div></div>
   <div class="kpi"><div class="label">Confirmed alerts, tracked</div><div class="value" id="aResults">—</div><div class="hint" id="aResultsHint">hit +40% first · average after costs</div></div>
  </div>
- <section class="panel">
+ <section data-sec="cand" class="panel">
   <div class="section-head"><div><h2>Ignition candidates</h2><p id="aRule">Early ignition: two finished 5-minute candles in a row, each at 5× the token's normal 5-minute volume (median of the last 24 hours) and $1,000+ with 10+ trades, price up over those 10 minutes (but not more than 20%), and not already up 30% in 24 hours. Confirmed: the same with $1M+ traded in the last 24 hours.</p></div>
    <select id="aFilter" aria-label="Show"><option value="active">Ignited, heating, moved</option><option value="all">All scanned tokens</option></select></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Last two 5m candles</th><th>Price</th><th>DEX buys (5m · 1h)</th><th>Liquidity · holders</th><th>Market cap · FDV</th></tr></thead><tbody id="aBody"><tr><td colspan="7" class="empty">Waiting for the first scan (about 15 seconds after start, then every 5 minutes)…</td></tr></tbody></table></div>
  </section>
  <div class="stack">
-  <section class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div>
+  <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div>
    <div class="table-wrap"><table class="table cards"><thead><tr><th>Alert</th><th>Token</th><th>Tier</th><th>Entry</th><th>Volume</th><th>DEX buys</th><th>AI</th><th>Result</th></tr></thead><tbody id="aAlerts"></tbody></table></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Replay</h2><p>The same rule on past Alpha candles, delisted tokens included, from <span class="mono">node alpha-backtest.js</span>.</p></div><span class="chip" id="aReplayChip">—</span></div><div class="hold" id="aReplay"></div></section>
+  <section data-sec="replay" class="panel"><div class="section-head"><div><h2>Replay</h2><p>The same rule on past Alpha candles, delisted tokens included, from <span class="mono">node alpha-backtest.js</span>.</p></div><span class="chip" id="aReplayChip">—</span></div><div class="hold" id="aReplay"></div></section>
  </div>
- <section class="panel" style="margin-top:14px" id="aAiPanel" hidden><div class="section-head"><div><h2 id="aAiTitle">AI check</h2><p>Gemini's call on this Alpha token, checked by the same rules as the AI desk (expected value, reward:risk, hard stops).</p></div><button class="btn sm" id="aAiClose">Close</button></div><div class="aibox" id="aAi"></div></section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="cand" class="panel" style="margin-top:14px" id="aAiPanel" hidden><div class="section-head"><div><h2 id="aAiTitle">AI check</h2><p>Gemini's call on this Alpha token, checked by the same rules as the AI desk (expected value, reward:risk, hard stops).</p></div><button class="btn sm" id="aAiClose">Close</button></div><div class="aibox" id="aAi"></div></section>
+ <section data-sec="live" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Live results in detail</h2><p>Every Alpha alert since this update: alternative exits on the same candles, alert speed, the conditions that paid, and the AI's record. Trust a row only with 30+ closed alerts.</p></div></div>
   <div class="subhead2"><div><h2>Exit rules compared</h2><p>Pick an exit only once it has 30+ alerts and wins in both halves.</p></div><select id="aExitTier" aria-label="Which tier"><option value="confirmed">Confirmed</option><option value="early">Early</option></select></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Exit rule</th><th>Resolved</th><th>In profit</th><th>Avg (after costs)</th><th>Older half</th><th>Newer half</th><th>Best / worst</th></tr></thead><tbody id="aExits"></tbody></table></div>
@@ -343,8 +350,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="lower" style="margin:0;padding:0 0 4px"><div class="table-wrap"><table class="table"><thead><tr><th>AI said</th><th>Resolved</th><th>Hit target</th><th>Avg (after costs)</th></tr></thead><tbody id="aAiRec"></tbody></table></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>AI's chance of target</th><th>Alerts</th><th>AI said (avg)</th><th>Actually hit</th></tr></thead><tbody id="aCal"></tbody></table></div></div>
  </section>
- <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Sources, scan time and why tokens were left out.</p></div></div><div class="book-meta" id="aHealth"></div><div class="changes" id="aExcluded"></div></section>
- <details class="foot"><summary>How it works</summary>every 5 minutes, 5 seconds after the candle closes (the hottest tokens first), the scanner reads Binance's Alpha token list, keeps tokens that still trade, are not on Binance spot (the Ignition tab covers those), have $50k+ of pool liquidity and 1,000+ holders, and reads their 5-minute candles. "Normal" is the median 5-minute volume of the previous 24 hours (at least $100). <b>Early ignition</b> = the rule passed on the last two finished candles; <b>confirmed</b> = the same with $1M+ traded in the last 24 hours (in the replay the early tier did no better than buying at a random time and fired about 50 times a day; the confirmed tier did better than a random entry on the same kind of tokens, but it would have missed EVAA's Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%); <b>heating up</b> = the last candle at 3× normal with price up, or the last hour at 3× normal; <b>already moved</b> = up more than 30% in 24 hours, do not chase. One alert per token and tier per 24 hours. Buys vs sells come from DexScreener (counts of DEX trades in the token's biggest pool). Telegram only with ALPHA_TELEGRAM=1 (confirmed alerts) or ALPHA_TELEGRAM=all (early too). Settings: ALPHA_VOL_MULT, ALPHA_MIN_5M_USD, ALPHA_MIN_24H_USD, ALPHA_MIN_LIQUIDITY, ALPHA_MIN_HOLDERS, ALPHA_TARGET_PCT, ALPHA_STOP_PCT, ALPHA_OUTCOME_DAYS, ALPHA_COST_PCT.</details>
+ <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Sources, scan time and why tokens were left out.</p></div></div><div class="book-meta" id="aHealth"></div><div class="changes" id="aExcluded"></div></section>
+ <details class="foot" data-sec=""><summary>How it works</summary>every 5 minutes, 5 seconds after the candle closes (the hottest tokens first), the scanner reads Binance's Alpha token list, keeps tokens that still trade, are not on Binance spot (the Ignition tab covers those), have $50k+ of pool liquidity and 1,000+ holders, and reads their 5-minute candles. "Normal" is the median 5-minute volume of the previous 24 hours (at least $100). <b>Early ignition</b> = the rule passed on the last two finished candles; <b>confirmed</b> = the same with $1M+ traded in the last 24 hours (in the replay the early tier did no better than buying at a random time and fired about 50 times a day; the confirmed tier did better than a random entry on the same kind of tokens, but it would have missed EVAA's Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%); <b>heating up</b> = the last candle at 3× normal with price up, or the last hour at 3× normal; <b>already moved</b> = up more than 30% in 24 hours, do not chase. One alert per token and tier per 24 hours. Buys vs sells come from DexScreener (counts of DEX trades in the token's biggest pool). Telegram only with ALPHA_TELEGRAM=1 (confirmed alerts) or ALPHA_TELEGRAM=all (early too). Settings: ALPHA_VOL_MULT, ALPHA_MIN_5M_USD, ALPHA_MIN_24H_USD, ALPHA_MIN_LIQUIDITY, ALPHA_MIN_HOLDERS, ALPHA_TARGET_PCT, ALPHA_STOP_PCT, ALPHA_OUTCOME_DAYS, ALPHA_COST_PCT.</details>
 </div>
 
 <div id="view-journal" role="tabpanel" aria-labelledby="tabJournal" hidden>
@@ -356,7 +363,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="kpi"><div class="label">Average per trade</div><div class="value" id="jAvg">—</div><div class="hint" id="jAvgHint">best · worst</div></div>
   <div class="kpi"><div class="label">You vs the alerts</div><div class="value" id="jVs">—</div><div class="hint" id="jVsHint">same alerts, tracked result</div></div>
  </div>
- <section class="panel"><div class="section-head"><div><h2 id="jFormTitle">Add a trade</h2><p id="jFormNote">Your real fill. Size and fees are optional but give you dollar results.</p></div></div>
+ <section data-sec="add" class="panel"><div class="section-head"><div><h2 id="jFormTitle">Add a trade</h2><p id="jFormNote">Your real fill. Size and fees are optional but give you dollar results.</p></div></div>
   <form class="jform" id="jForm" autocomplete="off">
    <label>Tool<select id="jTool"><option value="ignition">Confirmed ignition</option><option value="early">Early ignition</option><option value="bigmove">Big move</option><option value="alpha">Alpha</option><option value="early2x">Early 2x</option><option value="other">Other</option></select></label>
    <label>Coin<input id="jSymbol" placeholder="e.g. SUI or EVAA" required></label>
@@ -369,9 +376,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <input type="hidden" id="jAlert"><input type="hidden" id="jAlpha">
    <div class="actions"><button class="btn" type="submit" id="jSave">Save trade</button><button class="btn" type="button" id="jClear">Clear</button></div>
   </form></section>
- <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Open trades</h2><p>Live price and unrealized result. Enter your exit price to close a trade.</p></div><span class="chip" id="jOpenChip">—</span></div>
+ <section data-sec="open" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Open trades</h2><p>Live price and unrealized result. Enter your exit price to close a trade.</p></div><span class="chip" id="jOpenChip">—</span></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Opened</th><th>Coin</th><th>Entry</th><th>Stop · target</th><th>Now</th><th>Result</th><th>Close</th></tr></thead><tbody id="jOpen"></tbody></table></div></section>
- <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Closed trades</h2><p>Your result after fees, next to the alert's own tracked result (after its standard costs).</p></div><span class="chip" id="jClosedChip">—</span></div>
+ <section data-sec="closed" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Closed trades</h2><p>Your result after fees, next to the alert's own tracked result (after its standard costs).</p></div><span class="chip" id="jClosedChip">—</span></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Closed</th><th>Coin</th><th>Entry → exit</th><th>Your result</th><th>R</th><th>Alert's result</th><th>Note</th><th></th></tr></thead><tbody id="jDone"></tbody></table></div>
   <div class="changes" id="jByTool"></div></section>
 </div>
@@ -379,13 +386,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <div id="view-early2x" role="tabpanel" aria-labelledby="tabEarly2x" hidden>
  <details class="notice"><summary><b>Research screen, not a prediction:</b> +100% is a research target.</summary><div>Coins are listed only when their data passes the rules, and every listed coin is saved as an unchangeable snapshot whose real returns are measured afterwards. Most early signals fail. The score is not a probability of doubling. Futures data is context only, and token unlocks and catalysts count only when you have verified them (data/early2x-events.json). Nothing is traded. Not financial advice.</div></details>
  <div class="error" id="xErrors"></div>
- <div class="kpis">
+ <div class="kpis" data-sec="cand">
   <div class="kpi"><div class="label">Coins evaluated</div><div class="value" id="xkUni">—</div><div class="hint" id="xkUniHint">$10M-$1B market cap, liquid</div></div>
   <div class="kpi"><div class="label">High priority now</div><div class="value green" id="xkHigh">—</div><div class="hint" id="xkHighHint">3+ independent confirmations</div></div>
   <div class="kpi"><div class="label">BTC (market regime)</div><div class="value" id="xkBtc">—</div><div class="hint" id="xkBtcHint">—</div></div>
   <div class="kpi"><div class="label">Signals tracked</div><div class="value" id="xkSig">—</div><div class="hint" id="xkSigHint">snapshots with measured returns</div></div>
  </div>
- <section class="panel">
+ <section data-sec="cand" class="panel">
   <div class="section-head"><div><h2 id="xTitle">Candidates</h2><p id="xHint">—</p></div><span class="chip" id="xChip">—</span></div>
   <div class="seg" role="tablist" aria-label="Candidate states" id="xSeg">
    <button class="btn" data-xs="quiet" role="tab">Quiet accumulation <span class="mono" id="xcQuiet">·</span></button>
@@ -395,7 +402,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   </div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score · state</th><th>Market cap</th><th>Price · targets</th><th>Volume vs normal</th><th>Buying</th><th>Price · structure</th><th>Liquidity</th><th>Futures · on-chain</th><th>Supply · events</th><th>Still missing</th></tr></thead><tbody id="xBody"><tr><td colspan="11" class="empty">Waiting for the first scan (about 30 seconds after start)…</td></tr></tbody></table></div>
  </section>
- <section class="panel" style="margin-top:14px">
+ <section data-sec="results" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Measured results</h2><p id="xResRule">Every snapshot is tracked for 42 days.</p></div>
    <div class="filters"><select id="xGroup" aria-label="Group results by"><option value="all">All candidates</option><option value="byState">By state</option><option value="byPriority">By priority</option><option value="byMcap">By market cap</option><option value="byScore">By score</option><option value="chronological">Older vs newer signals</option><option value="control">Control: already moved</option></select></div></div>
   <p class="perf-note" id="xVerdict"></p>
@@ -404,10 +411,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Matured (14d)</th><th>+25% in 14d</th><th>+50% in 14d</th><th>+100% in 14d</th><th>+100% in 42d</th><th>Days to +100%</th><th>Fall before +25%</th><th>Hit before -<span id="xStopPct">20</span>% stop</th><th>False positives</th></tr></thead><tbody id="xTgt"></tbody></table></div>
  </section>
  <div class="lower">
-  <section class="panel"><div class="section-head"><div><h2>Recent snapshots</h2><p>Saved before the move, never changed afterwards. Returns are measured from the snapshot price.</p></div></div><div class="events" id="xRecent"><div class="empty">No snapshots yet.</div></div></section>
-  <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Missing data earns no points and blocks high priority.</p></div></div><div class="source-list" id="xHealth"></div></section>
+  <section data-sec="snaps" class="panel"><div class="section-head"><div><h2>Recent snapshots</h2><p>Saved before the move, never changed afterwards. Returns are measured from the snapshot price.</p></div></div><div class="events" id="xRecent"><div class="empty">No snapshots yet.</div></div></section>
+  <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Missing data earns no points and blocks high priority.</p></div></div><div class="source-list" id="xHealth"></div></section>
  </div>
- <div class="foot">How it works: every few minutes the screen reads Binance spot data for USDT pairs with a verified market cap of $10M-$1B (Binance's circulating supply × price, cross-checked with CoinGecko), at least $1M of 24h volume and a spread of 0.30% or less. Stablecoins, wrapped and staked tokens, tokenized stocks and leveraged tokens are left out. <b>Model A (quiet accumulation)</b>: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout is the same, pressing a tested 7-day high. <b>Model B (early ignition)</b>: the last 3+ five-minute candles each at 2×+ normal volume for that hour, accelerating, with aggressive buying and price rising. Evidence is grouped into five independent families (activity, executed buying, structure, order book, strength vs BTC). Volume and trade count, CVD and buy share, and large-trade buying measure overlapping things, so each group counts once. High priority needs 3+ families, a score of 50+ and passing liquidity, data, extension, BTC and supply checks (a market cap that Binance and CoinGecko disagree on, or under 40% of supply circulating, blocks it). Coins already stretched beyond limits that scale with their own volatility go to "Already moved". Those are tracked too, as a control group. All settings are EARLY2X_* in .env; Telegram alerts stay off until EARLY2X_ALERTS=1.</div>
+ <div class="foot" data-sec="">How it works: every few minutes the screen reads Binance spot data for USDT pairs with a verified market cap of $10M-$1B (Binance's circulating supply × price, cross-checked with CoinGecko), at least $1M of 24h volume and a spread of 0.30% or less. Stablecoins, wrapped and staked tokens, tokenized stocks and leveraged tokens are left out. <b>Model A (quiet accumulation)</b>: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout is the same, pressing a tested 7-day high. <b>Model B (early ignition)</b>: the last 3+ five-minute candles each at 2×+ normal volume for that hour, accelerating, with aggressive buying and price rising. Evidence is grouped into five independent families (activity, executed buying, structure, order book, strength vs BTC). Volume and trade count, CVD and buy share, and large-trade buying measure overlapping things, so each group counts once. High priority needs 3+ families, a score of 50+ and passing liquidity, data, extension, BTC and supply checks (a market cap that Binance and CoinGecko disagree on, or under 40% of supply circulating, blocks it). Coins already stretched beyond limits that scale with their own volatility go to "Already moved". Those are tracked too, as a control group. All settings are EARLY2X_* in .env; Telegram alerts stay off until EARLY2X_ALERTS=1.</div>
 </div>
 </main>
 
@@ -735,6 +742,28 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null;
  const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
  const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
+ // remembered per page in this browser.
+ const SECTIONS={
+  ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["health","Data health"]],
+  alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
+  early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
+  whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
+  rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
+  journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
+ };
+ function applySec(t,key){
+  const view=$("#view-"+t);if(!view)return;
+  const list=SECTIONS[t]||[];if(key!=="all"&&!list.some(x=>x[0]===key))key="all";
+  store.set("sec:"+t,key);
+  view.classList.toggle("filtered",key!=="all");
+  view.querySelectorAll("[data-sec]").forEach(el=>el.toggleAttribute("data-sec-hidden",key!=="all"&&!el.dataset.sec.split(" ").includes(key)));
+  view.querySelectorAll(".lower,.stack,.watchrow").forEach(w=>{const kids=[...w.children].filter(c=>c.hasAttribute("data-sec"));if(kids.length)w.toggleAttribute("data-sec-hidden",kids.every(c=>c.hasAttribute("data-sec-hidden")));});
+  $("#secTags").innerHTML=[["all","All"],...list].map(([k,l])=>`<button type="button" data-tag="${k}" class="${k===key?"on":""}" aria-pressed="${k===key}">${l}</button>`).join("");
+ }
+ const stickTags=()=>{$("#secTags").style.top=(document.querySelector(".appbar")?.offsetHeight||52)+"px";};stickTags();window.addEventListener("resize",stickTags);
+ $("#secTags").addEventListener("click",e=>{const b=e.target.closest("[data-tag]");if(!b)return;applySec(tab,b.dataset.tag);
+  const bar=$("#secTags"),top=bar.getBoundingClientRect().top+window.scrollY-(document.querySelector(".appbar")?.offsetHeight||52)-14;if(window.scrollY>top)window.scrollTo({top,behavior:"smooth"});});
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
@@ -742,6 +771,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
+  applySec(t,store.get("sec:"+t)||"all");
   clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
@@ -1024,7 +1054,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function jReset(){$("#jForm").reset();$("#jAlert").value="";$("#jAlpha").value="";$("#jFormTitle").textContent="Add a trade";$("#jFormNote").textContent="Your real fill. Size and fees are optional but give you dollar results.";}
  // "I took it": open the journal with the alert's details filled in
  function tookIt(o){
-  setTab("journal");jReset();
+  setTab("journal");if(!["all","add"].includes(store.get("sec:journal")||"all"))applySec("journal","all");jReset();
   $("#jTool").value=o.tool||"other";$("#jSymbol").value=o.symbol||"";$("#jEntry").value=o.price?Number(Number(o.price).toPrecision(6)):"";
   $("#jStop").value=o.stop?Number(Number(o.stop).toPrecision(6)):"";$("#jTarget").value=o.target?Number(Number(o.target).toPrecision(6)):"";
   $("#jAlert").value=o.alertId||"";$("#jAlpha").value=o.alphaId||"";
@@ -1311,7 +1341,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  ["minScore","narrOnly","hideMoved","sortBy","rowLimit"].forEach(id=>$("#"+id).onchange=drawTable);
  const scopeSaved=store.get("screenerPerfScope");if(scopeSaved==="all"||scopeSaved==="current")$("#perfScope").value=scopeSaved;
  $("#perfScope").onchange=()=>{store.set("screenerPerfScope",$("#perfScope").value);drawPerf();};
- if(tabFromHash()!=="ignition")setTab(tabFromHash());
+ if(tabFromHash()!=="ignition")setTab(tabFromHash());else applySec("ignition",store.get("sec:ignition")||"all");
  load();setInterval(load,3000);
 })();
 </script></body></html>

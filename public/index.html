@@ -32,6 +32,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 details.notice summary{cursor:pointer;list-style:none}details.notice summary::-webkit-details-marker{display:none}
 details.notice summary::after{content:"Read more";margin-left:8px;text-decoration:underline;opacity:.75;white-space:nowrap}details.notice[open] summary::after{content:"Show less"}
 details.notice div{margin-top:8px}
+
+/* section tags: show one part of the page at a time */
+.sectags{position:sticky;top:52px;z-index:25;display:flex;gap:8px;overflow-x:auto;padding:10px 0 12px;margin:14px 0 2px;background:linear-gradient(var(--bg) 78%,rgba(10,15,22,0));scrollbar-width:none}
+.sectags::-webkit-scrollbar{display:none}
+.sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
+[data-sec-hidden]{display:none!important}.filtered .lower,.filtered .grid{grid-template-columns:1fr}
 </style></head>
 <body>
 <div class="appbar"><div class="appbar-in">
@@ -60,24 +67,25 @@ details.notice div{margin-top:8px}
   <button class="btn" id="refresh">↻ Refresh</button>
  </div>
 </header>
+<nav class="sectags" id="secTags" aria-label="Sections of this page"></nav>
 <details class="notice"><summary><b>Signal honesty:</b> Exchange order flow is not proof of smart-money or whale activity.</summary><div>Scores rank observable market conditions; they do not predict returns. Web3 wallet signals are shown separately and may be unavailable if the upstream API blocks access or changes its schema.</div></details>
 <div class="error" id="errors"></div>
-<div class="kpis">
+<div class="kpis" data-sec="board">
  <div class="kpi"><div class="label">Pairs monitored</div><div class="value" id="kPairs">—</div><div class="hint">Liquid USDT spot pairs</div></div>
  <div class="kpi"><div class="label">Strong flow</div><div class="value green" id="kStrong">—</div><div class="hint">Score ≥ 75 / 100</div></div>
  <div class="kpi"><div class="label">Buy pressure leaders</div><div class="value" id="kBuy">—</div><div class="hint">5-minute taker buy ratio ≥ 55%</div></div>
  <div class="kpi"><div class="label">Last market update</div><div class="value" id="kUpdated" style="font-size:19px">—</div><div class="hint" id="kInterval">Refresh interval —</div></div>
 </div>
-<section class="panel">
+<section class="panel" data-sec="board">
  <div class="section-head"><div><h2>Live flow leaderboard</h2><p>Ranked by transparent 0–100 heuristic, not a buy recommendation</p></div><div class="tabs"><button class="tab active" id="tabFlow">Market flow</button><button class="tab" id="tabWallets">Web3 signals</button></div></div>
  <div class="section-head" style="padding-top:0"><div class="filters" id="filters"><input id="search" placeholder="Search coin, e.g. SUI" aria-label="Search coins"><select id="minScore"><option value="0">All scores</option><option value="45">Score 45+</option><option value="60">Score 60+</option><option value="75">Score 75+</option></select><select id="minVol"><option value="0">Any 24h volume</option><option value="5000000">$5M+ volume</option><option value="20000000">$20M+ volume</option><option value="100000000">$100M+ volume</option></select><select id="sortBy" aria-label="Sort pairs by"><option value="score">Sort: flow score</option><option value="buy">Sort: 5m buy ratio</option><option value="rv">Sort: relative volume</option><option value="chg">Sort: 5m price change</option><option value="vol">Sort: 24h volume</option></select><select id="rowLimit" aria-label="Rows to show"><option value="25" selected>Show 25</option><option value="50">Show 50</option><option value="100">Show 100</option><option value="0">Show all</option></select></div><span class="chip" id="count">—</span></div>
  <div class="table-wrap"><table class="table"><thead id="thead"></thead><tbody id="tbody"><tr><td colspan="8" class="empty">Waiting for market data…</td></tr></tbody></table></div>
 </section>
 <div class="lower">
- <section class="panel"><div class="section-head"><div><h2>New strong-flow events</h2><p>Fires when a coin crosses the score threshold</p></div></div><div class="events" id="events"><div class="empty">No events yet. A quiet feed is okay.</div></div></section>
- <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>See what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div></section>
+ <section class="panel" data-sec="events"><div class="section-head"><div><h2>New strong-flow events</h2><p>Fires when a coin crosses the score threshold</p></div></div><div class="events" id="events"><div class="empty">No events yet. A quiet feed is okay.</div></div></section>
+ <section class="panel" data-sec="health"><div class="section-head"><div><h2>Data health</h2><p>See what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div></section>
 </div>
-<div class="foot">How to use: look for multiple confirming signals, inspect the chart and liquidity, and compare activity across timeframes before acting. Relative volume compares the latest 1-minute candle with up to 20 prior closed candles. The newest candle can still be forming. This tool uses public market data and does not place trades. Demo mode is simulated and must never be treated as live market data.</div>
+<div class="foot" data-sec="">How to use: look for multiple confirming signals, inspect the chart and liquidity, and compare activity across timeframes before acting. Relative volume compares the latest 1-minute candle with up to 20 prior closed candles. The newest candle can still be forming. This tool uses public market data and does not place trades. Demo mode is simulated and must never be treated as live market data.</div>
 </main>
 <div class="modal-backdrop" id="bookModal" role="dialog" aria-modal="true" aria-labelledby="bookTitle">
  <section class="modal"><div class="modal-head"><div><div class="eyebrow">Binance spot depth snapshot</div><h2 id="bookTitle">Order book</h2><p id="bookSubtitle">Select a coin to inspect bids and asks.</p></div><div class="book-actions"><button class="btn" id="bookRefresh">↻ Refresh</button><button class="btn" id="bookClose" aria-label="Close order book">✕</button></div></div>
@@ -247,5 +255,22 @@ details.notice div{margin-top:8px}
  $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";draw();};
  $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#sortBy").onchange=draw;$("#rowLimit").onchange=draw;$("#refresh").onclick=()=>load(true);
  load();setInterval(load,5000);
+})();
+
+// Section tags: one button per part of the page; a click shows only that part (All shows everything), remembered in this browser.
+(function(){
+ const SECTIONS=[["board","Leaderboard"],["events","Strong-flow events"],["health","Data health"]],root=document.querySelector("main"),bar=document.getElementById("secTags"),KEY="sec:radar";
+ const get=()=>{try{return localStorage.getItem(KEY)||"all";}catch{return "all";}},put=v=>{try{localStorage.setItem(KEY,v);}catch{}};
+ window.applySec=function(key){
+  if(key!=="all"&&!SECTIONS.some(x=>x[0]===key))key="all";put(key);
+  root.classList.toggle("filtered",key!=="all");
+  root.querySelectorAll("[data-sec]").forEach(el=>el.toggleAttribute("data-sec-hidden",key!=="all"&&!el.dataset.sec.split(" ").includes(key)));
+  root.querySelectorAll(".lower,.grid").forEach(w=>{const kids=[...w.children].filter(c=>c.hasAttribute("data-sec"));if(kids.length)w.toggleAttribute("data-sec-hidden",kids.every(c=>c.hasAttribute("data-sec-hidden")));});
+  bar.innerHTML=[["all","All"],...SECTIONS].map(([k,l])=>`<button type="button" data-tag="${k}" class="${k===key?"on":""}" aria-pressed="${k===key}">${l}</button>`).join("");
+ };
+ const stick=()=>{bar.style.top=(document.querySelector(".appbar")?.offsetHeight||52)+"px";};stick();window.addEventListener("resize",stick);
+ bar.addEventListener("click",e=>{const b=e.target.closest("[data-tag]");if(!b)return;applySec(b.dataset.tag);
+  const top=bar.getBoundingClientRect().top+window.scrollY-(document.querySelector(".appbar")?.offsetHeight||52)-14;if(window.scrollY>top)window.scrollTo({top,behavior:"smooth"});});
+ applySec(get());
 })();
 </script></body></html>

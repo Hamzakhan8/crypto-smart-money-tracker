@@ -36,7 +36,9 @@ const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEMO = env.DEMO === "1";
-const RPCS = (env.WHALES_RPC || "https://eth-mainnet.public.blastapi.io,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com").split(",").map((s) => s.trim()).filter(Boolean);
+// Free nodes that serve what the tracker needs (block-wide log queries, batches, full blocks), best first; each one's
+// limits are learned from its own errors. WHALES_RPC replaces the list (e.g. your own Alchemy / Infura URL first).
+const RPCS = (env.WHALES_RPC || "https://eth-mainnet.public.blastapi.io,https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com").split(",").map((s) => s.trim()).filter(Boolean);
 const MIN_USD = num("WHALES_MIN_USD", 100_000);                    // transfers below this are not kept (watched wallets excepted)
 const ALERT_USD = num("WHALES_ALERT_USD", 1_000_000);                 // non-stablecoin transfers
 const STABLE_ALERT_USD = num("WHALES_STABLE_ALERT_USD", 25_000_000);  // stablecoins move in size all day; alert only on very large ones
@@ -85,7 +87,7 @@ const isSafe = new Set();     // Safe multisig wallets (contracts that act as a 
 const swapSeen = new Map();   // swap id -> time
 const swapListeners = [];
 let swapTimes = [];           // swaps found in the last hour (health)
-const rpcStats = RPCS.map((url) => ({ url, ok: 0, fail: 0, lastError: null, maxBatch: 40, noWideLogs: false }));
+const rpcStats = RPCS.map((url) => ({ url, ok: 0, fail: 0, lastError: null, lastErrorAt: null, maxBatch: 40, cannot: new Map(), streak: 0, restUntil: 0 }));
 let rpcIndex = 0, rpcCalls = [];
 
 // ───────────────────────────── labels ─────────────────────────────
@@ -228,40 +230,57 @@ async function rpcSend(st, calls) {
     const out = await res.json().catch(() => null);
     if (!Array.isArray(out)) throw new Error(out?.error?.message || (res.ok ? "unexpected reply" : `HTTP ${res.status}`));
     const byId = new Map(out.map((r) => [r.id, r]));
-    return calls.map((_, i) => {
+    return calls.map((c, i) => {
       const r = byId.get(i);
-      if (!r || r.error) throw new Error(r?.error?.message || "missing result");
+      if (!r || r.error) throw Object.assign(new Error(r?.error?.message || "missing result"), { method: c[0] }); // which call the node refused
       return r.result;
     });
   } finally { clearTimeout(timer); }
 }
-// Node order for one call: nodes that failed in the last minute go last; a big batch goes first to a node that takes
-// it whole; otherwise the node that worked last time.
-function nodeOrder(n, wideLogs) {
-  const now = Date.now(), rested = (st) => (now - (st.lastFailAt || 0) < 60_000 ? 1 : 0);
-  const turn = (i) => (i - rpcIndex + RPCS.length) % RPCS.length;
-  return rpcStats.map((st, i) => ({ st, i })).filter((x) => !(wideLogs && x.st.noWideLogs))
-    .sort((a, b) => rested(a.st) - rested(b.st) || (n > 3 ? (b.st.maxBatch >= n) - (a.st.maxBatch >= n) : 0) || turn(a.i) - turn(b.i));
+// What a call needs from a node, beyond the basics: a log query over a whole block (no token address) or full blocks.
+const NEEDS = { wideLogs: "block-wide log queries", fullBlocks: "full blocks" };
+function needsOf(calls) {
+  const n = new Set();
+  for (const [m, p] of calls) {
+    if (m === "eth_getLogs" && !p?.[0]?.address) n.add("wideLogs");
+    if (m === "eth_getBlockByNumber" && p?.[1] === true) n.add("fullBlocks");
+  }
+  return n;
+}
+const BATCH_ERR = /batch|max messages/i;  // "Batch of more than 3 requests", "too many RPC calls in batch", "Max messages exceeded (Limit: 5)"
+const REFUSED = /specify an address|address is required|not available|not supported|unsupported|not allowed|whitelist|method not found|does not exist|plan/i;
+// Node order for one call: nodes that cannot serve it are left out; resting nodes (failed recently) go last; a big
+// batch goes first to a node that takes it whole; otherwise the node that worked last time.
+function nodeOrder(n, needs) {
+  const now = Date.now(), resting = (st) => (now < st.restUntil ? 1 : 0), turn = (i) => (i - rpcIndex + RPCS.length) % RPCS.length;
+  return rpcStats.map((st, i) => ({ st, i })).filter((x) => ![...needs].some((k) => x.st.cannot.has(k)))
+    .sort((a, b) => resting(a.st) - resting(b.st) || (n > 3 ? (b.st.maxBatch >= n) - (a.st.maxBatch >= n) : 0) || turn(a.i) - turn(b.i));
 }
 async function rpcBatch(calls) {
-  const wideLogs = calls.some((c) => c[0] === "eth_getLogs" && !c[1]?.[0]?.address);
+  const needs = needsOf(calls);
   let lastErr;
   for (let round = 0; round < 2; round++) {
-    for (const { st, i } of nodeOrder(calls.length, wideLogs)) {
-      if (wideLogs && st.noWideLogs) continue;
-      for (let retry = 0; retry < 3; retry++) {
+    for (const { st, i } of nodeOrder(calls.length, needs)) {
+      for (let shrink = 0; shrink < 7; shrink++) {
         try {
           const results = [];
           for (let k = 0; k < calls.length; k += st.maxBatch) results.push(...await rpcSend(st, calls.slice(k, k + st.maxBatch)));
-          st.ok++; st.lastError = null; rpcIndex = i;
+          st.ok++; st.streak = 0; st.restUntil = 0; rpcIndex = i;
           return results;
         } catch (e) {
           lastErr = e;
-          const cap = String(e.message).match(/batch of more than (\d+)/i);
-          if (cap && Number(cap[1]) >= 1 && Number(cap[1]) < st.maxBatch) { st.maxBatch = Number(cap[1]); continue; } // same node, smaller batches
-          if (wideLogs && /specify an address|address is required/i.test(e.message)) st.noWideLogs = true;
-          st.fail++; st.lastFailAt = Date.now(); st.lastError = e.name === "AbortError" ? "timeout" : e.message.slice(0, 120);
-          break; // next node
+          const msg = e.name === "AbortError" ? "timeout (20 s)" : String(e.message || "error");
+          if (BATCH_ERR.test(msg) && st.maxBatch > 1) { // learn its batch size: the number it states, else half
+            const n = Number(msg.match(/(?:more than|limit:?)\s*(\d+)/i)?.[1]);
+            st.maxBatch = n >= 1 && n < st.maxBatch ? n : Math.max(1, Math.floor(st.maxBatch / 2));
+            continue;
+          }
+          const kind = e.method === "eth_getLogs" ? "wideLogs" : e.method === "eth_getBlockByNumber" ? "fullBlocks" : null;
+          if (kind && needs.has(kind) && REFUSED.test(msg)) { st.cannot.set(kind, msg.slice(0, 100)); break; } // it never serves this: skip it for such calls
+          // Anything else (rate limit, timeout, blocked, down): rest it, longer each time it fails again (30 s ... 30 min)
+          st.fail++; st.streak++; st.lastError = msg.slice(0, 140); st.lastErrorAt = Date.now();
+          st.restUntil = Date.now() + Math.min(30 * MIN, 30_000 * 2 ** Math.min(st.streak - 1, 6));
+          break;
         }
       }
     }
@@ -269,6 +288,8 @@ async function rpcBatch(calls) {
   }
   throw new Error(`All RPC nodes failed (${lastErr?.message})`);
 }
+export const __rpcForTests = { rpcBatch: (calls) => rpcBatch(calls), stats: () => rpcStats };
+const shownUrl = (u) => u.replace(/^https?:\/\//, "").replace(/\/v\d+\/[^/]{12,}$/, "/v…/(your key)"); // never show an API key
 const rpc = async (method, params) => (await rpcBatch([[method, params]]))[0];
 const hex = (n) => "0x" + n.toString(16);
 
@@ -752,7 +773,8 @@ function snapshot(windowKey) {
     config: { minUsd: MIN_USD, alertUsd: ALERT_USD, stableAlertUsd: STABLE_ALERT_USD, telegramPerHour: TELEGRAM_PER_HOUR, exchangeAlertUsd: EXCHANGE_ALERT_USD, mintAlertUsd: MINT_ALERT_USD, minLiquidity: MIN_LIQUIDITY,
       labels: Object.keys(labels).length, labelsAsOf: "June 2023", categories: CATEGORY_NAMES, swapMinUsd: SWAP_MIN_USD },
     health: { rpcCallsLastMin: rpcCalls.filter((t) => now - (t || 0) < MIN).length, dexCallsLastMin: dexCalls.filter((t) => now - t < MIN).length,
-      rpc: rpcStats.map((s) => ({ url: s.url.replace(/^https?:\/\//, ""), ok: s.ok, fail: s.fail, lastError: s.lastError })),
+      rpc: rpcStats.map((s) => ({ url: shownUrl(s.url), ok: s.ok, fail: s.fail, lastError: s.lastError, lastErrorAt: s.lastErrorAt,
+        restUntil: s.restUntil > now ? s.restUntil : null, maxBatch: s.maxBatch, cannot: [...s.cannot].map(([k, why]) => ({ what: NEEDS[k], why })) })),
       tokensPriced: [...tokens.values()].filter((t) => t.ok).length, transfers24h: transfers.length, addressesChecked: isContract.size,
       swaps1h: swapTimes.length, names: { ...nameStats, cached: names.size, queue: nameQueue.size, learned: learned.size, safes: isSafe.size, source: BLOCKSCOUT.replace(/^https?:\/\//, "") } },
     kinds: list.filter((x) => x.usd >= MIN_USD).reduce((m, x) => ((m[x.kind] = (m[x.kind] || 0) + 1), m), {}),
@@ -826,7 +848,7 @@ let started = false;
 export function startWhales() {
   if (started) return;
   started = true;
-  console.log(`Whale tracker: Ethereum transfers >= ${fmtUsd(MIN_USD)}, alerts >= ${fmtUsd(ALERT_USD)} | RPC: ${RPCS.map((u) => u.replace(/^https?:\/\//, "")).join(", ")} | no API key`);
+  console.log(`Whale tracker: Ethereum transfers >= ${fmtUsd(MIN_USD)}, alerts >= ${fmtUsd(ALERT_USD)} | RPC: ${RPCS.map(shownUrl).join(", ")}${env.WHALES_RPC ? "" : " (free public nodes, no API key)"}`);
   loadState().finally(() => { loop(); if (!DEMO) nameLoop(); });
 }
 

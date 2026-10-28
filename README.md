@@ -492,7 +492,7 @@ Every other threshold is listed at the top of `early2x.js`.
 | `WHALES_EXCHANGE_ALERT_USD` / `WHALES_MINT_ALERT_USD` | `500000` / `10000000` | Exchange flow and mint / burn alerts |
 | `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram by default |
 | `WHALES_TELEGRAM_PER_HOUR` | `30` | Telegram cap |
-| `WHALES_RPC` | public nodes | Your own Ethereum node URL(s), comma-separated (a free Alchemy or Infura key is faster and steadier) |
+| `WHALES_RPC` | 6 free public nodes | Your own Ethereum node URL(s), comma-separated, best first (a free Alchemy or Infura key is steadier; see Troubleshooting) |
 | `WHALES_BLOCKSCOUT` | `https://eth.blockscout.com` | Where unknown addresses are named |
 | `FLOWS_NETWORKS` | `eth,base,solana,bsc` | DEX networks (Ethereum comes from the blocks, the others from GeckoTerminal) |
 | `FLOWS_MIN_TRADE_USD` | `2000` | Smallest DEX swap recorded |
@@ -520,6 +520,21 @@ Every other threshold is listed at the top of `early2x.js`.
 <summary><b>"Port 3000 is already in use"</b></summary>
 
 Another copy of the app is still running. Close that terminal window, or set `PORT=3005` in `.env` and open http://localhost:3005.
+</details>
+
+<details>
+<summary><b>Whale tracker: Ethereum nodes failing</b></summary>
+
+The Whales tab reads Ethereum from free public nodes. Open **Whales › Data health**: the table shows each node, what it served, its status and why it last failed.
+
+- **Some errors are normal.** Free nodes rate-limit ("429", "rate limit exceeded", "compute units") or refuse some requests. The tracker switches to another node at once and tries the failing one again later, waiting longer each time (30 seconds up to 30 minutes). Nothing is lost.
+- **"Not used for block-wide log queries"** means that node refuses the big query the tracker needs (publicnode does). The tracker uses it only for other requests, so it does not count as failing.
+- **A node that always fails** on your connection (blocked by your provider, firewall or country) just stays resting. The others carry on.
+- **For a steady feed, add your own free node.** Create a free account at Alchemy (alchemy.com) or Infura (infura.io), make an Ethereum Mainnet app or key, and copy its HTTPS URL. Put it first in `.env` and keep the free ones after it as backups:
+  ```ini
+  WHALES_RPC=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://eth-mainnet.public.blastapi.io,https://rpc.mevblocker.io,https://eth.drpc.org
+  ```
+  Restart the app. Your key is never shown on the page or in the terminal. If the key's free monthly allowance runs out, the free nodes take over.
 </details>
 
 <details>

@@ -921,7 +921,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#wEvents").innerHTML=ev.length?ev.map(e=>`<div class="event" style="cursor:default"><div><strong><span class="badge ${esc(e.type)}">${esc(WTYPES[e.type]||e.type)}</span> ${esc(e.title)}</strong><small>${(e.lines||[]).map(esc).join(" · ")}${(e.links||[]).length?"<br>"+e.links.map(l=>wlink(l.url,l.label)).join(" · "):""}</small></div><small class="mono">${when(e.time)}</small></div>`).join(""):'<div class="empty">No alerts yet. Quiet is normal.</div>';
   const h=wd.health||{},c=wd.config||{},fh=fd.health||{},fc=fd.config||{},ch=wd.chain||{};
   $("#wHealth").innerHTML=[
-   ["Ethereum RPC",(h.rpc||[]).map(r=>`${esc(r.url)}: ${r.ok} ok${r.fail?` · <span class="${r.lastError?"red":"muted"}">${r.fail} failed</span>`:""}`).join("<br>")||"—"],
+   ["Ethereum nodes (RPC)",(()=>{const rs=h.rpc||[],used=rs.filter(r=>r.ok>0&&!r.restUntil).length,standby=rs.filter(r=>!r.ok&&!r.fail).length,resting=rs.filter(r=>r.restUntil).length;
+    return `<span class="${used+standby>=2?"green":"amber"}">${used} in use · ${standby} standing by · ${resting} resting after errors</span>`;})()],
    ["History loaded",ch.backfill?(ch.backfill.done?"last "+(ch.backfill.to-ch.backfill.from+1)+" blocks":"loading… block "+(ch.backfill.next||"—")):"—"],
    ["Tokens priced (DexScreener)",`${h.tokensPriced??0} · ${h.dexCallsLastMin??0} requests/min`],
    ["Address labels",`${(c.labels||0).toLocaleString()} (public snapshot, ${esc(c.labelsAsOf||"")})`],
@@ -930,7 +931,16 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    ["Whale alerts",`transfers ${wusd(c.alertUsd)} (stablecoins ${wusd(c.stableAlertUsd)}) · exchange moves ${wusd(c.exchangeAlertUsd)} · mints ${wusd(c.mintAlertUsd)}`],
    ["Telegram",wd.telegramOn||fd.telegramOn?(wd.telegramConfigured?`<span class="green">on</span> · ${[wd.telegramOn?`whales (max ${c.telegramPerHour}/hour)`:null,fd.telegramOn?"DEX":null].filter(Boolean).join(" · ")}`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'):'off · on screen only (switch on "Whale transfers" / "DEX rotations" in Ignition › Telegram)'],
    ["DEX data, other networks (GeckoTerminal)",`${fh.callsLastMin??0}/min of ${fc.callsPerMin??"—"}${fh.pausedUntil?' · <span class="amber">rate limited, slowing down</span>':""} · ${(fd.pools||[]).length} pools${(fd.followMisses||[]).length?` · <span class="muted">not followed: ${esc(fd.followMisses.join("; "))}</span>`:""}`],
-  ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
+  ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("")+rpcTable(h.rpc||[]);
+ }
+ // Each Ethereum node: what it served, its limits, and why it last failed (a failing node rests, longer each time)
+ function rpcTable(rs){
+  if(!rs.length)return "";
+  const used=rs.filter(r=>r.ok>0&&!r.restUntil).length,standby=rs.filter(r=>!r.ok&&!r.fail).length;
+  const st=r=>r.restUntil?`<span class="amber">resting until ${wclock(r.restUntil)}</span>`:r.ok?'<span class="green">in use</span>':r.fail?'<span class="muted">not working yet</span>':'<span class="muted">standing by</span>';
+  const notes=r=>[r.maxBatch<40?`${r.maxBatch} requests per batch`:null,...(r.cannot||[]).map(c=>`not used for ${esc(c.what)} (it refuses them)`)].filter(Boolean).join("<br>");
+  return `<div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>Ethereum node</th><th>OK</th><th>Failed</th><th>Status</th><th>Notes</th><th>Last error</th></tr></thead><tbody>${rs.map(r=>`<tr><td class="mono">${esc(r.url)}</td><td class="mono">${r.ok}</td><td class="mono">${r.fail}</td><td>${st(r)}</td><td class="muted" style="font-size:12px">${notes(r)||"—"}</td><td style="font-size:12px;max-width:340px" title="${esc(r.lastError||"")}">${r.lastError?`<span class="${r.restUntil?"red":"muted"}">${esc(r.lastError.length>90?r.lastError.slice(0,88)+"…":r.lastError)}</span><span class="sub">${r.lastErrorAt?wago(r.lastErrorAt):""}</span>`:'<span class="muted">—</span>'}</td></tr>`).join("")}</tbody></table></div>
+   <p class="muted" style="font-size:12px;margin:8px 0 0">${used+standby>=2?"Errors on some nodes are normal: free nodes rate-limit or refuse some requests. The tracker switches to another node and tries the failing one again later, waiting longer each time (30 seconds up to 30 minutes).":"Few nodes are working on your connection. The tracker keeps going on what works, but a free Alchemy or Infura key in WHALES_RPC makes it steady (README: Troubleshooting, \"Whale tracker: Ethereum nodes failing\")."}</p>`;
  }
  function drawWh(){
   const d=wd,q=$("#whQ").value.trim().toUpperCase(),kinds=$("#whKind").value?$("#whKind").value.split(","):null,min=Number($("#whMin").value)||0,stable=$("#whStable").checked,internal=$("#whInternal").checked,plumb=$("#whPlumbing").checked;

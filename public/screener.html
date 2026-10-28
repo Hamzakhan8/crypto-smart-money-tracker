@@ -52,7 +52,14 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .sectags::-webkit-scrollbar{display:none}
 .sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
-[data-sec-hidden]{display:none!important}.filtered .lower,.filtered .stack,.filtered .watchrow{grid-template-columns:1fr}
+[data-sec-hidden]{display:none!important}
+/* state tabs inside a list: All · Strong flow · Heating up · Already running · AI: TAKE */
+.sttabs{display:flex;gap:6px;padding:0 18px 12px;overflow-x:auto;scrollbar-width:none}.sttabs::-webkit-scrollbar{display:none}
+.sttabs button{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.sttabs button span{font-family:"DM Mono",monospace;font-weight:500;margin-left:4px;opacity:.8}.sttabs button:hover{color:var(--ink);border-color:#58718d}
+.sttabs button.on{color:var(--ink);border-color:#58718d;background:#1a2534}.sttabs button.on[data-st="strong"]{color:var(--green);border-color:#236a53;background:#102a25}
+.sttabs button.on[data-st="heating"]{color:var(--amber);border-color:#6d5621;background:#2b2414}.sttabs button.on[data-st="running"]{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.sttabs button.on[data-st="take"]{color:var(--blue);border-color:#2c4a77;background:#111d30}.filtered .lower,.filtered .stack,.filtered .watchrow{grid-template-columns:1fr}
 .btn.xs{padding:4px 9px;font-size:11px;border-radius:8px}.event .took{margin-top:6px}
 .subhead2{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px 6px;flex-wrap:wrap}.subhead2 h2{font-size:13px;margin:0}.subhead2 p{margin:3px 0 0;color:var(--muted);font-size:12px}
 .jform{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 18px 16px}.jform label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);font-weight:700}.jform input,.jform select{width:100%}.jform .wide{grid-column:span 2}.jform .actions{display:flex;gap:8px;align-items:end}
@@ -138,16 +145,18 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 </div>
 <section data-sec="watch" class="panel" style="margin-bottom:14px">
  <div class="section-head"><div><h2>Live ignition watch</h2><p>15-minute volume vs the token's normal for this hour of the day. Green = confirmed early, amber = building (shows what it still lacks), red = already running (do not chase).</p></div><span class="chip" id="igCount">—</span></div>
+ <div class="sttabs" id="st-live" role="tablist" aria-label="Filter tokens"></div>
  <div class="notice" id="mwBanner" style="display:none;margin:0 18px 12px"><b>Market-wide volume surge:</b> many tokens are surging together, so the ignition bar is raised 50% to avoid alerting on a market move that is not specific to one token.</div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
 </section>
 <section data-sec="big" class="panel" style="margin-bottom:14px" id="bigPanel">
  <div class="section-head"><div><h2>Big-move watch: +40% before -10%</h2><p id="bigHint">Smaller coins whose daily volume is already expanding.</p></div><span class="chip" id="bigCount">—</span></div>
+ <div class="sttabs" id="st-big" role="tablist" aria-label="Filter coins"></div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Daily volume</th><th>Last two 5m candles</th><th>Moved</th><th>Market cap</th><th>Target · stop</th></tr></thead><tbody id="bigBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
  <button class="btn sm more" id="bigMore" hidden></button>
 </section>
 <div class="lower">
- <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
+ <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="sttabs" id="st-hist" role="tablist" aria-label="Filter alerts"></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
  <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Check what is connected before trusting a signal</p></div></div><div class="source-list" id="sources"></div><div class="section-head" style="padding-top:4px"><div><h2 style="font-size:13px">Hot narratives now</h2><p>Median 24h change of each Binance sector's coins</p></div></div><div class="chips" id="narrChips"></div></section>
 </div>
 <section data-sec="perf" class="panel" style="margin-top:14px">
@@ -182,6 +191,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <select id="sortBy" aria-label="Sort tokens"><option value="score">Sort: score</option><option value="rvol">Sort: relative volume</option><option value="chg">Sort: 24h change</option><option value="vol">Sort: 24h volume</option><option value="rank">Sort: market cap rank</option></select>
   <select id="rowLimit" aria-label="Rows to show"><option value="15" selected>Show 15</option><option value="50">Show 50</option><option value="150">Show all</option></select>
  </div></div>
+ <div class="sttabs" id="st-board" role="tablist" aria-label="Filter tokens"></div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>Market cap</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
 </section>
 <details class="foot" data-sec=""><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
@@ -330,10 +340,11 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <section data-sec="cand" class="panel">
   <div class="section-head"><div><h2>Ignition candidates</h2><p id="aRule">Early ignition: two finished 5-minute candles in a row, each at 5× the token's normal 5-minute volume (median of the last 24 hours) and $1,000+ with 10+ trades, price up over those 10 minutes (but not more than 20%), and not already up 30% in 24 hours. Confirmed: the same with $1M+ traded in the last 24 hours.</p></div>
    <select id="aFilter" aria-label="Show"><option value="active">Ignited, heating, moved</option><option value="all">All scanned tokens</option></select></div>
+  <div class="sttabs" id="st-acand" role="tablist" aria-label="Filter tokens"></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Last two 5m candles</th><th>Price</th><th>DEX buys (5m · 1h)</th><th>Liquidity · holders</th><th>Market cap · FDV</th></tr></thead><tbody id="aBody"><tr><td colspan="7" class="empty">Waiting for the first scan (about 15 seconds after start, then every 5 minutes)…</td></tr></tbody></table></div>
  </section>
  <div class="stack">
-  <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div>
+  <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div><div class="sttabs" id="st-aalerts" role="tablist" aria-label="Filter alerts"></div>
    <div class="table-wrap"><table class="table cards"><thead><tr><th>Alert</th><th>Token</th><th>Tier</th><th>Entry</th><th>Volume</th><th>DEX buys</th><th>AI</th><th>Result</th></tr></thead><tbody id="aAlerts"></tbody></table></div></section>
   <section data-sec="replay" class="panel"><div class="section-head"><div><h2>Replay</h2><p>The same rule on past Alpha candles, delisted tokens included, from <span class="mono">node alpha-backtest.js</span>.</p></div><span class="chip" id="aReplayChip">—</span></div><div class="hold" id="aReplay"></div></section>
  </div>
@@ -394,12 +405,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </div>
  <section data-sec="cand" class="panel">
   <div class="section-head"><div><h2 id="xTitle">Candidates</h2><p id="xHint">—</p></div><span class="chip" id="xChip">—</span></div>
-  <div class="seg" role="tablist" aria-label="Candidate states" id="xSeg">
-   <button class="btn" data-xs="quiet" role="tab">Quiet accumulation <span class="mono" id="xcQuiet">·</span></button>
-   <button class="btn" data-xs="prebreakout" role="tab">Pre-breakout <span class="mono" id="xcPre">·</span></button>
-   <button class="btn" data-xs="ignition" role="tab">Early ignition <span class="mono" id="xcIgn">·</span></button>
-   <button class="btn" data-xs="moved" role="tab">Already moved — do not chase <span class="mono" id="xcMoved">·</span></button>
-  </div>
+  <div class="sttabs" id="st-x2" role="tablist" aria-label="Filter candidates"></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score · state</th><th>Market cap</th><th>Price · targets</th><th>Volume vs normal</th><th>Buying</th><th>Price · structure</th><th>Liquidity</th><th>Futures · on-chain</th><th>Supply · events</th><th>Still missing</th></tr></thead><tbody id="xBody"><tr><td colspan="11" class="empty">Waiting for the first scan (about 30 seconds after start)…</td></tr></tbody></table></div>
  </section>
  <section data-sec="results" class="panel" style="margin-top:14px">
@@ -411,7 +417,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Matured (14d)</th><th>+25% in 14d</th><th>+50% in 14d</th><th>+100% in 14d</th><th>+100% in 42d</th><th>Days to +100%</th><th>Fall before +25%</th><th>Hit before -<span id="xStopPct">20</span>% stop</th><th>False positives</th></tr></thead><tbody id="xTgt"></tbody></table></div>
  </section>
  <div class="lower">
-  <section data-sec="snaps" class="panel"><div class="section-head"><div><h2>Recent snapshots</h2><p>Saved before the move, never changed afterwards. Returns are measured from the snapshot price.</p></div></div><div class="events" id="xRecent"><div class="empty">No snapshots yet.</div></div></section>
+  <section data-sec="snaps" class="panel"><div class="section-head"><div><h2>Recent snapshots</h2><p>Saved before the move, never changed afterwards. Returns are measured from the snapshot price.</p></div></div><div class="sttabs" id="st-xsnap" role="tablist" aria-label="Filter snapshots"></div><div class="events" id="xRecent"><div class="empty">No snapshots yet.</div></div></section>
   <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Missing data earns no points and blocks high priority.</p></div></div><div class="source-list" id="xHealth"></div></section>
  </div>
  <div class="foot" data-sec="">How it works: every few minutes the screen reads Binance spot data for USDT pairs with a verified market cap of $10M-$1B (Binance's circulating supply × price, cross-checked with CoinGecko), at least $1M of 24h volume and a spread of 0.30% or less. Stablecoins, wrapped and staked tokens, tokenized stocks and leveraged tokens are left out. <b>Model A (quiet accumulation)</b>: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout is the same, pressing a tested 7-day high. <b>Model B (early ignition)</b>: the last 3+ five-minute candles each at 2×+ normal volume for that hour, accelerating, with aggressive buying and price rising. Evidence is grouped into five independent families (activity, executed buying, structure, order book, strength vs BTC). Volume and trade count, CVD and buy share, and large-trade buying measure overlapping things, so each group counts once. High priority needs 3+ families, a score of 50+ and passing liquidity, data, extension, BTC and supply checks (a market cap that Binance and CoinGecko disagree on, or under 40% of supply circulating, blocks it). Coins already stretched beyond limits that scale with their own volatility go to "Already moved". Those are tracked too, as a control group. All settings are EARLY2X_* in .env; Telegram alerts stay off until EARLY2X_ALERTS=1.</div>
@@ -468,6 +474,23 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const time=v=>v?new Date(v).toLocaleTimeString():"—";
  const when=v=>v?new Date(v).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
  const store={get(k){try{return localStorage.getItem(k);}catch{return null;}},set(k,v){try{localStorage.setItem(k,v);}catch{}}};
+ // ---------- state tabs in each list: All · Strong flow · Heating up · Already running · AI: TAKE ----------
+ // Each list says what the four groups mean for its rows (cat) and redraws itself when a tab is clicked (REDRAW).
+ const STATE_TABS=[["all","All"],["strong","Strong flow"],["heating","Heating up"],["running","Already running"],["take","AI: TAKE"]];
+ const stSel={},REDRAW={};
+ const stGet=sec=>stSel[sec]||(stSel[sec]=store.get("st:"+sec)||"all");
+ // AI verdict on a coin in the last 2 hours (alert reviews, AI desk, Alpha checks); key = spot base or "A:"+Alpha id
+ const aiTake=key=>{const v=(data.aiVerdicts||{})[String(key||"").toUpperCase()];return !!v&&v.decision==="TAKE";};
+ function stTabs(sec,rows,cat,hints){
+  const cur=stGet(sec),n={all:rows.length,strong:0,heating:0,running:0,take:0};
+  const cs=rows.map(r=>{const c=cat(r)||{};for(const k of ["strong","heating","running","take"])if(c[k])n[k]++;return c;});
+  const el=document.getElementById("st-"+sec);
+  if(el)el.innerHTML=STATE_TABS.map(([k,l])=>`<button type="button" role="tab" data-st="${k}" class="${k===cur?"on":""}" aria-selected="${k===cur}" title="${esc((hints||{})[k]||"")}">${l}<span>${n[k]}</span></button>`).join("");
+  return cur==="all"?rows:rows.filter((r,i)=>cs[i][cur]);
+ }
+ const stEmpty=(sec,txt)=>stGet(sec)==="all"?txt:`Nothing under "${(STATE_TABS.find(x=>x[0]===stGet(sec))||[,""])[1]}" right now.`;
+ document.addEventListener("click",e=>{const b=e.target.closest(".sttabs [data-st]");if(!b)return;const sec=b.closest(".sttabs").id.slice(3);
+  stSel[sec]=b.dataset.st;store.set("st:"+sec,b.dataset.st);if(REDRAW[sec])REDRAW[sec]();});
  const cfg=()=>data.config||{minScore:70};
  const col=v=>v>0?"green":v<0?"red":"";
  const yesNo=(v,y,n)=>v==null?"—":v?y:n;
@@ -482,8 +505,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // ---------- ignition watch ----------
  function drawIgnite(){
   const order={ignited:0,heating:1,ran:2};
-  const rows=(data.candidates||[]).filter(c=>c.ignition).sort((a,b)=>order[a.ignition]-order[b.ignition]||(b.igScore||0)-(a.igScore||0)||(b.rvol15||0)-(a.rvol15||0)).slice(0,20);
-  $("#igCount").textContent=rows.length+" tokens";
+  const allRows=(data.candidates||[]).filter(c=>c.ignition).sort((a,b)=>order[a.ignition]-order[b.ignition]||(b.igScore||0)-(a.igScore||0)||(b.rvol15||0)-(a.rvol15||0));
+  const rows=stTabs("live",allRows,c=>({strong:c.ignition==="ignited"&&!c.moved,heating:c.ignition==="heating"&&!c.moved,running:c.ignition==="ran"||!!c.moved,take:aiTake(c.base)}),
+   {strong:"Igniting now: both 5m candles passed the rule",heating:"Volume building, the rule is not met yet",running:"Already ran: do not chase",take:"The AI said TAKE in the last 2 hours"}).slice(0,20);
+  $("#igCount").textContent=allRows.length+" tokens";
   $("#mwBanner").style.display=data.breadth&&data.breadth.marketWide?"block":"none";
   $("#igBody").innerHTML=rows.length?rows.map(c=>{
    const [txt,k]=STATE[c.ignition];
@@ -496,8 +521,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <td class="mono ${c.buyRatio15m>=58?"green":c.buyRatio15m<50?"red":""}">${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)+"% buy"}${c.spreadBps!=null?`<span class="sub">spread ${c.spreadBps.toFixed(1)} bps</span>`:""}</td>
    <td class="mono">${c.igScore==null?"—":`<span class="score">${c.igScore}<span class="scorebar"><i style="width:${c.igScore}%"></i></span></span>`}<span class="sub">daily ${c.score} · ${esc(c.label)}</span></td>
    <td>${rotTag(c)}</td></tr>`;
-  }).join(""):'<tr><td colspan="7" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:"Nothing is igniting right now. Quiet is normal.")+'</td></tr>';
+  }).join(""):'<tr><td colspan="7" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:stEmpty("live","Nothing is igniting right now. Quiet is normal."))+'</td></tr>';
  }
+ REDRAW.live=()=>drawIgnite();
 
  // ---------- big-move watch ----------
  let bigAll=false;
@@ -505,8 +531,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const b=cfg().bigmove||{};
   $("#bigPanel").style.display=b.on===false?"none":"";
   if(b.on===false)return;
-  const all=(data.candidates||[]).filter(c=>c.bigmove).sort((a,z)=>(z.bigmove==="ignited")-(a.bigmove==="ignited")||(z.rvol||0)-(a.rvol||0)),rows=bigAll?all:all.slice(0,8);
-  $("#bigCount").textContent=all.length+" coins";
+  const all0=(data.candidates||[]).filter(c=>c.bigmove).sort((a,z)=>(z.bigmove==="ignited")-(a.bigmove==="ignited")||(z.rvol||0)-(a.rvol||0));
+  const all=stTabs("big",all0,c=>({strong:c.bigmove==="ignited"&&!c.moved,heating:c.bigmove!=="ignited"&&!c.moved,running:!!c.moved||c.change24h>=25,take:aiTake(c.base)}),
+   {strong:"Big-move ignition: the 5m trigger fired",heating:"Waking up: daily volume expanding, waiting for the trigger",running:"Already moved (or up 25%+ in 24h): do not chase",take:"The AI said TAKE in the last 2 hours"}),rows=bigAll?all:all.slice(0,8);
+  $("#bigCount").textContent=all0.length+" coins";
   $("#bigMore").hidden=all.length<=8;$("#bigMore").textContent=bigAll?"Show fewer":`Show all ${all.length}`;
   $("#bigHint").textContent=`Smaller coins (${money(b.minVolume)}-${money(b.maxVolume)} of 24h volume) whose daily volume is already ${b.minDailyRvol}×+ their 20-day average. Green = the 5-minute ignition fired too (alert); amber = waking up, waiting for the trigger. Tracked as +${b.targetPct}% before -${b.stopPct}% within ${b.outcomeHours/24} days, separately from the quick tiers. In a 90-day replay of every Binance USDT pair it made money in the Aug-Sep altcoin rally and lost in October: a research tier, not a proven edge. Telegram: ${b.telegram?"on":"off (SCREENER_BIGMOVE_ALERTS=1)"}.`;
   $("#bigBody").innerHTML=rows.length?rows.map(c=>{const g=c.big||{},ign=c.bigmove==="ignited";
@@ -516,8 +544,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <td class="mono">${g.r5==null?"—":g.prevR5.toFixed(1)+"× → "+g.r5.toFixed(1)+"×"}<span class="sub">${g.buyRatio10m==null?"":g.buyRatio10m.toFixed(0)+"% buyers"}</span></td>
    <td class="mono"><span class="${col(c.change24h)}">${pct1(c.change24h)}</span> 24h<span class="sub">${g.ret10m==null?"":pct1(g.ret10m)+" 10m"}</span></td>
    <td class="mono">${money(c.marketCap)}</td>
-   <td class="mono green">${price(c.price*(1+b.targetPct/100))}<span class="sub red">stop ${price(c.price*(1-b.stopPct/100))}</span></td></tr>`;}).join(""):'<tr><td colspan="7" class="empty">No smaller coin is waking up right now.</td></tr>';
+   <td class="mono green">${price(c.price*(1+b.targetPct/100))}<span class="sub red">stop ${price(c.price*(1-b.stopPct/100))}</span></td></tr>`;}).join(""):`<tr><td colspan="7" class="empty">${stEmpty("big","No smaller coin is waking up right now.")}</td></tr>`;
  }
+ REDRAW.big=()=>drawBig();
 
  // ---------- alert performance ----------
  function drawPerf(){
@@ -571,12 +600,15 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const SORTS={score:c=>c.score,rvol:c=>c.rvol,chg:c=>c.change24h,vol:c=>c.quoteVolume,rank:c=>c.rank==null?-Infinity:-c.rank};
  function distText(c){const d=c.distToHigh;if(d==null)return"—";return d<0?(Math.abs(d)*100).toFixed(1)+"% below 20d high":"+"+(d*100).toFixed(1)+"% above 20d high";}
  function drawTable(){
-  const q=$("#search").value.trim().toLowerCase(),ms=Number($("#minScore").value),no=$("#narrOnly").value==="1",hm=$("#hideMoved").value==="1";
-  const all=(data.candidates||[]).filter(c=>c.core!==false&&(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative)&&(!hm||!c.moved));
+  const q=$("#search").value.trim().toLowerCase(),ms=Number($("#minScore").value),no=$("#narrOnly").value==="1",hm=$("#hideMoved").value==="1"&&stGet("board")!=="running";
+  const all0=(data.candidates||[]).filter(c=>c.core!==false&&(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative)&&(!hm||!c.moved));
+  const all=stTabs("board",all0,c=>({strong:!c.moved&&(c.ignition==="ignited"||c.score>=cfg().minScore),heating:!c.moved&&c.ignition!=="ignited"&&c.score<cfg().minScore&&(c.ignition==="heating"||c.score>=55),running:!!c.moved,take:aiTake(c.base)}),
+   {strong:"Igniting now, or a strong daily setup",heating:"Volume heating up, or a setup scoring 55+",running:"Already moved: do not chase (shown even with \"Hide already moved\")",take:"The AI said TAKE in the last 2 hours"});
   const key=SORTS[$("#sortBy").value]||SORTS.score,lim=Number($("#rowLimit").value);
   const sorted=[...all].sort((a,b)=>(key(b)??-Infinity)-(key(a)??-Infinity));
   const rows=lim>0?sorted.slice(0,lim):sorted;
   $("#count").textContent=(rows.length<all.length?rows.length+" of "+all.length:all.length)+" tokens";
+  REDRAW.board=drawTable;
   $("#tbody").innerHTML=rows.length?rows.map(c=>{
    const klass=c.moved?"risk":c.score>=cfg().minScore?"strong":c.score>=55?"watch":"";
    const fut=c.fundingPct==null?'<span class="muted">no futures</span>':`<span class="mono ${c.fundingPct>0.05?"red":""}">${c.fundingPct.toFixed(3)}%</span><span class="sub">OI 24h ${c.oiChange24hPct==null?"—":pct(c.oiChange24hPct)}</span>`;
@@ -593,6 +625,16 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
 
  // ---------- page chrome ----------
+ // Alert history with tabs: Strong flow = confirmed and big-move alerts, Heating up = early (first-signal) alerts,
+ // Already running = price is already half way to the target (or hit it), AI: TAKE = the AI's review of the alert.
+ function drawHist(){
+  const ev=data.events||[];
+  const runOf=e=>{const t=e.track;if(!t||!t.entry)return false;const r=t.rule||{targetPct:6};return t.outcome==="win"||(t.last/t.entry-1)*100>=r.targetPct/2;};
+  const rows=stTabs("hist",ev,e=>({strong:e.tier==="ignition"||e.tier==="bigmove",heating:e.tier==="early"||e.tier==="setup",running:runOf(e),take:!!(e.ai&&e.ai.decision==="TAKE")}),
+   {strong:"Confirmed ignition and big-move alerts",heating:"Early (first-signal) alerts",running:"Price already half way to the target or past it: too late to enter",take:"The AI's review of this alert said TAKE"});
+  $("#events").innerHTML=rows.length?rows.slice(0,15).map(histRow).join(""):`<div class="empty">${stEmpty("hist","No alerts yet. A quiet feed is okay.")}</div>`;
+ }
+ REDRAW.hist=()=>drawHist();
  function histRow(e){
   const t=e.track,c=e.detail||{},v=data.stats&&data.stats.version;
   let since="";
@@ -645,7 +687,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#narrChips").innerHTML=hn.length?hn.map(h=>`<span class="badge strong">${esc(h.name)} ${pct(h.change24hPct)}</span>`).join(""):'<span class="muted" style="font-size:12px">None above the threshold right now.</span>';
   if(data.mainUrl)$("#mainLink").href=data.mainUrl;
   const ev=data.events||[];
-  $("#events").innerHTML=ev.length?ev.slice(0,15).map(histRow).join(""):'<div class="empty">No alerts yet. A quiet feed is okay.</div>';
+  drawHist();
   drawIgnite();drawBig();drawTable();drawPerf();
  }
 
@@ -958,7 +1000,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const R=d.results||{},E=d.resultsEarly||{};$("#aResults").textContent=R.closed?`${R.winPct}% · ${pct1(R.avgNetPct)}`:(R.alerts?R.alerts+" open":"0");
   $("#aResultsHint").textContent=(R.closed?`${R.closed} closed (${R.wins} hit +${c.targetPct}%, ${R.losses} stopped, ${R.flats} timed out) · ${R.open} open`:`hit +${c.targetPct??40}% first · average after costs`)+(E.alerts?` · early tier: ${E.closed?`${E.winPct}% · ${pct1(E.avgNetPct)} on ${E.closed} closed`:E.alerts+" open"}`:"");
   if(c.volMult)$("#aRule").textContent=`Early ignition: two finished 5-minute candles in a row, each at ${c.volMult}× the token's normal 5-minute volume (median of the last 24 hours) and $${Number(c.minCandleUsd).toLocaleString()}+ with ${c.minTrades}+ trades, price up over those 10 minutes (but not more than ${c.maxMove10mPct}%), and not already up ${c.maxChg24Pct}% in 24 hours. Confirmed: the same with ${wusd(c.min24hUsd)}+ traded in the last 24 hours. Tokens need $${Math.round(c.minLiquidityUsd/1000)}k+ of pool liquidity and ${Number(c.minHolders).toLocaleString()}+ holders.`;
-  const all=d.rows||[],rows=$("#aFilter").value==="all"?all:all.filter(r=>r.state!=="quiet");
+  const all=d.rows||[],base=$("#aFilter").value==="all"||stGet("acand")!=="all"?all:all.filter(r=>r.state!=="quiet");
+  const rows=stTabs("acand",base,r=>({strong:r.state==="ignited",heating:r.state==="heating",running:r.state==="ran",take:aiTake("A:"+r.alphaId)}),
+   {strong:"Igniting now (early or confirmed)",heating:"Volume rising, not confirmed yet",running:"Up 30%+ in 24 hours: do not chase",take:"The AI said TAKE in the last 2 hours (Ask AI or an alert review)"});
   $("#aBody").innerHTML=rows.length?rows.map(r=>{const f=r.f||{},x=r.dex,ex=EXPL[r.chain];return `<tr><td><b class="sym">${esc(r.symbol)}</b><span class="sub">${esc(r.chain||"")} · ${esc(r.name||"")}${r.ageDays!=null?` · on Alpha ${r.ageDays}d`:""}</span><span class="sub">${x&&x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">DexScreener</a>`:""}${ex&&r.contract?`${x&&x.url?" · ":""}<a href="${ex}${esc(r.contract)}" target="_blank" rel="noopener">Contract</a>`:""}</span><button class="btn xs" data-askai="${esc(r.alphaId)}" title="Ask Gemini about this token now">Ask AI</button></td>
    <td>${r.tier==="confirmed"?'<span class="badge strong">Confirmed</span>':r.tier==="early"?'<span class="badge strong" style="color:var(--blue);border-color:#2c4a77;background:#111d30">Early ignition</span>':aState[r.state]||esc(r.state)}${r.state!=="ignited"&&r.fails&&r.fails.length?`<span class="sub">${esc(r.fails.slice(0,2).join(" · "))}</span>`:""}</td>
    <td class="mono">${f.r1!=null?`<b class="${f.r1>=c.volMult&&f.r2>=c.volMult?"green":""}">${f.r1}× / ${f.r2}×</b><span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)} · ${f.trades1} / ${f.trades2} trades</span>`:'<span class="muted">under 24h of history</span>'}</td>
@@ -967,13 +1011,15 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <td class="mono">${wusd(r.liquidity)}<span class="sub">${r.holders!=null?Number(r.holders).toLocaleString():"—"} holders</span></td>
    <td class="mono">${wusd(r.mcap)}<span class="sub">FDV ${wusd(r.fdv)}${r.circPct!=null?` · ${r.circPct}% circulating`:""}</span></td></tr>`;}).join("")
    :`<tr><td colspan="7" class="empty">${d.status==="starting"?"First scan in progress (it reads 5-minute candles for every token, about a minute)…":all.length?"Nothing ignited, heating up or moved right now. Choose \"All scanned tokens\" to see every token.":"No tokens yet."}</td></tr>`;
-  const al=d.alerts||[];
-  $("#aAlertsChip").textContent=al.length?al.length+" recent":"none yet";
+  const al0=d.alerts||[];
+  const al=stTabs("aalerts",al0,a=>{const tr=a.track||{},now=a.f&&tr.last?(tr.last/a.f.close-1)*100:0;return {strong:(a.tier||"confirmed")==="confirmed",heating:a.tier==="early",running:tr.status==="win"||(tr.status==="open"&&now>=10),take:!!(a.ai&&a.ai.decision==="TAKE")};},
+   {strong:"Confirmed alerts ($1M+ traded in 24h)",heating:"Early alerts (first signal)",running:"Already up 10%+ since the alert, or hit the target: too late to enter",take:"The AI's review of this alert said TAKE"});
+  $("#aAlertsChip").textContent=al0.length?al0.length+" recent":"none yet";
   $("#aAlertsNote").textContent=`Every alert, tracked from its price: +${c.targetPct??40}% target before -${c.stopPct??10}% stop within ${c.outcomeDays??7} days, after ${c.costPct??1}% costs.`;
   $("#aAlerts").innerHTML=al.length?al.map(a=>{const tr=a.track||{},f=a.f||{},res=tr.status==="open"?`<span class="amber">open</span><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`
    :`<b class="${tr.status==="win"?"green":tr.status==="loss"?"red":""}">${tr.status==="win"?"Target":tr.status==="loss"?"Stopped":"Timed out"} ${pct1(tr.resultPct)}</b><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`;
    return `<tr><td class="mono">${new Date(a.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}<span class="sub">${aAgo(a.t)}</span></td><td><b>${esc(a.token.symbol)}</b><span class="sub">${esc(a.token.chain||"")}</span></td><td>${(a.tier||"confirmed")==="confirmed"?'<span class="badge strong">Confirmed</span>':'<span class="badge">Early</span>'}</td><td class="mono">${aPx(f.close)}</td><td class="mono">${f.r1}× / ${f.r2}×<span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)}</span></td><td class="mono">${aBuys(a.dex)}</td><td>${aiBadge(a.ai)}</td><td class="mono">${res}${tr.status==="open"||Date.now()-a.t<2*86400000?`<button class="btn xs" data-atook="${esc(a.id)}" title="Add this trade to your journal">I took it</button>`:""}</td></tr>`;}).join("")
-   :'<tr><td colspan="8" class="empty">No alerts yet. In the replay the confirmed tier fired about 8 times a day across all Alpha tokens, the early tier about 50.</td></tr>';
+   :`<tr><td colspan="8" class="empty">${stEmpty("aalerts","No alerts yet. In the replay the confirmed tier fired about 8 times a day across all Alpha tokens, the early tier about 50.")}</td></tr>`;
   const S=d.stats||{};
   $("#aExits").innerHTML=exitRows((S.exits||{})[$("#aExitTier").value]);
   $("#aSpeed").innerHTML=speedRows(S.speed,"Fills in with alerts from now on: each alert records its price 5 and 15 minutes later.");
@@ -995,7 +1041,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const exc=Object.entries(d.excluded||{}).sort((a,b)=>b[1]-a[1]);
   $("#aExcluded").innerHTML=exc.length?"<b>Left out:</b> "+exc.map(([k,v])=>`${esc(k)} ${v}`).join(" · "):"";
  }
- $("#aFilter").onchange=drawA;$("#aExitTier").onchange=drawA;
+ $("#aFilter").onchange=drawA;$("#aExitTier").onchange=drawA;REDRAW.acand=REDRAW.aalerts=()=>drawA();
  const aiBadge=x=>x&&x.decision?`<span class="badge ${x.decision==="TAKE"?"strong":x.decision==="WAIT"?"watch":"risk"}" title="${esc(x.headline||"")}${x.expectedValuePct!=null?" · expected "+x.expectedValuePct+"% per trade":""}">${x.decision==="SKIP"?"NO TRADE":esc(x.decision)}</span>`:x&&x.error?`<span class="badge risk" title="${esc(x.error)}">AI error</span>`:'<span class="muted">—</span>';
  $("#aAlerts").addEventListener("click",e=>{const b=e.target.closest("[data-atook]");if(!b)return;const a=(ad.alerts||[]).find(x=>x.id===b.dataset.atook);if(!a)return;
   const row=(ad.rows||[]).find(r=>r.alphaId===a.alphaId),c=ad.config||{};
@@ -1201,7 +1247,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
 
  // ---------- early 2x movers ----------
- let xd={},xState="quiet",xTimer=null;
+ let xd={},xTimer=null;
  const XSTATE={quiet:["Quiet accumulation","watch"],prebreakout:["Pre-breakout","watch"],ignition:["Early ignition","strong"],moved:["Already moved","risk"]};
  const xn=(v,d=2,s="×")=>v==null?"—":Number(v).toFixed(d)+s;
  const xfam={activity:"activity",buying:"buying",structure:"structure",orderbook:"order book",strength:"vs BTC"};
@@ -1272,16 +1318,18 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#xkBtcHint").textContent=reg?`24h · 4h ${pct(reg.btc4h)} · 7d ${pct(reg.btc7d)}${reg.deteriorating?" · weak: no high priority":""}`:"—";
   $("#xkSig").textContent=xd.signalCount??"—";
   $("#xkSigHint").textContent=xd.results?`${xd.results.all.open} still open · 42-day tracking`:"snapshots with measured returns";
-  [["quiet","#xcQuiet"],["prebreakout","#xcPre"],["ignition","#xcIgn"],["moved","#xcMoved"]].forEach(([k,id])=>$(id).textContent=(tabs[k]||[]).length);
-  document.querySelectorAll("#xSeg [data-xs]").forEach(b=>{const on=b.dataset.xs===xState;b.classList.toggle("on",on);b.setAttribute("aria-selected",String(on));});
-  const rows=tabs[xState]||[];
-  $("#xTitle").textContent=(XSTATE[xState]||[""])[0]+(xState==="moved"?" — do not chase":"");
-  $("#xHint").textContent=xTabHint[xState];
+  const allX=["ignition","prebreakout","quiet","moved"].flatMap(k=>(tabs[k]||[]).map(c=>({...c,state:c.state||k})));
+  const rows=stTabs("x2",allX,c=>({strong:c.state==="ignition",heating:c.state==="quiet"||c.state==="prebreakout",running:c.state==="moved",take:aiTake(c.base)}),
+   {strong:"Early ignition (Model B)",heating:"Quiet accumulation or pre-breakout (Model A)",running:"Already moved: do not chase",take:"The AI said TAKE in the last 2 hours"});
+  const xs=stGet("x2");
+  $("#xTitle").textContent={all:"Candidates",strong:"Early ignition",heating:"Quiet accumulation and pre-breakout",running:"Already moved — do not chase",take:"AI said TAKE"}[xs];
+  $("#xHint").textContent=xs==="strong"?xTabHint.ignition:xs==="heating"?xTabHint.quiet+" "+xTabHint.prebreakout:xs==="running"?xTabHint.moved:xs==="take"?"Candidates the AI said TAKE on in the last 2 hours.":"Every candidate: early ignitions first, then pre-breakout, quiet accumulation and coins that already moved.";
   $("#xChip").textContent=xd.lastScanAt?`scanned ${time(xd.lastScanAt)} · every ${xd.config.scanMinutes} min`:xd.status||"starting";
   $("#xBody").innerHTML=rows.length?rows.map(xRow).join(""):`<tr><td colspan="11" class="empty">${xd.lastScanAt?"No coin has enough evidence for this state right now. An empty list is a valid answer.":"Waiting for the first scan…"}</td></tr>`;
   drawXResults();
-  const rec=xd.recent||[];
-  $("#xRecent").innerHTML=rec.length?rec.slice(0,25).map(xRecentRow).join(""):'<div class="empty">No snapshots yet. A quiet market is normal.</div>';
+  const rec=stTabs("xsnap",xd.recent||[],r=>{const t=r.track||{},now=t.entry?(t.last/t.entry-1)*100:0;return {strong:r.state==="ignition",heating:r.state==="quiet"||r.state==="prebreakout",running:r.state==="moved"||now>=25,take:aiTake(r.base)};},
+   {strong:"Saved as an early ignition",heating:"Saved as quiet accumulation or pre-breakout",running:"Saved as already moved, or up 25%+ since the snapshot",take:"The AI said TAKE in the last 2 hours"});
+  $("#xRecent").innerHTML=rec.length?rec.slice(0,25).map(xRecentRow).join(""):`<div class="empty">${stEmpty("xsnap","No snapshots yet. A quiet market is normal.")}</div>`;
   const so=xd.sources||{},ai=so.assetInfo||{},ex=Object.entries(u.excluded||{}).sort((a,b)=>b[1]-a[1]);
   const cls=v=>/^connected|^live/.test(v||"")?"green":/unavailable|error/.test(v||"")?"red":"amber";
   $("#xHealth").innerHTML=[["Binance Spot (candles, trades, order book)",so.spot],["Binance asset info (circulating supply)",ai.source?(ai.source==="live"?`live · ${ai.coins} coins`:ai.source):"—"],["CoinGecko (supply, market cap check)",so.coingecko],["Binance Futures (context only)",so.futures],["Verified unlocks and catalysts",so.events]]
@@ -1317,9 +1365,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  $("#xModal").addEventListener("click",e=>{if(e.target===$("#xModal"))closeX();});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeX();});
  $("#xBody").addEventListener("click",e=>{const b=e.target.closest("[data-xsym]");if(b)openX(Object.values(xd.tabs||{}).flat().find(c=>c.symbol===b.dataset.xsym));});
- $("#xSeg").addEventListener("click",e=>{const b=e.target.closest("[data-xs]");if(b){xState=b.dataset.xs;store.set("early2xState",xState);drawX();}});
+ REDRAW.x2=REDRAW.xsnap=()=>drawX();
  $("#xGroup").onchange=drawXResults;
- {const s=store.get("early2xState");if(XSTATE[s])xState=s;}
  async function loadX(){
   try{const r=await fetch("/api/early2x",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);xd=await r.json();drawX();}
   catch(e){$("#xErrors").style.display="block";$("#xErrors").textContent="Cannot load /api/early2x: "+e.message;}

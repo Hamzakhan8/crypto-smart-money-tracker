@@ -52,6 +52,14 @@ details.notice div{margin-top:8px}
 .sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
 [data-sec-hidden]{display:none!important}.filtered .lower,.filtered .grid{grid-template-columns:1fr}
+
+/* state tabs inside a list: All · Strong flow · Heating up · Already running · AI: TAKE */
+.sttabs{display:flex;gap:6px;padding:0 18px 12px;overflow-x:auto;scrollbar-width:none}.sttabs::-webkit-scrollbar{display:none}
+.sttabs button{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.sttabs button span{font-family:"DM Mono",monospace;font-weight:500;margin-left:4px;opacity:.8}.sttabs button:hover{color:var(--ink);border-color:#58718d}
+.sttabs button.on{color:var(--ink);border-color:#58718d;background:#1a2534}.sttabs button.on[data-st="strong"]{color:var(--green);border-color:#236a53;background:#102a25}
+.sttabs button.on[data-st="heating"]{color:var(--amber);border-color:#6d5621;background:#2b2414}.sttabs button.on[data-st="running"]{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.sttabs button.on[data-st="take"]{color:var(--blue);border-color:#2c4a77;background:#111d30}
 </style></head>
 <body>
 <div class="appbar"><div class="appbar-in">
@@ -77,6 +85,7 @@ details.notice div{margin-top:8px}
  <section class="panel" data-sec="coins">
   <div class="section-head"><div><h2>Ignition coins</h2><p id="listHint">Igniting first, then heating up. Refreshes every 20 seconds.</p></div><button class="btn primary" id="allBtn">Analyze all</button></div>
   <form class="anyrow" id="anyForm"><input name="sym" placeholder="Any coin, e.g. SOL" aria-label="Coin symbol" required><button class="btn" type="submit">Analyze</button><button class="btn" type="button" id="dataBtn" title="Show the facts without calling Gemini">Data only</button></form>
+  <div class="sttabs" id="st-aicoins" role="tablist" aria-label="Filter coins"></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Signal</th><th>Move</th><th>AI</th><th></th></tr></thead><tbody id="coins"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
  </section>
  <section class="panel" id="resultPanel" data-sec="analysis">
@@ -106,6 +115,20 @@ details.notice div{margin-top:8px}
   try{cand=await getJson("/api/ai/candidates");drawCandidates();$("#errors").style.display="none";}
   catch(e){$("#liveChip").innerHTML='<span class="dot bad"></span>Server offline';$("#errors").style.display="block";$("#errors").textContent="Cannot load /api/ai/candidates: "+e.message;}
  }
+
+ // ---------- state tabs in a list: All · Strong flow · Heating up · Already running · AI: TAKE ----------
+ const STATE_TABS=[["all","All"],["strong","Strong flow"],["heating","Heating up"],["running","Already running"],["take","AI: TAKE"]],stSel={},REDRAW={};
+ const stGet=sec=>{if(!stSel[sec]){try{stSel[sec]=localStorage.getItem("st:"+sec)||"all";}catch{stSel[sec]="all";}}return stSel[sec];};
+ function stTabs(sec,rows,cat,hints){
+  const cur=stGet(sec),n={all:rows.length,strong:0,heating:0,running:0,take:0};
+  const cs=rows.map(r=>{const c=cat(r)||{};for(const k of ["strong","heating","running","take"])if(c[k])n[k]++;return c;});
+  const el=document.getElementById("st-"+sec);
+  if(el)el.innerHTML=STATE_TABS.map(([k,l])=>`<button type="button" role="tab" data-st="${k}" class="${k===cur?"on":""}" aria-selected="${k===cur}" title="${esc((hints||{})[k]||"")}">${l}<span>${n[k]}</span></button>`).join("");
+  return cur==="all"?rows:rows.filter((r,i)=>cs[i][cur]);
+ }
+ const stEmpty=(sec,txt)=>stGet(sec)==="all"?txt:`Nothing under "${(STATE_TABS.find(x=>x[0]===stGet(sec))||[,""])[1]}" right now.`;
+ document.addEventListener("click",e=>{const b=e.target.closest(".sttabs [data-st]");if(!b)return;const sec=b.closest(".sttabs").id.slice(3);
+  stSel[sec]=b.dataset.st;try{localStorage.setItem("st:"+sec,b.dataset.st);}catch{}if(REDRAW[sec])REDRAW[sec]();});
  function drawCandidates(){
   const c=cand;
   $("#keyNotice").style.display=c.configured?"none":"block";
@@ -118,9 +141,11 @@ details.notice div{margin-top:8px}
   $("#strip").innerHTML=`<span>BTC <b class="${col(m.btc1hPct)}">${pct(m.btc1hPct)}</b> 1h · <b class="${col(m.btc4hPct)}">${pct(m.btc4hPct)}</b> 4h · <b class="${col(m.btcChange24hPct)}">${pct(m.btcChange24hPct)}</b> 24h</span>${m.marketWide?'<span class="amber">Market-wide surge: signals are less token-specific</span>':""}`+
    (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Replay: confirmed hit target <b>${rep.confirmed.hitTargetPct}%</b>, stop <b>${rep.confirmed.hitStopPct}%</b>, avg <b>${pct(rep.confirmed.avgNetPct,2)}</b> · early avg <b>${pct(rep.early.avgNetPct,2)}</b></span>`:"")+
    `<span>Live: ${liveTxt(live.ignition,"confirmed")} · ${liveTxt(live.early,"early")}</span>`;
-  const list=c.coins||[];
-  $("#listHint").textContent=`${list.filter(x=>x.state==="ignited").length} igniting, ${list.filter(x=>x.state==="heating").length} heating up. Refreshes every 20 seconds.`;
-  $("#allBtn").textContent=`Analyze all (${Math.min(8,list.filter(x=>!x.moved&&(x.state==="ignited"||x.state==="heating")).length)})`;
+  const list0=c.coins||[];
+  const list=stTabs("aicoins",list0,x=>({strong:x.state==="ignited"&&!x.moved,heating:x.state==="heating"&&!x.moved,running:x.state==="ran"||!!x.moved,take:!!(x.last&&x.last.decision==="TAKE")}),
+   {strong:"Igniting now (early or confirmed)",heating:"Volume building, not igniting yet",running:"Already ran: do not chase",take:"The AI said TAKE (the AI desk or an alert review) in the last 2 hours"});
+  $("#listHint").textContent=`${list0.filter(x=>x.state==="ignited").length} igniting, ${list0.filter(x=>x.state==="heating").length} heating up. Refreshes every 20 seconds.`;
+  $("#allBtn").textContent=`Analyze all (${Math.min(8,list0.filter(x=>!x.moved&&(x.state==="ignited"||x.state==="heating")).length)})`;
   $("#coins").innerHTML=list.length?list.map(x=>{
    const tag=x.state==="ignited"?`<span class="badge ${x.tier}">${x.tier==="confirmed"?"Confirmed":"Early"}</span>`:x.state==="ran"?'<span class="badge ran">Already ran</span>':'<span class="badge heating">Heating</span>';
    const sig=x.r5!=null?`5m ${num(x.prevR5,1)}× → ${num(x.r5,1)}×`:`15m ${num(x.rvol15,1)}×`;
@@ -129,8 +154,9 @@ details.notice div{margin-top:8px}
     <td class="mono">${sig}<span class="sub">buyers ${num(x.buy10,0)}% · RSI ${num(x.rsi,0)}</span>${x.state==="heating"&&x.missing.length?`<span class="sub amber">needs: ${esc(x.missing.join(", "))}</span>`:""}${x.moved?`<span class="sub red">${esc((x.movedWhy||[]).join(", "))}</span>`:""}</td>
     <td class="mono"><span class="${col(x.ret10m)}">${pct(x.ret10m)}</span> 10m<span class="sub">${pct(x.change24h)} 24h</span></td><td>${last}</td>
     <td><button class="btn sm" data-an="${esc(x.symbol)}" ${busy||!c.configured?"disabled":""}>Analyze</button></td></tr>`;
-  }).join(""):`<tr><td colspan="5" class="empty">No igniting or heating coins right now.<br>The screener checks every 20 seconds; you can still analyze any coin above.</td></tr>`;
+  }).join(""):`<tr><td colspan="5" class="empty">${stGet("aicoins")==="all"?"No igniting or heating coins right now.<br>The screener checks every 20 seconds; you can still analyze any coin above.":esc(stEmpty("aicoins",""))}</td></tr>`;
  }
+ REDRAW.aicoins=()=>drawCandidates();
 
  function loading(title,sub){busy=true;if(window.applySec&&document.getElementById("resultPanel").hasAttribute("data-sec-hidden"))applySec("all");drawCandidates();$("#resTitle").textContent=title;$("#resSub").textContent=sub;$("#result").innerHTML=`<div class="empty"><span class="spin"></span>${esc(sub)}</div>`;}
  function done(){busy=false;drawCandidates();}

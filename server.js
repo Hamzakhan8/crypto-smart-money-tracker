@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
-import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext } from "./screener.js";
+import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts } from "./screener.js";
 import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource } from "./ai-trade.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
@@ -358,7 +358,7 @@ const server = http.createServer(async (req, res) => {
   });
   
   if (url.pathname === "/api/signals") return jsonResponse(res, 200, {
-    ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals,
+    ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals, aiVerdicts: freshAiVerdicts(),
   });
 
   // NEW RECURSIVE GEMINI API ENDPOINT

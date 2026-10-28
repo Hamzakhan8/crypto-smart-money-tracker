@@ -45,6 +45,17 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 
 **Section tags:** every page has a row of tags under its title (for example *Live watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
 
+**Filter tabs in every coin list:** each list (Market Flow leaderboard, Live ignition watch, Big-move watch, Alert history, Setup leaderboard, Alpha candidates and alerts, Early 2x candidates and snapshots, AI desk coins) has the same tabs, each with a count:
+
+| Tab | Shows |
+|---|---|
+| **Strong flow** | Coins igniting now (Market Flow: flow score 75+; alert lists: confirmed and big-move alerts) |
+| **Heating up** | Volume or buying building, not triggered yet (alert lists: early alerts) |
+| **Already running** | Already moved, do not chase (alert lists: price already half way to the target or past it) |
+| **AI: TAKE** | The AI said TAKE on that coin in the last 2 hours (an alert review, the AI desk or Ask AI) |
+
+Hover a tab to see exactly what it means in that list. Each list remembers its tab.
+
 ---
 
 ## 2. Quick start (5 minutes)

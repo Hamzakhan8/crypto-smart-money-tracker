@@ -39,6 +39,14 @@ details.notice div{margin-top:8px}
 .sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
 [data-sec-hidden]{display:none!important}.filtered .lower,.filtered .grid{grid-template-columns:1fr}
+
+/* state tabs inside a list: All · Strong flow · Heating up · Already running · AI: TAKE */
+.sttabs{display:flex;gap:6px;padding:0 18px 12px;overflow-x:auto;scrollbar-width:none}.sttabs::-webkit-scrollbar{display:none}
+.sttabs button{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:8px;padding:5px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.sttabs button span{font-family:"DM Mono",monospace;font-weight:500;margin-left:4px;opacity:.8}.sttabs button:hover{color:var(--ink);border-color:#58718d}
+.sttabs button.on{color:var(--ink);border-color:#58718d;background:#1a2534}.sttabs button.on[data-st="strong"]{color:var(--green);border-color:#236a53;background:#102a25}
+.sttabs button.on[data-st="heating"]{color:var(--amber);border-color:#6d5621;background:#2b2414}.sttabs button.on[data-st="running"]{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.sttabs button.on[data-st="take"]{color:var(--blue);border-color:#2c4a77;background:#111d30}
 </style></head>
 <body>
 <div class="appbar"><div class="appbar-in">
@@ -79,6 +87,7 @@ details.notice div{margin-top:8px}
 <section class="panel" data-sec="board">
  <div class="section-head"><div><h2>Live flow leaderboard</h2><p>Ranked by transparent 0–100 heuristic, not a buy recommendation</p></div><div class="tabs"><button class="tab active" id="tabFlow">Market flow</button><button class="tab" id="tabWallets">Web3 signals</button></div></div>
  <div class="section-head" style="padding-top:0"><div class="filters" id="filters"><input id="search" placeholder="Search coin, e.g. SUI" aria-label="Search coins"><select id="minScore"><option value="0">All scores</option><option value="45">Score 45+</option><option value="60">Score 60+</option><option value="75">Score 75+</option></select><select id="minVol"><option value="0">Any 24h volume</option><option value="5000000">$5M+ volume</option><option value="20000000">$20M+ volume</option><option value="100000000">$100M+ volume</option></select><select id="sortBy" aria-label="Sort pairs by"><option value="score">Sort: flow score</option><option value="buy">Sort: 5m buy ratio</option><option value="rv">Sort: relative volume</option><option value="chg">Sort: 5m price change</option><option value="vol">Sort: 24h volume</option></select><select id="rowLimit" aria-label="Rows to show"><option value="25" selected>Show 25</option><option value="50">Show 50</option><option value="100">Show 100</option><option value="0">Show all</option></select></div><span class="chip" id="count">—</span></div>
+ <div class="sttabs" id="st-radar" role="tablist" aria-label="Filter pairs"></div>
  <div class="table-wrap"><table class="table"><thead id="thead"></thead><tbody id="tbody"><tr><td colspan="8" class="empty">Waiting for market data…</td></tr></tbody></table></div>
 </section>
 <div class="lower">
@@ -118,11 +127,29 @@ details.notice div{margin-top:8px}
  const pct=v=>v==null?"—":(Number(v)>0?"+":"")+Number(v).toFixed(2)+"%";
  const time=v=>v?new Date(v).toLocaleTimeString():"—";
  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+ // ---------- state tabs in a list: All · Strong flow · Heating up · Already running · AI: TAKE ----------
+ const STATE_TABS=[["all","All"],["strong","Strong flow"],["heating","Heating up"],["running","Already running"],["take","AI: TAKE"]],stSel={},REDRAW={};
+ const stGet=sec=>{if(!stSel[sec]){try{stSel[sec]=localStorage.getItem("st:"+sec)||"all";}catch{stSel[sec]="all";}}return stSel[sec];};
+ function stTabs(sec,rows,cat,hints){
+  const cur=stGet(sec),n={all:rows.length,strong:0,heating:0,running:0,take:0};
+  const cs=rows.map(r=>{const c=cat(r)||{};for(const k of ["strong","heating","running","take"])if(c[k])n[k]++;return c;});
+  const el=document.getElementById("st-"+sec);
+  if(el)el.innerHTML=STATE_TABS.map(([k,l])=>`<button type="button" role="tab" data-st="${k}" class="${k===cur?"on":""}" aria-selected="${k===cur}" title="${esc((hints||{})[k]||"")}">${l}<span>${n[k]}</span></button>`).join("");
+  return cur==="all"?rows:rows.filter((r,i)=>cs[i][cur]);
+ }
+ const stEmpty=(sec,txt)=>stGet(sec)==="all"?txt:`Nothing under "${(STATE_TABS.find(x=>x[0]===stGet(sec))||[,""])[1]}" right now.`;
+ document.addEventListener("click",e=>{const b=e.target.closest(".sttabs [data-st]");if(!b)return;const sec=b.closest(".sttabs").id.slice(3);
+  stSel[sec]=b.dataset.st;try{localStorage.setItem("st:"+sec,b.dataset.st);}catch{}if(REDRAW[sec])REDRAW[sec]();});
  const SORTS={score:c=>c.score,buy:c=>c.buyRatio5m,rv:c=>c.relativeVolume,chg:c=>c.change5m,vol:c=>c.volume24h};
+ const aiTake=sym=>{const v=(data.aiVerdicts||{})[String(sym||"").toUpperCase().replace(/USDT$/,"")];return !!v&&v.decision==="TAKE";};
  function drawFlow(){
   $("#thead").innerHTML="<tr><th>Pair</th><th>Flow score</th><th>5m taker flow</th><th>Relative volume</th><th>5m price</th><th>24h volume</th><th>Trades / 1m</th><th>Signal</th></tr>";
   const q=$("#search").value.trim().toLowerCase(), ms=Number($("#minScore").value), mv=Number($("#minVol").value);
-  const all=(data.coins||[]).filter(c=>c.symbol.toLowerCase().includes(q)&&c.score>=ms&&c.volume24h>=mv);
+  const all0=(data.coins||[]).filter(c=>c.symbol.toLowerCase().includes(q)&&c.score>=ms&&c.volume24h>=mv);
+  const running=c=>c.change24h>=15||c.change5m>=3;
+  const all=stTabs("radar",all0,c=>({strong:c.label==="Strong flow"&&!running(c),heating:(c.label==="Watch closely"||c.label==="Developing")&&!running(c),running:running(c),take:aiTake(c.symbol)}),
+   {strong:"Flow score 75+: strong aggressive buying now",heating:"Flow score 45-74: buying building (Watch closely / Developing)",running:"Already up 15%+ in 24h or 3%+ in 5 minutes: do not chase",take:"The AI said TAKE in the last 2 hours (AI desk or an alert review)"});
   const key=SORTS[$("#sortBy").value]||SORTS.score, lim=Number($("#rowLimit").value);
   const sorted=[...all].sort((a,b)=>(key(b)??-Infinity)-(key(a)??-Infinity));
   const rows=lim>0?sorted.slice(0,lim):sorted;
@@ -136,8 +163,9 @@ details.notice div{margin-top:8px}
    <td class="mono ${c.relativeVolume>=2?"green":""}">${c.relativeVolume==null?"—":c.relativeVolume.toFixed(2)+"×"}<span class="sub">vs prior 20 candles</span></td>
    <td class="mono ${delta>0?"green":delta<0?"red":""}">${pct(delta)}<span class="sub">${price(c.price)}</span></td>
    <td class="mono">${money(c.volume24h)}</td><td class="mono">${Number(c.trades1m||0).toLocaleString()}</td><td><span class="badge ${klass}">${esc(c.label)}</span><span class="sub">${esc((c.reasons||[]).slice(0,2).join(" · "))}</span></td></tr>`;
-  }).join(""):'<tr><td colspan="8" class="empty">No pairs match these filters. Try lowering the minimum score or volume.</td></tr>';
+  }).join(""):`<tr><td colspan="8" class="empty">${stEmpty("radar","No pairs match these filters. Try lowering the minimum score or volume.")}</td></tr>`;
  }
+ REDRAW.radar=()=>drawFlow();
  function drawWallets(){
   $("#thead").innerHTML="<tr><th>Token</th><th>Chain</th><th>Direction</th><th>Wallet count</th><th>Exit rate</th><th>Time</th><th>Contract</th></tr>";
   const rows=data.web3Signals||[];
@@ -251,8 +279,8 @@ details.notice div{margin-top:8px}
  $("#aiClose").onclick=()=>$("#aiModal").classList.remove("open");
  $("#aiModal").addEventListener("click",e=>{if(e.target===$("#aiModal"))$("#aiModal").classList.remove("open");});
 
- $("#tabFlow").onclick=()=>{view="flow";$("#tabFlow").classList.add("active");$("#tabWallets").classList.remove("active");$("#filters").style.display="flex";draw();};
- $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";draw();};
+ $("#tabFlow").onclick=()=>{view="flow";$("#tabFlow").classList.add("active");$("#tabWallets").classList.remove("active");$("#filters").style.display="flex";$("#st-radar").style.display="";draw();};
+ $("#tabWallets").onclick=()=>{view="wallets";$("#tabWallets").classList.add("active");$("#tabFlow").classList.remove("active");$("#filters").style.display="none";$("#st-radar").style.display="none";draw();};
  $("#search").oninput=draw;$("#minScore").onchange=draw;$("#minVol").onchange=draw;$("#sortBy").onchange=draw;$("#rowLimit").onchange=draw;$("#refresh").onclick=()=>load(true);
  load();setInterval(load,5000);
 })();

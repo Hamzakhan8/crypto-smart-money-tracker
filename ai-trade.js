@@ -23,7 +23,7 @@
 // (one batched triage call). Facts only, no AI: GET /api/ai/dossier?symbol=. Research tool, not financial advice.
 
 import { Type } from "@google/genai";
-import { screenerSnapshot, fetchJson, CONFIG, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor } from "./screener.js";
+import { screenerSnapshot, fetchJson, CONFIG, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor, noteAiVerdict, freshAiVerdicts } from "./screener.js";
 import { alphaKlinesUrl, parseKlines } from "./alpha.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
@@ -548,11 +548,18 @@ async function analyzeMany(ai, symbols, opts) {
   return { marketView: out.marketView, coins, failed, meta: { model: opts.model, durationMs: Date.now() - t0, at: Date.now(), cached: false } };
 }
 
+// Every fresh analysis is remembered per coin for the "AI: TAKE" tabs (Alpha tokens under "A:" + their Alpha id).
+function remember(result) {
+  const at = result?.meta?.at || Date.now();
+  if (result?.kind === "alpha") noteAiVerdict("A:" + (result.dossier?.alpha?.token?.alphaId || result.alphaId || result.symbol), { ...result, at });
+  else if (result?.decision && result.symbol) noteAiVerdict(result.symbol, { ...result, at });
+  for (const c of result?.coins || []) noteAiVerdict(c.symbol, { ...c, at });
+}
 function cached(key, ttl, refresh, run) {
   const hit = results.get(key);
   if (!refresh && hit && Date.now() - hit.at < ttl) return Promise.resolve({ ...hit.result, meta: { ...hit.result.meta, cached: true } });
   if (inflight.has(key)) return inflight.get(key);
-  const p = run().then((result) => { results.set(key, { at: Date.now(), result }); if (results.size > 80) results.delete(results.keys().next().value); return result; })
+  const p = run().then((result) => { results.set(key, { at: Date.now(), result }); if (results.size > 80) results.delete(results.keys().next().value); remember(result); return result; })
     .finally(() => inflight.delete(key));
   inflight.set(key, p);
   return p;
@@ -662,7 +669,7 @@ export async function buildAlphaDossier(key, alert = null) {
     dataQuality: { demo: false, notes: [alert ? `Reviewed with the numbers at alert time (${new Date(alert.t).toISOString()}); candles are fresh.` : "Manual check with the latest scan."] },
     screener: { state: alert ? "ignited" : tok?.state || "quiet", tier: tier ? t : null, moved, movedWhy: moved ? [`up ${f.chg24}% in 24 hours`] : [], stillNeeds: alert ? [] : (tok?.fails || []).slice(0, 4) },
     alpha: {
-      token: { symbol: token.symbol, name: token.name, chain: token.chain, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
+      token: { alphaId: id, symbol: token.symbol, name: token.name, chain: token.chain, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
         circulatingPct: token.circPct, daysOnAlpha: token.ageDays, volume24hUsd: token.vol24 },
       signal: { volumeVsNormal: [f.r1, f.r2], usdPer5m: [f.usd1, f.usd2], tradesPer5m: [f.trades1, f.trades2], move10mPct: f.move10, change1hPct: f.chg1h, change24hPct: f.chg24, volume24hUsd: f.qv24 },
       dex: dex ? { buys5m: dex.m5?.buys, sells5m: dex.m5?.sells, buyers5mPct: dex.buyShare5m, buyers1hPct: dex.buyShare1h, poolLiquidityUsd: dex.liquidity, dex: dex.dex } : { available: false },
@@ -701,7 +708,7 @@ async function analyzeAlpha(ai, key, opts) {
   const extra = alphaHardStops(d);
   if (extra.length && dz.decision !== "SKIP") { g.notes.push(`Hard stop: ${extra.join("; ")}. No trade.`); dz.decision = "SKIP"; }
   return {
-    symbol: d.symbol, kind: "alpha", decision: dz.decision, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    symbol: d.symbol, alphaId: d.alpha.token.alphaId, kind: "alpha", decision: dz.decision, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
     tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
     hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(out.hardStops || [])])], checklist: Array.isArray(out.checklist) ? out.checklist.slice(0, 12) : [],
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
@@ -734,7 +741,12 @@ function candidatesView(ai) {
   const order = { ignited: 0, heating: 1, ran: 2 };
   const list = (snap.candidates || []).filter((c) => c.ignition)
     .sort((a, b) => order[a.ignition] - order[b.ignition] || (b.igScore || 0) - (a.igScore || 0) || (b.rvol15 || 0) - (a.rvol15 || 0)).slice(0, 30);
-  const lastFor = (sym) => { for (const [k, v] of results) if (k.startsWith(`one:${sym}:`)) return { decision: v.result.decision, confidence: v.result.confidence, at: v.at }; return null; };
+  const verdicts = freshAiVerdicts();
+  const lastFor = (sym) => {
+    for (const [k, v] of results) if (k.startsWith(`one:${sym}:`)) return { decision: v.result.decision, confidence: v.result.confidence, at: v.at };
+    const x = verdicts[sym.replace(/USDT$/, "")]; // e.g. the automatic review of an alert
+    return x ? { decision: x.decision, confidence: null, at: x.at } : null;
+  };
   return {
     configured: !!ai, demo: !!snap.demo, screenerStatus: snap.status, models: MODELS, telegramConfigured: !!(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID),
     market: { btcChange24hPct: snap.regime?.btcChange24hPct, btc1hPct: snap.regime?.btc1hPct, btc4hPct: snap.regime?.btc4hPct, marketWide: !!snap.breadth?.marketWide },

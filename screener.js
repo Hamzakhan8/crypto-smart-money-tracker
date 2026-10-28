@@ -244,7 +244,11 @@ const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
 });
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
 export const onAlphaAlert = (fn) => { alphaHooks.push(fn); };
-export const annotateAlpha = (id, patch) => alpha?.annotate(id, patch) ?? false;
+export const annotateAlpha = (id, patch) => {
+  const a = alpha?.alertById(id);
+  if (a && patch.ai?.decision) noteAiVerdict("A:" + a.alphaId, patch.ai);
+  return alpha?.annotate(id, patch) ?? false;
+};
 export const alphaTokenFor = (key) => alpha?.tokenFor(key) ?? null;
 export const alphaSnapshot = () => alpha?.api() ?? null;
 export const alphaMatchingFor = (a) => alpha?.matchingGroups(a) ?? [];
@@ -1075,6 +1079,7 @@ async function loadPersisted() {
     const saved = JSON.parse(await readFile(STATE_FILE, "utf8"));
     for (const [k, v] of Object.entries(saved.lastAlertAt || {})) lastAlertAt.set(k, Number(v) || 0);
     if (Array.isArray(saved.events)) { state.events = saved.events.slice(0, MAX_EVENTS); state.events.forEach(resolveLegacy); }
+    for (const e of state.events) if (e.ai?.decision) noteAiVerdict(e.detail?.base || e.symbol, e.ai); // recent verdicts survive a restart
   } catch { /* first run */ }
 }
 
@@ -1177,6 +1182,22 @@ function updateEvents(results) {
   }
 }
 
+// Latest AI verdict per coin (alert reviews, AI desk analyses, Alpha checks), so every list can show an "AI: TAKE" tab.
+// Keys: the spot base ("SOL") or "A:" + the Alpha id. A verdict is about "right now", so it counts for 2 hours.
+const AI_VERDICT_MS = 2 * 3_600_000;
+const aiVerdicts = new Map();
+export function noteAiVerdict(key, v) {
+  if (!key || !v || !v.decision) return;
+  const k = String(key).toUpperCase().replace(/USDT$/, ""), at = v.at || Date.now(), old = aiVerdicts.get(k);
+  if (old && old.at > at) return;
+  aiVerdicts.set(k, { decision: v.decision, at, headline: v.headline || null, expectedValuePct: v.expectedValuePct ?? null, probTargetPct: v.probTargetPct ?? null });
+  if (aiVerdicts.size > 400) aiVerdicts.delete(aiVerdicts.keys().next().value);
+}
+export function freshAiVerdicts(now = Date.now()) {
+  const out = {};
+  for (const [k, v] of aiVerdicts) if (now - v.at < AI_VERDICT_MS) out[k] = v;
+  return out;
+}
 // Other modules can react to new ignition alerts (server.js runs the AI review) and attach results to them.
 const alertHooks = [];
 export const onIgnitionAlert = (fn) => { alertHooks.push(fn); };
@@ -1185,6 +1206,7 @@ export function annotateEvent(id, patch) {
   if (!e) return false;
   Object.assign(e, patch);
   if (e.detail && patch.ai) e.detail.aiDecision = patch.ai.decision; // lets the performance groups split by AI call
+  if (patch.ai?.decision) noteAiVerdict(e.detail?.base || e.symbol, patch.ai);
   persist();
   return true;
 }
@@ -1520,7 +1542,7 @@ export const screenerSnapshot = () => state;
 let lastTgTest = 0;
 // Answers the screener's API routes; returns false for anything else so the caller can carry on.
 export async function handleScreenerRequest(req, res, url) {
-  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: telegramStatus() }); return true; }
+  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: telegramStatus(), aiVerdicts: freshAiVerdicts() }); return true; }
   if (url.pathname === "/api/telegram/test" && req.method === "POST") { // "Send test message" button (this site only, at most every 10s)
     const sameSite = String(req.headers["content-type"] || "").includes("application/json") && (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
     if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }

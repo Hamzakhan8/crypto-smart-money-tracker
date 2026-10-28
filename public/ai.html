@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark;--bg:#0a0f16;--panel:#111923;--line:#253243;--ink:#eef4fa;--muted:#8fa0b4;--green:#36d399;--red:#fb7185;--blue:#76a9fa;--amber:#fbbf24;--violet:#a78bfa;--radius:16px;font-family:Manrope,system-ui,sans-serif}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#1d1838 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1440px;margin:auto;padding:28px 22px 60px}
-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--violet);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(27px,4vw,40px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:720px;line-height:1.7;margin:0}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#1d1838 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1440px;margin:auto;padding:20px 22px 60px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--violet);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:720px;line-height:1.7;margin:0}
 .header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:9px 12px;font:inherit;font-size:13px}
 .chip{color:var(--muted)}.btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}.btn:hover{border-color:#58718d}.btn.primary{background:var(--violet);border-color:var(--violet);color:#140d2b}.btn:disabled{opacity:.55;cursor:wait}.btn.sm{padding:6px 10px;font-size:12px}
 .dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}label.check{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}label.check input{padding:0}
@@ -28,14 +28,33 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .meta{color:var(--muted);font-size:11px;margin-top:14px;line-height:1.7}.foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
 .btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(max-width:1000px){.grid{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.plan,.cols{grid-template-columns:1fr}.wrap{padding:18px 12px}.table th,.table td{padding:9px 8px}}
+
+/* app bar: the same on every page */
+.appbar{position:sticky;top:0;z-index:30;background:rgba(10,15,22,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid #253243}
+.appbar-in{max-width:1440px;margin:auto;padding:9px 22px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:9px;color:#eef4fa;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:-.01em;white-space:nowrap}
+.brand i{width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#36d399,#76a9fa);box-shadow:0 0 12px rgba(54,211,153,.45)}
+.appnav{display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.appnav::-webkit-scrollbar{display:none}.appnav .tabs{display:flex;gap:2px}
+.appnav a,.appnav button{background:none;border:0;border-radius:9px;color:#8fa0b4;font:inherit;font-weight:700;font-size:13px;padding:8px 12px;white-space:nowrap;cursor:pointer;text-decoration:none}
+.appnav a:hover,.appnav button:hover{color:#eef4fa;background:rgba(255,255,255,.05)}
+.appnav a.on,.appnav button[aria-selected="true"]{color:#eef4fa;background:#15263a;box-shadow:inset 0 -2px 0 #36d399}
+.appnav a:focus-visible,.appnav button:focus-visible{outline:2px solid #76a9fa;outline-offset:-2px}
+.appbar .chip{white-space:nowrap;padding:7px 11px;font-size:12px}
+@media(max-width:700px){.appbar-in{padding:7px 10px;gap:8px}.brand span{display:none}.appbar .chip{font-size:0;padding:9px}.appbar .chip .dot{margin:0}.appnav a,.appnav button{padding:8px 9px;font-size:12.5px}}
+/* notices fold to one line */
+details.notice summary{cursor:pointer;list-style:none}details.notice summary::-webkit-details-marker{display:none}
+details.notice summary::after{content:"Read more";margin-left:8px;text-decoration:underline;opacity:.75;white-space:nowrap}details.notice[open] summary::after{content:"Show less"}
+details.notice div{margin-top:8px}
 </style></head>
-<body><main class="wrap">
+<body>
+<div class="appbar"><div class="appbar-in">
+ <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
+ <nav class="appnav" aria-label="Apps"><a href="/">Market flow</a><a href="/screener">Ignition</a><a href="/screener#early2x">Early 2x</a><a href="/screener#whales">Whales</a><a href="/screener#rotation">BTC rotation</a><a href="/ai" class="on" aria-current="page">AI desk</a></nav>
+ <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
+</div></div>
+<main class="wrap">
 <header>
  <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, Market Flow taker data, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, smart-money wallets, BTC) and asks Gemini one question: <b>take the trade, wait, or skip?</b> Code checks every plan and overrides calls that break the rules.</p></div>
- <div class="header-right">
-  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
-  <a class="btn" href="/">Market Flow Radar</a><a class="btn" href="/screener">Screener</a><a class="btn" href="/screener#whales">Whale tracker</a>
- </div>
 </header>
 <div class="notice" id="keyNotice" style="display:none"><b>Gemini is not set up.</b> Add <span class="mono">GEMINI_API_KEY=your_key</span> to the <span class="mono">.env</span> file in the project folder and restart <span class="mono">node server.js</span>. You can still open any coin's data with "Data only".</div>
 <div class="error" id="errors"></div>

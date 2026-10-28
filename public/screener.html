@@ -6,8 +6,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{color-scheme:dark;--bg:#0a0f16;--panel:#111923;--panel2:#151f2b;--line:#253243;--ink:#eef4fa;--muted:#8fa0b4;--green:#36d399;--red:#fb7185;--blue:#76a9fa;--amber:#fbbf24;--radius:16px;font-family:Manrope,system-ui,sans-serif}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#142538 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1400px;margin:auto;padding:28px 22px 60px}
-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--green);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(27px,4vw,40px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:700px;line-height:1.7;margin:0}.header-right{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.chip{font-size:12px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}.btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}.btn:hover{border-color:#58718d}.btn.on{border-color:#236a53;color:var(--green)}.notice{margin:22px 0 16px;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#142538 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1400px;margin:auto;padding:20px 22px 60px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--green);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:700px;line-height:1.7;margin:0}.header-right{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.chip{font-size:12px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}.btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}.btn:hover{border-color:#58718d}.btn.on{border-color:#236a53;color:var(--green)}.notice{margin:22px 0 16px;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}.kpi,.panel{background:linear-gradient(145deg,rgba(20,30,43,.96),rgba(15,23,33,.96));border:1px solid var(--line);border-radius:var(--radius)}.kpi{padding:17px}.kpi .label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em}.kpi .value{font-size:27px;font-weight:800;letter-spacing:-.04em;margin:7px 0 3px}.kpi .hint{font-size:11px;color:var(--muted)}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.muted{color:var(--muted)}
 .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:18px 18px 13px}.section-head h2{margin:0;font-size:16px;letter-spacing:-.02em}.section-head p{margin:5px 0 0;color:var(--muted);font-size:12px}.filters{display:flex;gap:8px;flex-wrap:wrap}.filters input{min-width:150px}.filters select{padding:9px}
 .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;white-space:nowrap}.table th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:12px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.table td{padding:13px 16px;border-bottom:1px solid rgba(37,50,67,.72);font-size:12px}.table tr:last-child td{border-bottom:0}.table tbody tr:hover{background:#172332}.sym{font-weight:800;font-size:13px}.sub{display:block;color:var(--muted);font-size:10px;margin-top:4px}.mono{font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}
@@ -32,7 +32,6 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .toast h4{margin:0;font-size:13px;display:flex;justify-content:space-between;gap:10px;align-items:center}.toast .tag{font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--green)}.toast.test .tag{color:var(--amber)}.toast p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.55}.toast .x{background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
 .track{display:block;margin-top:4px;font-size:10px}.badge.tier{margin-right:6px}
 /* tabs + rotation view */
-.tabs{display:flex;gap:4px;margin:22px 0 0;border-bottom:1px solid var(--line)}.tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-weight:700;font-size:14px;padding:11px 14px;margin-bottom:-1px;cursor:pointer}.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--green)}.tabs button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 .regime-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;padding:22px;margin:16px 0 14px}.regime-hero h2{font-size:clamp(26px,3.4vw,36px);letter-spacing:-.04em;margin:6px 0 8px}.regime-hero p{margin:0;color:var(--muted);line-height:1.6;max-width:560px}.regime-hero .lbl{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .regime-strip{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}.regime-strip span{border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:11px;color:var(--muted)}.regime-strip span.on{color:#06140f;background:var(--green);border-color:var(--green);font-weight:800}.regime-strip span.on.off{background:var(--red);border-color:var(--red)}
 .regime-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start}
@@ -61,54 +60,71 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .seg{display:flex;gap:6px;flex-wrap:wrap;padding:0 18px 12px}.seg .btn{padding:8px 11px;font-size:12px}.seg .btn span{color:var(--muted);margin-left:4px}.seg .btn.on span{color:var(--green)}
 @keyframes slide{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.toast{animation:none}}
 @media(max-width:900px){.regime-hero{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
+
+/* app bar: the same on every page */
+.appbar{position:sticky;top:0;z-index:30;background:rgba(10,15,22,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid #253243}
+.appbar-in{max-width:1440px;margin:auto;padding:9px 22px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:9px;color:#eef4fa;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:-.01em;white-space:nowrap}
+.brand i{width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#36d399,#76a9fa);box-shadow:0 0 12px rgba(54,211,153,.45)}
+.appnav{display:flex;align-items:center;gap:2px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.appnav::-webkit-scrollbar{display:none}.appnav .tabs{display:flex;gap:2px}
+.appnav a,.appnav button{background:none;border:0;border-radius:9px;color:#8fa0b4;font:inherit;font-weight:700;font-size:13px;padding:8px 12px;white-space:nowrap;cursor:pointer;text-decoration:none}
+.appnav a:hover,.appnav button:hover{color:#eef4fa;background:rgba(255,255,255,.05)}
+.appnav a.on,.appnav button[aria-selected="true"]{color:#eef4fa;background:#15263a;box-shadow:inset 0 -2px 0 #36d399}
+.appnav a:focus-visible,.appnav button:focus-visible{outline:2px solid #76a9fa;outline-offset:-2px}
+.appbar .chip{white-space:nowrap;padding:7px 11px;font-size:12px}
+@media(max-width:700px){.appbar-in{padding:7px 10px;gap:8px}.brand span{display:none}.appbar .chip{font-size:0;padding:9px}.appbar .chip .dot{margin:0}.appnav a,.appnav button{padding:8px 9px;font-size:12.5px}}
+/* notices fold to one line */
+details.notice summary{cursor:pointer;list-style:none}details.notice summary::-webkit-details-marker{display:none}
+details.notice summary::after{content:"Read more";margin-left:8px;text-decoration:underline;opacity:.75;white-space:nowrap}details.notice[open] summary::after{content:"Show less"}
+details.notice div{margin-top:8px}
+.btn.sm{padding:7px 10px;font-size:12px}.more{display:block;width:calc(100% - 36px);margin:10px 18px 16px;text-align:center}
+details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.foot[open] summary{margin-bottom:6px}
+/* phones: table rows become cards, each value under its column name */
+@media(max-width:700px){
+ table.cards thead{display:none}table.cards,table.cards tbody,table.cards tr,table.cards td{display:block;width:100%}
+ table.cards tr{padding:8px 0;border-bottom:1px solid var(--line)}table.cards tr:last-child{border-bottom:0}
+ table.cards td{border:0!important;padding:3px 12px 3px 96px!important;position:relative;white-space:normal;min-height:30px}
+ table.cards td::before{content:attr(data-label);position:absolute;left:12px;top:6px;width:78px;color:var(--muted);font:700 9.5px/1.25 Manrope,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase}
+ table.cards td[data-empty]{display:none}table.cards td:first-child .sym{font-size:15px}
+ .lede{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:13px}
+ .section-head p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+ .lede.open,.section-head p.open{display:block}
+ table.cards td:first-child,table.cards td[colspan]{padding-left:14px!important}table.cards td:first-child::before,table.cards td[colspan]::before{display:none}
+}
 </style></head>
-<body><main class="wrap">
+<body>
+<div class="appbar"><div class="appbar-in">
+ <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button></span><a href="/ai">AI desk</a></nav>
+ <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
+</div></div>
+<main class="wrap">
 <header>
- <div><div class="eyebrow">Binance spot · no API key · Early setups</div><h1>Early Setup Screener</h1><p class="lede" id="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
+ <div><div class="eyebrow">Binance spot · no API key</div><h1 id="pageTitle">Early ignition</h1><p class="lede" id="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
  <div class="header-right">
-  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
-  <button class="btn" id="soundBtn" title="Play a short tone when a new alert arrives">Sound: off</button>
-  <button class="btn" id="notifyBtn" title="Show desktop notifications for new alerts">Desktop alerts</button>
-  <button class="btn" id="testBtn" title="Preview what an alert popup looks like">Test popup</button>
-  <a class="btn" href="/ai">AI trade desk</a>
-  <a class="btn" id="mainLink" href="#">Market Flow Radar</a>
+  <button class="btn sm" id="soundBtn" title="Play a short tone when a new alert arrives">Sound: off</button>
+  <button class="btn sm" id="notifyBtn" title="Show desktop notifications for new alerts">Desktop alerts</button>
+  <button class="btn sm" id="testBtn" title="Preview what an alert popup looks like">Test popup</button>
  </div>
 </header>
-<nav class="tabs" role="tablist" aria-label="Screeners">
- <button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Early ignition</button>
- <button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button>
- <button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whale tracker</button>
- <button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x movers</button>
-</nav>
 <div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
-<div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div>
+<details class="notice"><summary><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it.</summary><div>Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div></details>
 <div class="error" id="errors"></div>
 <div class="kpis">
  <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="kScanned">—</div><div class="hint" id="kScannedHint">Binance USDT pairs, liquid only</div></div>
  <div class="kpi"><div class="label">Early ignitions now</div><div class="value green" id="kIgnite">—</div><div class="hint">Volume igniting, price not yet run</div></div>
- <div class="kpi"><div class="label">Setup-level (not moved)</div><div class="value" id="kAlert">—</div><div class="hint" id="kAlertHint">Score above threshold</div></div>
+ <div class="kpi"><div class="label">Big-move ignitions now</div><div class="value green" id="kBig">—</div><div class="hint" id="kBigHint">small coins waking up, +40% research tier</div></div>
  <div class="kpi"><div class="label">BTC (market filter)</div><div class="value" id="kBtc">—</div><div class="hint" id="kBtcHint">Alerts pause if BTC drops sharply</div></div>
 </div>
 <section class="panel" style="margin-bottom:14px">
  <div class="section-head"><div><h2>Live ignition watch</h2><p>15-minute volume vs the token's normal for this hour of the day. Green = confirmed early, amber = building (shows what it still lacks), red = already running (do not chase).</p></div><span class="chip" id="igCount">—</span></div>
  <div class="notice" id="mwBanner" style="display:none;margin:0 18px 12px"><b>Market-wide volume surge:</b> many tokens are surging together, so the ignition bar is raised 50% to avoid alerting on a market move that is not specific to one token.</div>
- <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
 </section>
 <section class="panel" style="margin-bottom:14px" id="bigPanel">
  <div class="section-head"><div><h2>Big-move watch: +40% before -10%</h2><p id="bigHint">Smaller coins whose daily volume is already expanding.</p></div><span class="chip" id="bigCount">—</span></div>
- <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>State</th><th>Daily volume</th><th>Last two 5m candles</th><th>Moved</th><th>Market cap</th><th>Target · stop</th></tr></thead><tbody id="bigBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
-</section>
-<section class="panel">
- <div class="section-head"><div><h2>Setup leaderboard</h2><p>Daily setup quality. Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
- <div class="section-head" style="padding-top:0"><div class="filters">
-  <input id="search" placeholder="Search token, e.g. SUI" aria-label="Search tokens">
-  <select id="minScore" aria-label="Minimum score"><option value="0">All scores</option><option value="40">Score 40+</option><option value="55">Score 55+</option><option value="70">Score 70+</option></select>
-  <select id="hideMoved" aria-label="Already moved filter"><option value="1" selected>Hide already moved</option><option value="0">Show already moved</option></select>
-  <select id="narrOnly" aria-label="Narrative filter"><option value="0">All narratives</option><option value="1">Hot narrative only</option></select>
-  <select id="sortBy" aria-label="Sort tokens"><option value="score">Sort: score</option><option value="rvol">Sort: relative volume</option><option value="chg">Sort: 24h change</option><option value="vol">Sort: 24h volume</option><option value="rank">Sort: market cap rank</option></select>
-  <select id="rowLimit" aria-label="Rows to show"><option value="25">Show 25</option><option value="50" selected>Show 50</option><option value="150">Show all</option></select>
- </div></div>
- <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>Market cap</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Daily volume</th><th>Last two 5m candles</th><th>Moved</th><th>Market cap</th><th>Target · stop</th></tr></thead><tbody id="bigBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
+ <button class="btn sm more" id="bigMore" hidden></button>
 </section>
 <div class="lower">
  <section class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Every popup that fired. Click one to review the setup as it was.</p></div></div><div class="events" id="events"><div class="empty">No alerts yet. A quiet feed is okay.</div></div></section>
@@ -129,11 +145,23 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Resolved</th><th>Hit target</th><th>In profit</th><th>Avg (after costs)</th></tr></thead><tbody id="perfBuckets"></tbody></table></div>
  <div class="foot" style="padding:0 18px 16px;margin:12px 0 0">Prices are sampled at each scan (about every 20 seconds), so a fast spike can be missed. A flat alert counts at its price when the window ends, a loss at the price where the stop was seen. Slippage and your own entry delay are not included. For a much bigger sample than live alerts, run <span class="mono">node screener-backtest.js</span>.</div>
 </section>
-<div class="foot">How it works (v5): every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</div>
+<section class="panel" style="margin-top:14px">
+ <div class="section-head"><div><h2>Setup leaderboard</h2><p>Daily setup quality. Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
+ <div class="section-head" style="padding-top:0"><div class="filters">
+  <input id="search" placeholder="Search token, e.g. SUI" aria-label="Search tokens">
+  <select id="minScore" aria-label="Minimum score"><option value="0">All scores</option><option value="40">Score 40+</option><option value="55">Score 55+</option><option value="70">Score 70+</option></select>
+  <select id="hideMoved" aria-label="Already moved filter"><option value="1" selected>Hide already moved</option><option value="0">Show already moved</option></select>
+  <select id="narrOnly" aria-label="Narrative filter"><option value="0">All narratives</option><option value="1">Hot narrative only</option></select>
+  <select id="sortBy" aria-label="Sort tokens"><option value="score">Sort: score</option><option value="rvol">Sort: relative volume</option><option value="chg">Sort: 24h change</option><option value="vol">Sort: 24h volume</option><option value="rank">Sort: market cap rank</option></select>
+  <select id="rowLimit" aria-label="Rows to show"><option value="15" selected>Show 15</option><option value="50">Show 50</option><option value="150">Show all</option></select>
+ </div></div>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score</th><th>Volume</th><th>Chart setup</th><th>RSI</th><th>Market cap</th><th>Narrative</th><th>Futures</th><th>24h volume</th><th>Signal</th></tr></thead><tbody id="tbody"><tr><td colspan="10" class="empty">Waiting for the first scan… the first run loads daily candles and can take a minute.</td></tr></tbody></table></div>
+</section>
+<details class="foot"><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
 </div>
 
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
- <div class="notice"><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC. Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div>
+ <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
  <section class="panel regime-hero">
   <div><div class="lbl">BTC regime now <span id="rAsOf"></span></div><h2 id="rRegime">Loading history…</h2><p id="rRegimeDesc">The first load downloads daily candles for every narrative coin and takes a few minutes. It refreshes once a day after the daily close.</p><div class="regime-strip" id="rStrip"></div></div>
@@ -167,7 +195,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="foot">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
- <div class="notice"><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it where the address is known (~10,000 labelled exchanges, funds, issuers, bridges and protocols from a public June 2023 Etherscan snapshot, plus your own labels). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div>
+ <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it where the address is known (~10,000 labelled exchanges, funds, issuers, bridges and protocols from a public June 2023 Etherscan snapshot, plus your own labels).</summary><div>Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
  <div class="error" id="wErrors"></div>
  <div class="watchrow">
   <section class="panel">
@@ -254,7 +282,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="foot">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
 </div>
 <div id="view-early2x" role="tabpanel" aria-labelledby="tabEarly2x" hidden>
- <div class="notice"><b>Research screen, not a prediction:</b> +100% is a research target. Coins are listed only when their data passes the rules, and every listed coin is saved as an unchangeable snapshot whose real returns are measured afterwards. Most early signals fail. The score is not a probability of doubling. Futures data is context only, and token unlocks and catalysts count only when you have verified them (data/early2x-events.json). Nothing is traded. Not financial advice.</div>
+ <details class="notice"><summary><b>Research screen, not a prediction:</b> +100% is a research target.</summary><div>Coins are listed only when their data passes the rules, and every listed coin is saved as an unchangeable snapshot whose real returns are measured afterwards. Most early signals fail. The score is not a probability of doubling. Futures data is context only, and token unlocks and catalysts count only when you have verified them (data/early2x-events.json). Nothing is traded. Not financial advice.</div></details>
  <div class="error" id="xErrors"></div>
  <div class="kpis">
   <div class="kpi"><div class="label">Coins evaluated</div><div class="value" id="xkUni">—</div><div class="hint" id="xkUniHint">$10M-$1B market cap, liquid</div></div>
@@ -270,7 +298,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    <button class="btn" data-xs="ignition" role="tab">Early ignition <span class="mono" id="xcIgn">·</span></button>
    <button class="btn" data-xs="moved" role="tab">Already moved — do not chase <span class="mono" id="xcMoved">·</span></button>
   </div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Score · state</th><th>Market cap</th><th>Price · targets</th><th>Volume vs normal</th><th>Buying</th><th>Price · structure</th><th>Liquidity</th><th>Futures · on-chain</th><th>Supply · events</th><th>Still missing</th></tr></thead><tbody id="xBody"><tr><td colspan="11" class="empty">Waiting for the first scan (about 30 seconds after start)…</td></tr></tbody></table></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Score · state</th><th>Market cap</th><th>Price · targets</th><th>Volume vs normal</th><th>Buying</th><th>Price · structure</th><th>Liquidity</th><th>Futures · on-chain</th><th>Supply · events</th><th>Still missing</th></tr></thead><tbody id="xBody"><tr><td colspan="11" class="empty">Waiting for the first scan (about 30 seconds after start)…</td></tr></tbody></table></div>
  </section>
  <section class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Measured results</h2><p id="xResRule">Every snapshot is tracked for 42 days.</p></div>
@@ -370,12 +398,14 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  }
 
  // ---------- big-move watch ----------
+ let bigAll=false;
  function drawBig(){
   const b=cfg().bigmove||{};
   $("#bigPanel").style.display=b.on===false?"none":"";
   if(b.on===false)return;
-  const rows=(data.candidates||[]).filter(c=>c.bigmove).sort((a,z)=>(z.bigmove==="ignited")-(a.bigmove==="ignited")||(z.rvol||0)-(a.rvol||0)).slice(0,20);
-  $("#bigCount").textContent=rows.length+" coins";
+  const all=(data.candidates||[]).filter(c=>c.bigmove).sort((a,z)=>(z.bigmove==="ignited")-(a.bigmove==="ignited")||(z.rvol||0)-(a.rvol||0)),rows=bigAll?all:all.slice(0,8);
+  $("#bigCount").textContent=all.length+" coins";
+  $("#bigMore").hidden=all.length<=8;$("#bigMore").textContent=bigAll?"Show fewer":`Show all ${all.length}`;
   $("#bigHint").textContent=`Smaller coins (${money(b.minVolume)}-${money(b.maxVolume)} of 24h volume) whose daily volume is already ${b.minDailyRvol}×+ their 20-day average. Green = the 5-minute ignition fired too (alert); amber = waking up, waiting for the trigger. Tracked as +${b.targetPct}% before -${b.stopPct}% within ${b.outcomeHours/24} days, separately from the quick tiers. In a 90-day replay of every Binance USDT pair it made money in the Aug-Sep altcoin rally and lost in October: a research tier, not a proven edge. Telegram: ${b.telegram?"on":"off (SCREENER_BIGMOVE_ALERTS=1)"}.`;
   $("#bigBody").innerHTML=rows.length?rows.map(c=>{const g=c.big||{},ign=c.bigmove==="ignited";
    return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${price(c.price)}${c.core?"":" · small coin"}</span></td>
@@ -452,8 +482,9 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   $("#kScanned").textContent=data.universe?u.eligible:"—";
   $("#kScannedHint").textContent=data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: ${data.warmup.loaded}/${data.warmup.total} daily charts loaded`:data.universe?`of ${u.binance} Binance USDT pairs · ranked by ${u.rankedBy||"market cap"}${data.lastScanMs!=null?" · scan "+(data.lastScanMs/1000).toFixed(1)+"s":""}`:"";
   $("#kIgnite").textContent=cs.filter(c=>c.ignition==="ignited").length;
-  $("#kAlert").textContent=cs.filter(c=>c.score>=min&&!c.moved).length;
-  $("#kAlertHint").textContent=cfg().setupAlerts?"Score "+min+"+ · cooldown "+Math.round(cfg().cooldownHours*10)/10+"h per token":"Score "+min+"+ · watchlist only, alerts off";
+  const bigN=cs.filter(c=>c.bigmove==="ignited").length,bigW=cs.filter(c=>c.bigmove==="watch").length,bc=cfg().bigmove||{};
+  $("#kBig").textContent=bc.on===false?"off":bigN;
+  $("#kBigHint").textContent=bc.on===false?"SCREENER_BIGMOVE=0":`${bigW} more waking up · +${bc.targetPct}% / -${bc.stopPct}% research tier`;
   $("#kBtc").textContent=reg.btcChange24hPct==null?"—":pct(reg.btcChange24hPct);
   $("#kBtc").className="value "+(reg.ok===false?"red":"");
   const b1=reg.btc1hPct,b1bad=b1!=null&&cfg().btc1hMin!=null&&b1<cfg().btc1hMin;
@@ -561,11 +592,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  let tab="ignition",rot=null,rotTimer=null;
- const TABS=[["ignition","#tabIgnition"],["rotation","#tabRotation"],["whales","#tabWhales"],["early2x","#tabEarly2x"]];
+ const TABS=[["ignition","#tabIgnition"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"]];
+ const TITLES={ignition:"Early ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation"};
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];
+  $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   clearInterval(rotTimer);clearInterval(xTimer);
@@ -938,6 +971,12 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   try{const r=await fetch("/api/early2x",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);xd=await r.json();drawX();}
   catch(e){$("#xErrors").style.display="block";$("#xErrors").textContent="Cannot load /api/early2x: "+e.message;}
  }
+ // ---------- phones: card tables show each value under its column name ----------
+ const labelCells=tb=>{const hs=[...tb.closest("table").querySelectorAll("thead th")].map(th=>th.textContent.trim());for(const tr of tb.rows)[...tr.cells].forEach((td,i)=>{if(td.colSpan>1)return;td.dataset.label=hs[i]||"";if(/^[—–-]?$/.test(td.textContent.trim()))td.dataset.empty="";else delete td.dataset.empty;});};
+ document.querySelectorAll("table.cards tbody").forEach(tb=>{labelCells(tb);new MutationObserver(()=>labelCells(tb)).observe(tb,{childList:true});});
+ $("#bigMore").onclick=()=>{bigAll=!bigAll;drawBig();};
+ document.addEventListener("click",e=>{const p=e.target.closest(".section-head p,.lede");if(p&&matchMedia("(max-width:700px)").matches)p.classList.toggle("open");}); // tap to read a clamped text
+
  // ---------- polling (3s keeps popup latency low) ----------
  async function load(){
   try{

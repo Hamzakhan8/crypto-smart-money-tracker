@@ -71,6 +71,8 @@ import { startFlows, handleFlowsRequest } from "./flows.js";
 import { startWhales, handleWhalesRequest } from "./whales.js";
 import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 import { createAlpha } from "./alpha.js";
+import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
+import { createJournal } from "./journal.js";
 import { sendTelegram as tgSend, telegramStatus, checkTelegram } from "./telegram.js";
 
 const env = process.env;
@@ -123,6 +125,11 @@ const BIG_ALERTS = env.SCREENER_BIGMOVE_ALERTS === "1";        // Telegram for t
 const BIG_TARGET_PCT = num("SCREENER_BIGMOVE_TARGET_PCT", 40);
 const BIG_STOP_PCT = num("SCREENER_BIGMOVE_STOP_PCT", 10);
 const BIG_OUTCOME_MS = num("SCREENER_BIGMOVE_OUTCOME_HOURS", 168) * 3_600_000;
+// Alternative exits followed on every new alert next to its own rule (see exits.js), so live data shows which exit works.
+const EXIT_RULES = { quick: exitRulesFor({ targetPct: TARGET_PCT, stopPct: STOP_PCT, hours: OUTCOME_MS / 3_600_000 }),
+  bigmove: exitRulesFor({ targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hours: BIG_OUTCOME_MS / 3_600_000 }) };
+const exitRulesOf = (e) => (e.tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick);
+const AFTER_MARKS = [["m1", 1], ["m2", 2], ["m5", 5]];
 const BIG_COOLDOWN_MS = num("SCREENER_BIGMOVE_COOLDOWN_HOURS", 24) * 3_600_000;
 const BIG_5M_LIMIT = 20;                                        // small coins per scan that get the 5m check
 const ROOM_REF_PCT = 4;                                         // move the "too slow" check and the score's room points were tuned on
@@ -229,10 +236,33 @@ const rotation = LIBRARY_ONLY ? null : createRotation({
   sendTelegram: (t) => tgSend(t), telegramOn: env.ROTATION_TELEGRAM === "1",                // regime / holdings change message: off by default
 });
 // Binance Alpha tokens (Binance Wallet), which are not spot pairs: same ignition idea on their 5m candles
+const alphaHooks = [];
 const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
   fetchJson, stateFile: path.join(here, "alpha_state.json"), reportFile: path.join(here, "alpha_report.json"),
   sendTelegram: (t) => tgSend(t), telegramConfigured: () => telegramStatus().configured,
+  context: () => marketContext(Date.now()), onAlert: (a) => { for (const h of alphaHooks) Promise.resolve().then(() => h(a)).catch(() => {}); },
 });
+// server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
+export const onAlphaAlert = (fn) => { alphaHooks.push(fn); };
+export const annotateAlpha = (id, patch) => alpha?.annotate(id, patch) ?? false;
+export const alphaTokenFor = (key) => alpha?.tokenFor(key) ?? null;
+export const alphaSnapshot = () => alpha?.api() ?? null;
+export const alphaMatchingFor = (a) => alpha?.matchingGroups(a) ?? [];
+// Your own trades ("I took it"), linked to the alerts they came from.
+const journal = createJournal({ file: path.join(here, DEMO ? "journal.demo.json" : "journal.json"),
+  priceOf: async (j) => {
+    if (j.tool === "alpha") return alpha?.tokenFor(j.alphaId || j.symbol)?.price ?? null;
+    const base = String(j.symbol || "").toUpperCase().replace(/USDT$/, "");
+    const c = state.candidates.find((x) => x.base === base);
+    if (c?.price) return c.price;
+    try { return Number((await fetchJson(`${BN}/api/v3/ticker/price?symbol=${encodeURIComponent(base)}USDT`, { retries: 0 })).price) || null; } catch { return null; }
+  },
+  alertResult: (id) => { // the alert's own tracked result after its standard costs, to compare with yours
+    const e = state.events.find((x) => x.id === id);
+    if (e) return { price: e.track?.entry ?? null, netPct: resolvedOk(e) ? round(resultOf(e) - COST_PCT, 2) : null, status: e.track?.outcome || "open", label: e.label, time: e.time };
+    const a = alpha?.alertById(id);
+    return a ? { price: a.f.close, netPct: a.track.status !== "open" ? a.track.resultPct : null, status: a.track.status, label: `Alpha ${a.tier}`, time: a.t } : null;
+  } });
 
 // ───────────────────────────── utilities ─────────────────────────────
 const n = (v) => {
@@ -1057,6 +1087,16 @@ const rotationLine = (c) => {
 };
 const structureLine = (c) => [c.breakout === true ? "broke its 12h high" : c.breakout === false ? "inside its 12h range" : null,
   c.trendUp ? "4h trend rising" : null, c.range6h != null ? `typical 6h range ${c.range6h.toFixed(1)}%` : null].filter(Boolean).join(", ");
+// What the market looked like when an alert fired, saved with it so the performance panel can show which conditions
+// paid. flowContext comes from the Market Flow Radar (server.js): the share of its coins with buyers in control.
+let flowContext = () => null;
+export const setFlowContext = (fn) => { flowContext = fn; };
+function marketContext(now) {
+  const alt = rotation?.altSeason?.() || null, flow = (() => { try { return flowContext(); } catch { return null; } })();
+  return { hourUtc: new Date(now).getUTCHours(), lagSec: Math.round((now % 300_000) / 1000), btcRegime: rotation?.regimeKey?.() || null, riskOff: rotation?.riskOff?.() ?? null,
+    altSeason: alt?.state || null, btc1h: state.regime.btc1hPct ?? null, btc4h: state.regime.btc4hPct ?? null, btc24h: state.regime.btcChange24hPct ?? null,
+    hotShare: state.breadth?.hotShare ?? null, marketWide: !!state.breadth?.marketWide, radarBuyShare: flow?.buyShare ?? null };
+}
 function updateEvents(results) {
   if (!state.regime.ok) return;
   const now = Date.now();
@@ -1066,7 +1106,8 @@ function updateEvents(results) {
     fresh.push({
       id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score,
       label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : tier === "bigmove" ? "Big-move ignition" : c.label,
-      time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule },
+      time: now, message, detail: { ...c, ctx: marketContext(now) },
+      track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
     if (!DEMO && tier !== "setup" && (tier !== "bigmove" || BIG_ALERTS) && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) { // only ignition alerts go to Telegram
@@ -1204,19 +1245,28 @@ export function applyCandles(t, rule, alertTime, candles) {
 }
 
 // Fetches new 1-minute candles for open alerts (each at most once a minute, up to 25 per scan).
+// Also follows each alert's alternative exits (until the longest one ends) and its price 1, 2 and 5 minutes later.
 async function trackWithCandles() {
   if (DEMO) return;
   const now = Date.now();
-  const open = state.events.filter((e) => e.track?.entry && !e.track.outcome && e.detail?.base && now - e.time <= ruleOf(e).hz + 15 * 60_000 &&
-    now - (e.track.checkedAt || 0) >= 60_000).slice(0, 25);
+  const needsAfter = (t) => t.after && AFTER_MARKS.some(([k]) => t.after[k] == null);
+  const horizon = (e) => Math.max(ruleOf(e).hz, e.track.exits ? maxHours(exitRulesOf(e)) * 3_600_000 : 0) + 15 * 60_000;
+  const open = state.events.filter((e) => e.track?.entry && e.detail?.base && (!e.track.outcome || exitsOpen(e.track.exits) || needsAfter(e.track)) &&
+    now - e.time <= horizon(e) && now - (e.track.checkedAt || 0) >= 60_000).sort((a, b) => (a.track.checkedAt || 0) - (b.track.checkedAt || 0)).slice(0, 25);
   let changed = false;
   await mapLimit(open, 4, async (e) => {
-    const t = e.track, start = t.lastCandleT != null ? t.lastCandleT + 60_000 : Math.ceil(e.time / 60_000) * 60_000;
+    const t = e.track, first = Math.ceil(e.time / 60_000) * 60_000;
+    const starts = [!t.outcome ? (t.lastCandleT != null ? t.lastCandleT + 60_000 : first) : Infinity, needsAfter(t) ? first : Infinity,
+      ...Object.values(t.exits || {}).filter((x) => x.x == null).map((x) => (x.to != null ? x.to + 60_000 : first))];
+    const start = Math.min(...starts);
     t.checkedAt = now;
+    if (!Number.isFinite(start)) return;
     const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(e.detail.base)}USDT&interval=1m&startTime=${start}&limit=1000`, { retries: 0 });
     if (!Array.isArray(raw)) return;
     const done = raw.map((k) => ({ t: Number(k[0]), o: Number(k[1]), h: Number(k[2]), l: Number(k[3]), c: Number(k[4]) })).filter((k) => k.t + 60_000 <= now);
     if (applyCandles(t, ruleOf(e), e.time, done)) changed = true;
+    if (t.exits && applyExits(t.exits, exitRulesOf(e), t.entry, first, done, 60_000)) changed = true;
+    if (t.after && recordAfter(t.after, t.entry, e.time, done, 60_000, AFTER_MARKS)) changed = true;
   });
   if (changed) persist();
 }
@@ -1255,17 +1305,40 @@ const BUCKETS = [
   ["In a top-3 rotation narrative", (c) => !!c.rotation?.narratives?.some((x) => x.rank != null && x.rank <= 3)],
   ["Not in a top-3 rotation narrative", (c) => !!c.rotation && !c.rotation.narratives.some((x) => x.rank != null && x.rank <= 3)],
   ["BTC regime up or sideways", (c) => !!c.rotation?.regime && !c.rotation.riskOff], ["BTC regime downtrend", (c) => !!c.rotation?.riskOff],
+  // market context saved at alert time (alerts from before this was added have none)
+  ["Alt season meter: alts leading", (c) => c.ctx?.altSeason === "altsLead"], ["Alt season meter: mixed", (c) => c.ctx?.altSeason === "mixed"],
+  ["Alt season meter: BTC leading", (c) => c.ctx?.altSeason === "btcLeads"],
+  ["BTC up over the last hour", (c) => c.ctx?.btc1h > 0], ["BTC down over the last hour", (c) => c.ctx?.btc1h != null && c.ctx.btc1h <= 0],
+  ["Most Market Flow coins have buyers in control", (c) => c.ctx?.radarBuyShare >= 50], ["Few Market Flow coins have buyers in control", (c) => c.ctx?.radarBuyShare != null && c.ctx.radarBuyShare < 50],
+  ["Asia hours (00-08 UTC)", (c) => c.ctx?.hourUtc != null && c.ctx.hourUtc < 8], ["Europe hours (08-14 UTC)", (c) => c.ctx?.hourUtc >= 8 && c.ctx.hourUtc < 14],
+  ["US hours (14-22 UTC)", (c) => c.ctx?.hourUtc >= 14 && c.ctx.hourUtc < 22], ["Late US (22-24 UTC)", (c) => c.ctx?.hourUtc >= 22],
+  ["Alert within 30s of the candle close", (c) => c.ctx?.lagSec != null && c.ctx.lagSec <= 30], ["Alert 30s+ after the candle close", (c) => c.ctx?.lagSec > 30],
 ];
+// Groups that match a coin's current conditions, with their live results (for the AI desk: "alerts like this did X").
+export function matchingGroups(c, minResolved = 10) {
+  const groups = state.stats?.current?.buckets || [], x = c.ctx ? c : { ...c, ctx: marketContext(Date.now()) }; // a coin checked now: today's conditions
+  return BUCKETS.filter(([, fn]) => { try { return fn(x); } catch { return false; } }).map(([name]) => groups.find((g) => g.name === name))
+    .filter((g) => g && g.resolved >= minResolved).map((g) => ({ group: g.name, resolved: g.resolved, hitTargetPct: g.winRatePct, avgNetPct: g.netPct, olderPct: g.olderPct, newerPct: g.newerPct }));
+}
+const resolvedOk = (e) => ["win", "loss", "flat"].includes(e.track?.outcome);
 function statsBlock(evs) {
   const ig = evs.filter((e) => e.tier === "ignition" || e.tier === "early");
+  const igDone = ig.filter((e) => e.detail && resolvedOk(e)), overall = summarize(evs.filter((e) => e.tier !== "bigmove"));
+  const items = igDone.map((e) => ({ ...e.detail, t: e.time, netPct: resultOf(e) - COST_PCT, win: e.track.outcome === "win", ai: e.ai }));
+  const exitItems = (tier) => evs.filter((e) => e.tier === tier && e.track?.exits).map((e) => ({ exits: e.track.exits, t: e.time, mainPct: resolvedOk(e) ? resultOf(e) : undefined }));
+  const quickLabel = `+${TARGET_PCT}% / -${STOP_PCT}% (${OUTCOME_MS / 3_600_000}h): the alert's rule`, bigLabel = `+${BIG_TARGET_PCT}% / -${BIG_STOP_PCT}% (${BIG_OUTCOME_MS / 86_400_000} days): the alert's rule`;
+  const speedItems = evs.filter((e) => e.track?.after && e.tier !== "setup").map((e) => ({ lagSec: e.detail?.ctx?.lagSec, after: e.track.after }));
   return {
-    overall: summarize(evs.filter((e) => e.tier !== "bigmove")), // quick tiers; the big-move tier has its own rule and row
+    overall, // quick tiers; the big-move tier has its own rule and row
     byTier: { ignition: summarize(evs.filter((e) => e.tier === "ignition")), early: summarize(evs.filter((e) => e.tier === "early")),
       setup: summarize(evs.filter((e) => e.tier === "setup")), bigmove: summarize(evs.filter((e) => e.tier === "bigmove")) },
-    buckets: BUCKETS.map(([name, fn]) => {
-      const s = summarize(ig.filter((e) => e.detail && fn(e.detail)));
-      return { name, resolved: s.resolved, winRatePct: s.winRatePct, profitablePct: s.profitablePct, expectancyPct: s.expectancyPct, netPct: s.netPct };
-    }).filter((b) => b.resolved > 0),
+    // older / newer = the first and second half of each group's alerts; "holds" = better (or worse) than average in both
+    buckets: groupSummary(items, BUCKETS.map(([name, fn]) => [name, (it) => fn(it)]), overall.netPct)
+      .map((g) => ({ ...g, profitablePct: g.inProfitPct, netPct: g.avgNetPct })),
+    exits: { ignition: exitSummary(exitItems("ignition"), EXIT_RULES.quick, COST_PCT, quickLabel), early: exitSummary(exitItems("early"), EXIT_RULES.quick, COST_PCT, quickLabel),
+      bigmove: exitSummary(exitItems("bigmove"), EXIT_RULES.bigmove, COST_PCT, bigLabel) },
+    speed: speedSummary(speedItems, AFTER_MARKS, 1),
+    ai: aiCalibration(items),
   };
 }
 function computeStats() {
@@ -1456,6 +1529,7 @@ export async function handleScreenerRequest(req, res, url) {
     const r = await tgSend("Smart Money Tracker: test message. Telegram works: ignition alerts and AI verdicts (TAKE / WAIT / NO TRADE) will arrive here.");
     jsonResponse(res, 200, { ...r, telegram: telegramStatus() }); return true;
   }
+  if (await journal.handle(req, res, url)) return true;
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;
@@ -1471,6 +1545,12 @@ export async function serveScreenerPage(res) {
   } catch { res.writeHead(500).end("public/screener.html is missing"); }
 }
 
+// One extra scan 4 seconds after every 5-minute candle closes, so an ignition (which needs two finished 5m candles) is
+// seen within seconds instead of up to one refresh interval later.
+function atCandleClose() {
+  const next = Math.floor(Date.now() / 300_000) * 300_000 + 300_000 + 4_000;
+  setTimeout(() => { poll(); atCandleClose(); }, next - Date.now());
+}
 // Starts scanning (and the BTC rotation, whale tracker and DEX rotations). Called by server.js, or below when standalone.
 let started = false;
 export function startScreener(baseUrl = "") {
@@ -1481,7 +1561,7 @@ export function startScreener(baseUrl = "") {
   console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
   if (!DEMO) checkTelegram().then((m) => console.log(`Telegram: ${m}`));
   else console.log("Telegram: off in demo mode");
-  loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
+  loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); if (!DEMO) atCandleClose(); });
   rotation.start();
   if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
   else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");

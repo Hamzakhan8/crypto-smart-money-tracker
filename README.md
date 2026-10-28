@@ -19,6 +19,8 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 4. [Set up the AI (Gemini)](#4-set-up-the-ai-gemini)
 5. [A simple daily routine](#5-a-simple-daily-routine)
 6. [The tools, one by one](#6-the-tools-one-by-one)
+   - [Learning from your live results](#68-learning-from-your-live-results)
+   - [Trade journal](#69-trade-journal)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -39,6 +41,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers, exchange inflows and outflows, DEX rotations, your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
 | **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
+| **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
 ---
 
@@ -158,10 +161,10 @@ Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works,
 | When | Where | What to look at |
 |---|---|---|
 | Once a day | **BTC rotation** | Is BTC in a downtrend (the rules hold cash)? Is the alt season meter "Alts leading" or "BTC leading"? This tells you whether hunting altcoins makes sense today. |
-| When an alert arrives | **Ignition** → **AI desk** | Read the alert and the AI's TAKE / WAIT / NO TRADE. Check the chart yourself. Never chase coins marked "Already moved". |
+| When an alert arrives | **Ignition** → **AI desk** | Read the alert and the AI's TAKE / WAIT / NO TRADE. Check the chart yourself. Never chase coins marked "Already moved". If you trade it, press **"I took it"** and enter your real fill. |
 | A few times a day | **Market Flow Radar** | Which coins have aggressive buyers right now, and is the whole market buying or selling? |
 | For research | **Alpha**, **Early 2x**, **Whales** | Early on-chain tokens, possible 2x candidates, and where big money is moving. |
-| Once a week | Performance panels | How the alerts really did (hit target, stopped, after costs). Trust live results over replays. |
+| Once a week | Performance panels + **Journal** | How the alerts really did (hit target, stopped, after costs), which exit and which conditions paid, whether the AI helped, and how your own trades compare. Trust live results over replays. |
 
 ---
 
@@ -264,7 +267,9 @@ Lists the coins the screener flags as igniting or heating up.
 
 - **Analyze:** Gemini gets everything that matters about the coin (the signal, 15m / 1h / 4h charts, support and resistance, order book, futures positioning, Market Flow Radar numbers, whale and DEX flows, BTC, and how often this kind of alert won before) and answers **TAKE, WAIT or NO TRADE** with entry, stop, targets, reward:risk and the reasons for and against.
 - **Analyze all:** ranks every igniting coin in one request. **Data only** shows the facts for free, without calling Gemini. **Risk review** adds a second model to double-check.
-- **Automatic review:** every new ignition alert gets one AI verdict, saved with the alert and sent to Telegram, so after a few weeks the performance panel shows whether the AI's calls really do better.
+- **Automatic review:** every new ignition alert, and every confirmed Alpha alert, gets one AI verdict saved with the alert (ignition verdicts also go to Telegram), so after a few weeks the performance panels show whether the AI's calls really do better.
+- **Alpha tokens:** press **Ask AI** on any row of the Alpha tab. The AI gets Alpha's own 1h / 4h candles, DexScreener buyers vs sellers, pool liquidity, holders and supply, with Alpha's own rule (+40% / -10% / 7 days, 1% costs) and its replay and live results. Extra hard stops: DEX sellers in control, pool under $50k.
+- **It learns from your live data:** the AI is shown how past alerts with the same conditions did (BTC trend, alt season, time of day, buyers…; groups with 10+ resolved alerts), so a condition that keeps losing lowers its chances.
 
 **How the AI decides:** no trade is the default.
 1. **Hard stops** (any one means no trade): the coin already ran, BTC down more than 1% in 1 hour or 2% in 4 hours, aggressive selling now, a wide spread or a thin order book.
@@ -273,6 +278,30 @@ Lists the coins the screener flags as igniting or heating up.
 4. **Expected value** after costs. The code recomputes it: TAKE needs +0.5% or more per trade and reward:risk of 1.5+.
 
 Long only, no leverage, risk at most 1% of your account per trade.
+
+### 6.8 Learning from your live results
+
+Replays are a starting point; your live alerts are the real test. Every alert since this update saves extra data so the app can show what works for **you**. Find it in the Ignition tab's **Alert performance** panel and the Alpha tab's **Live results in detail** panel.
+
+| Table | What it shows | How to use it |
+|---|---|---|
+| **Exit rules compared** | Every alert is also followed under alternative exits on the same candles: a smaller and a bigger target, a break-even stop, two trailing stops, and quick time exits (Ignition: 1h and 4h; Alpha and big-move: 24h and 3 days) | Switch exit only when one has 30+ alerts and beats the alert's own rule in **both** the older and the newer half |
+| **What separates winners from losers** | Results split by the conditions saved at alert time: BTC trend and regime, alt season meter, Market Flow buyers, time of day (Asia / Europe / US), alert delay, the AI's verdict, and for Alpha also liquidity, holders, token age and DEX buyers | A condition counts only when the last column says **Better in both** (or **Worse in both**) and it has 20+ alerts |
+| **Alert speed** | How many seconds after the 5-minute candle closed the alert fired, and where price was 1, 2 and 5 minutes later (Alpha: 5 and 15 minutes) | If price usually runs away before you can act, speed is costing you money |
+| **Is the AI helping?** | Results by AI verdict (TAKE / WAIT / NO TRADE), and whether its stated chance matches reality (when it says 30%, does it hit about 30%?) | If TAKE does not beat NO TRADE after 30+ alerts each, use the AI only as a trap detector (its hard stops) |
+
+Alerts are also faster now: the Ignition screener runs an extra scan 4 seconds after every 5-minute candle closes, and the Alpha scan starts 5 seconds after the close with the hottest tokens first (it used to wait 25 seconds).
+
+### 6.9 Trade journal
+
+**Open:** http://localhost:3000/screener#journal
+
+1. Press **"I took it"** on an alert (Ignition alert history, or the Alpha alerts table). The journal opens with the coin, the alert price, the stop and the target filled in.
+2. Change the entry to **your real fill price**, add your size in $ (and fees if you like), and save.
+3. While it is open, the journal shows the live price and your unrealized result.
+4. When you sell, type your exit price and press **Close**.
+
+The top of the page shows your closed trades, win rate, total profit or loss in $, average per trade, R multiple (when you set a stop), and **you vs the alerts**: your average result next to the same alerts' tracked results, plus how much above the alert price you usually buy. You can also add trades by hand. Saved in `journal.json` on your PC; nothing is sent to an exchange.
 
 ---
 
@@ -378,6 +407,7 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | `ALPHA_MIN_LIQUIDITY` / `ALPHA_MIN_HOLDERS` | `50000` / `1000` | Which tokens are scanned |
 | `ALPHA_TARGET_PCT` / `ALPHA_STOP_PCT` / `ALPHA_OUTCOME_DAYS` | `40` / `10` / `7` | How alerts are tracked |
 | `ALPHA_COST_PCT` | `1` | Costs per trade (fees + slippage) |
+| `ALPHA_AI_REVIEW` | on (confirmed) | Automatic AI verdict on confirmed Alpha alerts; `all` = early ones too, `0` = none (shares `AI_REVIEWS_PER_HOUR`) |
 </details>
 
 <details>
@@ -492,7 +522,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the big-move tier, Early 2x scoring and tracking, BTC rotation and Binance Alpha logic.
+They cover the signal rules, outcome tracking, AI safety rules, the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -503,6 +533,8 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `server.js` | Starts everything; Market Flow Radar and the web pages |
 | `screener.js` | Ignition screener, big-move tier, BTC rotation wiring, shared helpers |
 | `alpha.js` | Binance Alpha ignition |
+| `exits.js` | Alternative exit rules, alert speed, condition groups and AI checks on live alerts |
+| `journal.js` | Your trade journal ("I took it") |
 | `early2x.js` | Early 2x movers |
 | `whales.js`, `flows.js` | Whale tracker and DEX rotations |
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
@@ -512,7 +544,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`) are kept out of git.
 
 ---
 

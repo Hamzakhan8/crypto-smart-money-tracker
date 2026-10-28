@@ -669,6 +669,8 @@ export function createRotation({ fetchJson, getNarratives, cacheDir, stables, no
     updatePrices(priceByBase) { const p = priceByBase.get("BTC"); if (Number.isFinite(p)) st.btcNow = p; },
     riskOff: () => !!st.result?.regimeNow?.riskOff,
     regimeLabel: () => st.result?.regimeNow?.label || null,
+    regimeKey: () => st.result?.regimeNow?.key || null,
+    altSeason: () => (st.result?.altSeason ? { state: st.result.altSeason.state, label: st.result.altSeason.label } : null),
     // Rotation context for one token (used by the ignition screener and its alerts).
     context(base) {
       const r = st.result;

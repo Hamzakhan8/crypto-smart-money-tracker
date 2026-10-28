@@ -23,7 +23,8 @@
 // (one batched triage call). Facts only, no AI: GET /api/ai/dossier?symbol=. Research tool, not financial advice.
 
 import { Type } from "@google/genai";
-import { screenerSnapshot, fetchJson, CONFIG } from "./screener.js";
+import { screenerSnapshot, fetchJson, CONFIG, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor } from "./screener.js";
+import { alphaKlinesUrl, parseKlines } from "./alpha.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
@@ -269,6 +270,8 @@ export async function buildDossier(symbol, tierHint = null) {
     livePerformance: {
       byTier: Object.fromEntries(Object.entries(live).map(([k, b]) => [k, liveRate(b)])),
       aiCalls: (snap.stats?.current?.buckets || []).filter((b) => /^AI said/.test(b.name)).map((b) => ({ call: b.name.replace("AI said ", ""), resolved: b.resolved, hitTargetPct: b.winRatePct, avgNetPct: b.netPct })),
+      // live results of past alerts that shared this coin's conditions (10+ resolved each), with the older / newer half
+      matchingGroups: cand ? matchingGroups(cand) : [],
     },
     referencePlan: plan,
     baseRates: { replay: REPLAY, live: { confirmed: liveRate(live.ignition), early: liveRate(live.early) } },
@@ -296,11 +299,14 @@ Work through these steps in order and show them in your answer:
    trend (1h and 4h direction vs the trade), room (distance to resistance vs distance to the stop: an ignition just under
    a recent high is normal, but a 15d or 7d high right overhead caps the move), liquidity (spread, depth),
    positioning (futures funding / open interest / long-short, whale exchange deposits, DEX net selling),
-   market (BTC, market.regime breadth, market-wide surge), track record (livePerformance of this tier and of AI calls).
+   market (BTC, market.regime breadth, market-wide surge), track record (livePerformance of this tier, of AI calls, and
+   livePerformance.matchingGroups: how past alerts with the same conditions did; trust a group more when its older and
+   newer halves agree).
 3. PROBABILITY. Start from alert.anchorProbTargetPct (how often this kind of alert hit its target before its stop) and
    alert.anchorProbStopPct (how often it hit the stop first); the rest end flat. Move them only for checklist evidence,
    at most 15 points each way, and say which items moved them. A weak market regime, BTC weakness or poor live results
-   lower the target chance; strong confirmed volume with buyers in control and room to run raise it.
+   (including matchingGroups well below this tier's average) lower the target chance; strong confirmed volume with
+   buyers in control and room to run raise it.
 4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct, using your plan's
    target and stop. The code recomputes it.
 5. DECIDE.
@@ -571,7 +577,146 @@ export async function reviewAlert(ai, symbol, tier = null) {
   const out = await cached(`one:${symbol}:${opts.model}:-:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
   const tg = env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`)) : null;
   return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
-    probTargetPct: out.probTargetPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
+    probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
+    telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
+}
+
+// ───────────────────────────── Binance Alpha tokens ─────────────────────────────
+// Alpha tokens are on-chain DEX tokens (not spot pairs): no order book, no futures, no taker side. The dossier uses
+// Alpha's own 1h / 4h candles, DexScreener buys vs sells, pool liquidity, holders and supply, and the Alpha tab's
+// replay and live results. The same guards decide the call (expected value, reward:risk, hard stops), with the
+// Alpha alert's own rule (+40% before -10% within 7 days by default) and its 1% costs.
+const ALPHA_REPLAY = {
+  confirmed: { hitTargetPct: 16.7, hitStopPct: 65, avgNetPct: 0.56, source: "60-day replay of every Binance Alpha token not on spot (alpha-backtest.js), Aug 29 - Oct 28 2026" },
+  early: { hitTargetPct: 11.2, hitStopPct: 59, avgNetPct: -1.23, source: "60-day replay of every Binance Alpha token not on spot (alpha-backtest.js), Aug 29 - Oct 28 2026",
+    note: "no better than buying at a random time" },
+};
+const ALPHA_RULES = `
+You decide whether to buy one Binance Alpha token RIGHT NOW: an early on-chain token traded in Binance Wallet / Binance
+Alpha, with a thin DEX pool. Long only, no leverage. The default answer is SKIP (no trade): most Alpha volume ignitions
+fade, pools are thin (a market order moves the price) and tokens can be delisted.
+
+Use ONLY the DOSSIER and quote its numbers exactly. Never invent prices, levels, news or data. null means unknown, and
+unknown is not good news. There is no order book and no futures data for these tokens.
+
+Work through these steps in order and show them in your answer:
+1. HARD STOPS. If any one applies, the answer is SKIP: already up more than 30% in 24 hours (screener.moved); BTC down
+   more than 1% in 1h or 2% in 4h; DEX sellers in control (alpha.dex buyers under 40% over 5 minutes and under 45% over
+   1 hour); pool liquidity under $50k. List the ones that apply in hardStops (empty if none).
+2. CHECKLIST, each pass / fail / unknown with the dossier number that decides it: trigger (alert tier, volume vs normal,
+   dollars and trades per candle, 24h volume), DEX buying (alpha.dex buys vs sells, 5 min and 1 hour), trend (1h and 4h),
+   room (distance to resistance vs distance to the stop), liquidity and holders (pool size vs a normal order, holders),
+   supply (circulating share, FDV vs market cap), market (BTC, alt season meter, BTC regime), track record
+   (livePerformance.byTier and livePerformance.matchingGroups: how past Alpha alerts with the same conditions did).
+3. PROBABILITY. Start from alert.anchorProbTargetPct and alert.anchorProbStopPct; move them only for checklist evidence,
+   at most 15 points each way, and say which items moved them.
+4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct. The code recomputes it.
+5. DECIDE. TAKE only with no hard stop, expected value of at least +0.5% per trade, reward:risk 1.5+ and price inside the
+   entry zone now. WAIT must name a price level, a condition and a time limit. SKIP for everything else.
+6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs.
+   Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
+Be concise and concrete.`.trim();
+const ALPHA_SYSTEM = `You are a disciplined crypto trader and risk manager reviewing one early on-chain token.\n\n${ALPHA_RULES}`;
+
+const alertMatching = (a) => { try { return a ? alphaMatchingFor(a) : []; } catch { return []; } };
+async function alphaCandles(id, interval, limit, quote) {
+  const j = await fetchJson(alphaKlinesUrl(id, { interval, limit, quote }), { retries: 1, timeoutMs: 12_000 });
+  return parseKlines(j?.data ?? j).map((k) => ({ t: k[0], o: k[1], h: k[2], l: k[3], c: k[4], qv: k[5] }));
+}
+// Alpha dossier. alert = the Alpha alert being reviewed (its numbers at alert time), or null for a manual check now.
+export async function buildAlphaDossier(key, alert = null) {
+  const tok = alphaTokenFor(alert?.alphaId || key);
+  if (!tok && !alert) throw new AgentError(`${key}: not in the Alpha tab's current scan (only tokens it scans can be analysed)`, 404);
+  const snap = screenerSnapshot(), aSnap = alphaSnapshot() || {}, cfg = aSnap.config || { targetPct: 40, stopPct: 10, outcomeDays: 7, costPct: 1, maxChg24Pct: 30 };
+  const token = alert?.token || tok, f = alert?.f || tok?.f || {}, dex = alert?.dex || tok?.dex || null, tier = alert?.tier || tok?.tier || null;
+  const id = token.alphaId || alert?.alphaId, quote = tok?.quote || "USDT";
+  const [h1, h4] = await Promise.all([alphaCandles(id, "1h", 72, quote), alphaCandles(id, "4h", 42, quote)]);
+  if (h1.length < 24) throw new AgentError(`${token.symbol}: not enough Alpha candle history`, 502);
+  const price = alert ? f.close : (h1[h1.length - 1]?.c || tok.price);
+  const atr1h = atrPct(h1), d1 = hiLo(h1.slice(-24)), d3 = hiLo(h1), d7 = h4.length ? hiLo(h4) : d3;
+  const above = [d1.high, d3.high, d7.high].filter((x) => x > price * 1.002).sort((a, b) => a - b);
+  const below = [d1.low, d3.low].filter((x) => x < price * 0.998).sort((a, b) => b - a);
+  const resistance = above[0] ?? null, support = below[0] ?? null;
+  const ret = (cs, n) => (cs.length > n ? r(pct(cs[cs.length - 1].c, cs[cs.length - 1 - n].c)) : null);
+  const R = aSnap.replay, res = aSnap.results ? { confirmed: aSnap.results, early: aSnap.resultsEarly } : {};
+  const t = tier === "confirmed" ? "confirmed" : "early";
+  const base = t === "confirmed" && R?.rule?.n ? { hitTargetPct: r(R.rule.winPct, 1), hitStopPct: r(R.rule.lossPct, 0), avgNetPct: r(R.rule.net), source: ALPHA_REPLAY.confirmed.source }
+    : t === "early" && R?.planned?.n ? { hitTargetPct: r(R.planned.winPct, 1), hitStopPct: r(R.planned.lossPct, 0), avgNetPct: r(R.planned.net), source: ALPHA_REPLAY.early.source, note: ALPHA_REPLAY.early.note }
+    : ALPHA_REPLAY[t];
+  const live = res[t], useLive = live?.closed >= 30;
+  const alertCtx = {
+    tier: t, label: tier ? `Alpha ${t} ignition` : "Alpha token, no ignition right now", trackedAs: { targetPct: cfg.targetPct, stopPct: cfg.stopPct, holdHours: cfg.outcomeDays * 24 },
+    costPct: cfg.costPct, baseRate: base, live: live?.closed ? { resolved: live.closed, hitTargetPct: live.winPct, hitStopPct: r((live.losses / live.closed) * 100, 0), avgNetPct: live.avgNetPct } : null,
+    anchorProbTargetPct: Math.round(useLive ? live.winPct : base.hitTargetPct), anchorProbStopPct: Math.round(useLive ? (live.losses / live.closed) * 100 : base.hitStopPct),
+    anchorFrom: useLive ? "live results" : "replay",
+  };
+  const stopRule = price * (1 - cfg.stopPct / 100), tRule = price * (1 + cfg.targetPct / 100);
+  const stopStructure = support && pct(support, price) > -12 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
+  const tRes = resistance && pct(resistance, price) < cfg.targetPct ? resistance * 0.997 : null;
+  const rr = (stop, target) => (stop && target && price > stop ? r((target - price) / (price - stop)) : null);
+  const order = 1000, poolShare = token.liquidity > 0 ? r((order / token.liquidity) * 100, 2) : null;
+  const moved = f.chg24 > (cfg.maxChg24Pct ?? 30);
+  const mctx = snap.regime || {};
+  return {
+    symbol: token.symbol, asOf: new Date().toISOString(), price: sig(price), alert: alertCtx,
+    dataQuality: { demo: false, notes: [alert ? `Reviewed with the numbers at alert time (${new Date(alert.t).toISOString()}); candles are fresh.` : "Manual check with the latest scan."] },
+    screener: { state: alert ? "ignited" : tok?.state || "quiet", tier: tier ? t : null, moved, movedWhy: moved ? [`up ${f.chg24}% in 24 hours`] : [], stillNeeds: alert ? [] : (tok?.fails || []).slice(0, 4) },
+    alpha: {
+      token: { symbol: token.symbol, name: token.name, chain: token.chain, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
+        circulatingPct: token.circPct, daysOnAlpha: token.ageDays, volume24hUsd: token.vol24 },
+      signal: { volumeVsNormal: [f.r1, f.r2], usdPer5m: [f.usd1, f.usd2], tradesPer5m: [f.trades1, f.trades2], move10mPct: f.move10, change1hPct: f.chg1h, change24hPct: f.chg24, volume24hUsd: f.qv24 },
+      dex: dex ? { buys5m: dex.m5?.buys, sells5m: dex.m5?.sells, buyers5mPct: dex.buyShare5m, buyers1hPct: dex.buyShare1h, poolLiquidityUsd: dex.liquidity, dex: dex.dex } : { available: false },
+      liquidityNote: poolShare != null ? `a $${order} order is about ${poolShare}% of the pool; keep orders well under 1% of it` : null,
+    },
+    chart: { trend1h: trendOf(h1), trend4h: h4.length >= 21 ? trendOf(h4) : null, returnsPct: { "1h": ret(h1, 1), "4h": ret(h1, 4), "24h": ret(h1, 24), "3d": ret(h1, 71) }, atrPct: { "1h": r(atr1h) } },
+    levels: { resistance: sig(resistance), roomToResistancePct: r(pct(resistance, price)), support: sig(support), distanceToSupportPct: r(pct(support, price)),
+      high24h: sig(d1.high), low24h: sig(d1.low), high3d: sig(d3.high), low3d: sig(d3.low), high7d: sig(d7.high), low7d: sig(d7.low) },
+    marketFlow: { available: false }, orderBook: { available: false },
+    market: { btcChange24hPct: mctx.btcChange24hPct, btc1hPct: mctx.btc1hPct, btc4hPct: mctx.btc4hPct, marketWideSurge: false,
+      altSeason: alert?.ctx?.altSeason ?? null, btcRegime: alert?.ctx?.btcRegime ?? null },
+    livePerformance: { byTier: { confirmed: res.confirmed || null, early: res.early || null },
+      matchingGroups: alertMatching(alert || (tok ? { ...tok, token: tok } : null)) },
+    referencePlan: { entry: sig(price), entryZone: [sig(price * 0.995), sig(price)], stops: { screenerRule: sig(stopRule), belowSupport: sig(stopStructure) },
+      targets: { screenerRule: sig(tRule), nearResistance: sig(tRes), twoR: sig(price + 2 * (price - stopRule)) },
+      rewardRisk: { ruleTargetRuleStop: rr(stopRule, tRule), resistanceRuleStop: rr(stopRule, tRes) } },
+  };
+}
+export function alphaHardStops(d) {
+  const out = [], dx = d.alpha?.dex, liq = d.alpha?.token?.liquidityUsd;
+  if (dx && dx.buyers5mPct != null && dx.buyers5mPct < 40 && (dx.buyers1hPct ?? 0) < 45) out.push(`DEX sellers in control (${dx.buyers5mPct}% buyers over 5 min, ${dx.buyers1hPct ?? "n/a"}% over 1h)`);
+  if (liq != null && liq < 50_000) out.push(`pool liquidity only $${Math.round(liq)}`);
+  return out;
+}
+async function analyzeAlpha(ai, key, opts) {
+  const t0 = Date.now();
+  const d = await buildAlphaDossier(key, opts.alert || null);
+  const out = jsonFrom(await generate(ai, {
+    model: opts.model, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nWork through the steps, then decide: TAKE, WAIT or SKIP (no trade).`,
+    config: { systemInstruction: ALPHA_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: DECISION_SCHEMA },
+  }), "Analyst");
+  const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
+  if (pc.replaced) g.notes.push("The model's plan did not fit the levels, so the reference plan is shown.");
+  const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
+  g.notes.push(...dz.notes);
+  const extra = alphaHardStops(d);
+  if (extra.length && dz.decision !== "SKIP") { g.notes.push(`Hard stop: ${extra.join("; ")}. No trade.`); dz.decision = "SKIP"; }
+  return {
+    symbol: d.symbol, kind: "alpha", decision: dz.decision, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
+    hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(out.hardStops || [])])], checklist: Array.isArray(out.checklist) ? out.checklist.slice(0, 12) : [],
+    headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
+    plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes, review: null,
+    dossier: d, meta: { model: opts.model, durationMs: Date.now() - t0, at: Date.now(), cached: false },
+  };
+}
+// Automatic review of a new Alpha alert (server.js), saved with the alert. Telegram follow-up only when Alpha alerts
+// go to Telegram (ALPHA_TELEGRAM) and AI_REVIEW_TELEGRAM is not 0.
+export async function reviewAlpha(ai, alert, { telegramOn = false } = {}) {
+  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, alert }));
+  const tg = telegramOn && env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached
+    ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`)) : null;
+  return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
+    probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
 }
 
@@ -608,6 +753,15 @@ export async function handleAiRequest(req, res, url, ai) {
   try {
     if (url.pathname === "/api/ai/candidates" && req.method === "GET") jsonResponse(res, 200, candidatesView(ai));
     else if (url.pathname === "/api/ai/dossier" && req.method === "GET") jsonResponse(res, 200, await buildDossier(normSymbol(url.searchParams.get("symbol"))));
+    else if (url.pathname === "/api/ai/alpha-dossier" && req.method === "GET") jsonResponse(res, 200, await buildAlphaDossier(String(url.searchParams.get("key") || "").slice(0, 40)));
+    else if (url.pathname === "/api/ai/alpha" && req.method === "POST") {
+      if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
+      if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI." }), true;
+      const body = await readJsonBody(req), key = String(body.key || "").slice(0, 40), model = pickModel(body.model, MODELS.analyst);
+      const out = await cached(`alpha-now:${key}:${model}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, { model }));
+      const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
+      jsonResponse(res, 200, { ...out, telegram: tg });
+    }
     else if ((url.pathname === "/api/ai/analyze" || url.pathname === "/api/ai/analyze-all") && req.method === "POST") {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI trade desk." }), true;

@@ -46,6 +46,12 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .altbar{display:flex;gap:1px;height:18px;margin-top:14px;border-radius:5px;overflow:hidden}.altbar i{flex:1;background:var(--line)}.altbar i.altsLead{background:var(--green)}.altbar i.mixed{background:#6d5621}.altbar i.btcLeads{background:var(--red)}.altbar-l{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:5px}
 .stage{display:inline-block;font-size:10px;font-weight:800;border-radius:7px;padding:4px 7px;border:1px solid var(--line);color:var(--muted)}.stage.early{color:var(--green);border-color:#236a53;background:#102a25}.stage.running{color:var(--blue);border-color:#2c4a77;background:#111d30}.stage.late{color:var(--amber);border-color:#6d5621;background:#2b2414}.stage.cooling{color:var(--red);border-color:#6e2c3a;background:#2d1720}
 .changes{padding:0 18px 16px;font-size:12px;color:var(--muted);line-height:1.8}.changes b{color:var(--ink)}
+.stack{display:grid;gap:14px;margin-top:14px}.stack>*{min-width:0}
+.btn.xs{padding:4px 9px;font-size:11px;border-radius:8px}.event .took{margin-top:6px}
+.subhead2{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px 6px;flex-wrap:wrap}.subhead2 h2{font-size:13px;margin:0}.subhead2 p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.jform{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 18px 16px}.jform label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted);font-weight:700}.jform input,.jform select{width:100%}.jform .wide{grid-column:span 2}.jform .actions{display:flex;gap:8px;align-items:end}
+.aibox{padding:0 18px 16px;display:grid;gap:10px;font-size:13px;line-height:1.55}.aibox .big{font-size:18px;font-weight:800}.aibox ul{margin:4px 0 0 18px;padding:0}.aibox small{color:var(--muted)}
+@media(max-width:700px){.jform{grid-template-columns:1fr 1fr}.jform .wide{grid-column:span 2}}
 /* whale moves view */
 .lower>*{min-width:0}  /* let side-by-side panels shrink on phones; wide tables scroll inside their panel */
 .cat{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:6px;padding:2px 5px;margin-left:5px;color:var(--muted);vertical-align:1px}
@@ -102,7 +108,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -149,7 +155,14 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </div>
  <div class="table-wrap"><table class="table"><thead><tr><th>Tier</th><th>Resolved</th><th>Wins</th><th>Losses</th><th>Flat</th><th>Pending</th><th>Hit target</th><th>In profit</th><th>Avg (gross)</th><th>Avg (after fees)</th><th>Avg peak</th><th>Avg low</th></tr></thead><tbody id="perfTiers"></tbody></table></div>
  <div class="section-head" style="padding-bottom:6px"><div><h2 style="font-size:13px">What separates winners from losers</h2><p>Ignition alerts split by feature. Do not trust a row until it has 20+ resolved alerts.</p></div></div>
- <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Resolved</th><th>Hit target</th><th>In profit</th><th>Avg (after costs)</th></tr></thead><tbody id="perfBuckets"></tbody></table></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Resolved</th><th>Hit target</th><th>In profit</th><th>Avg (after costs)</th><th>Older half</th><th>Newer half</th><th>Both halves</th></tr></thead><tbody id="perfBuckets"></tbody></table></div>
+ <div class="subhead2"><div><h2>Exit rules compared</h2><p>Every alert since this update is also followed under these exits, on the same 1-minute candles. Pick the exit only once it has 30+ alerts and wins in both halves.</p></div><select id="exitTier" aria-label="Which alerts"><option value="ignition">Confirmed ignition</option><option value="early">Early ignition</option><option value="bigmove">Big move</option></select></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Exit rule</th><th>Resolved</th><th>In profit</th><th>Avg (after costs)</th><th>Older half</th><th>Newer half</th><th>Best / worst</th></tr></thead><tbody id="perfExits"></tbody></table></div>
+ <div class="subhead2"><div><h2>Alert speed</h2><p>How long after the 5-minute candle closed each alert fired, and where price was 1, 2 and 5 minutes later. If price usually runs before you can act, speed is costing you money.</p></div></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Measure</th><th>Average</th><th>Alerts</th><th>Ran away (+1%+)</th><th>Fell (-1%+)</th></tr></thead><tbody id="perfSpeed"></tbody></table></div>
+ <div class="subhead2"><div><h2>Is the AI helping?</h2><p>Outcomes by the automatic AI verdict, and whether its stated chance of hitting the target matches what happened.</p></div></div>
+ <div class="lower" style="margin:0;padding:0 0 4px"><div class="table-wrap"><table class="table"><thead><tr><th>AI said</th><th>Resolved</th><th>Hit target</th><th>Avg (after costs)</th></tr></thead><tbody id="perfAi"></tbody></table></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>AI's chance of target</th><th>Alerts</th><th>AI said (avg)</th><th>Actually hit</th></tr></thead><tbody id="perfCal"></tbody></table></div></div>
  <div class="foot" style="padding:0 18px 16px;margin:12px 0 0">Prices are sampled at each scan (about every 20 seconds), so a fast spike can be missed. A flat alert counts at its price when the window ends, a loss at the price where the stop was seen. Slippage and your own entry delay are not included. For a much bigger sample than live alerts, run <span class="mono">node screener-backtest.js</span>.</div>
 </section>
 <section class="panel" style="margin-top:14px">
@@ -312,13 +325,55 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <select id="aFilter" aria-label="Show"><option value="active">Ignited, heating, moved</option><option value="all">All scanned tokens</option></select></div>
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Last two 5m candles</th><th>Price</th><th>DEX buys (5m · 1h)</th><th>Liquidity · holders</th><th>Market cap · FDV</th></tr></thead><tbody id="aBody"><tr><td colspan="7" class="empty">Waiting for the first scan (about 15 seconds after start, then every 5 minutes)…</td></tr></tbody></table></div>
  </section>
- <div class="lower">
+ <div class="stack">
   <section class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div>
-   <div class="table-wrap"><table class="table cards"><thead><tr><th>Alert</th><th>Token</th><th>Tier</th><th>Entry</th><th>Volume</th><th>DEX buys</th><th>Result</th></tr></thead><tbody id="aAlerts"></tbody></table></div></section>
+   <div class="table-wrap"><table class="table cards"><thead><tr><th>Alert</th><th>Token</th><th>Tier</th><th>Entry</th><th>Volume</th><th>DEX buys</th><th>AI</th><th>Result</th></tr></thead><tbody id="aAlerts"></tbody></table></div></section>
   <section class="panel"><div class="section-head"><div><h2>Replay</h2><p>The same rule on past Alpha candles, delisted tokens included, from <span class="mono">node alpha-backtest.js</span>.</p></div><span class="chip" id="aReplayChip">—</span></div><div class="hold" id="aReplay"></div></section>
  </div>
+ <section class="panel" style="margin-top:14px" id="aAiPanel" hidden><div class="section-head"><div><h2 id="aAiTitle">AI check</h2><p>Gemini's call on this Alpha token, checked by the same rules as the AI desk (expected value, reward:risk, hard stops).</p></div><button class="btn sm" id="aAiClose">Close</button></div><div class="aibox" id="aAi"></div></section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Live results in detail</h2><p>Every Alpha alert since this update: alternative exits on the same candles, alert speed, the conditions that paid, and the AI's record. Trust a row only with 30+ closed alerts.</p></div></div>
+  <div class="subhead2"><div><h2>Exit rules compared</h2><p>Pick an exit only once it has 30+ alerts and wins in both halves.</p></div><select id="aExitTier" aria-label="Which tier"><option value="confirmed">Confirmed</option><option value="early">Early</option></select></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Exit rule</th><th>Resolved</th><th>In profit</th><th>Avg (after costs)</th><th>Older half</th><th>Newer half</th><th>Best / worst</th></tr></thead><tbody id="aExits"></tbody></table></div>
+  <div class="subhead2"><div><h2>Alert speed</h2><p>Delay after the candle closed, and price 5 and 15 minutes after the alert.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Measure</th><th>Average</th><th>Alerts</th><th>Ran away (+2%+)</th><th>Fell (-2%+)</th></tr></thead><tbody id="aSpeed"></tbody></table></div>
+  <div class="subhead2"><div><h2>What separates winners from losers</h2><p>Closed alerts split by the conditions saved when they fired.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Resolved</th><th>Hit target</th><th>In profit</th><th>Avg (after costs)</th><th>Older half</th><th>Newer half</th><th>Both halves</th></tr></thead><tbody id="aGroups"></tbody></table></div>
+  <div class="subhead2"><div><h2>Is the AI helping?</h2><p>Confirmed alerts get an automatic AI verdict (with a Gemini key).</p></div></div>
+  <div class="lower" style="margin:0;padding:0 0 4px"><div class="table-wrap"><table class="table"><thead><tr><th>AI said</th><th>Resolved</th><th>Hit target</th><th>Avg (after costs)</th></tr></thead><tbody id="aAiRec"></tbody></table></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>AI's chance of target</th><th>Alerts</th><th>AI said (avg)</th><th>Actually hit</th></tr></thead><tbody id="aCal"></tbody></table></div></div>
+ </section>
  <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Sources, scan time and why tokens were left out.</p></div></div><div class="book-meta" id="aHealth"></div><div class="changes" id="aExcluded"></div></section>
- <details class="foot"><summary>How it works</summary>every 5 minutes, about 25 seconds after the candle closes, the scanner reads Binance's Alpha token list, keeps tokens that still trade, are not on Binance spot (the Ignition tab covers those), have $50k+ of pool liquidity and 1,000+ holders, and reads their 5-minute candles. "Normal" is the median 5-minute volume of the previous 24 hours (at least $100). <b>Early ignition</b> = the rule passed on the last two finished candles; <b>confirmed</b> = the same with $1M+ traded in the last 24 hours (in the replay the early tier did no better than buying at a random time and fired about 50 times a day; the confirmed tier did better than a random entry on the same kind of tokens, but it would have missed EVAA's Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%); <b>heating up</b> = the last candle at 3× normal with price up, or the last hour at 3× normal; <b>already moved</b> = up more than 30% in 24 hours, do not chase. One alert per token and tier per 24 hours. Buys vs sells come from DexScreener (counts of DEX trades in the token's biggest pool). Telegram only with ALPHA_TELEGRAM=1 (confirmed alerts) or ALPHA_TELEGRAM=all (early too). Settings: ALPHA_VOL_MULT, ALPHA_MIN_5M_USD, ALPHA_MIN_24H_USD, ALPHA_MIN_LIQUIDITY, ALPHA_MIN_HOLDERS, ALPHA_TARGET_PCT, ALPHA_STOP_PCT, ALPHA_OUTCOME_DAYS, ALPHA_COST_PCT.</details>
+ <details class="foot"><summary>How it works</summary>every 5 minutes, 5 seconds after the candle closes (the hottest tokens first), the scanner reads Binance's Alpha token list, keeps tokens that still trade, are not on Binance spot (the Ignition tab covers those), have $50k+ of pool liquidity and 1,000+ holders, and reads their 5-minute candles. "Normal" is the median 5-minute volume of the previous 24 hours (at least $100). <b>Early ignition</b> = the rule passed on the last two finished candles; <b>confirmed</b> = the same with $1M+ traded in the last 24 hours (in the replay the early tier did no better than buying at a random time and fired about 50 times a day; the confirmed tier did better than a random entry on the same kind of tokens, but it would have missed EVAA's Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%); <b>heating up</b> = the last candle at 3× normal with price up, or the last hour at 3× normal; <b>already moved</b> = up more than 30% in 24 hours, do not chase. One alert per token and tier per 24 hours. Buys vs sells come from DexScreener (counts of DEX trades in the token's biggest pool). Telegram only with ALPHA_TELEGRAM=1 (confirmed alerts) or ALPHA_TELEGRAM=all (early too). Settings: ALPHA_VOL_MULT, ALPHA_MIN_5M_USD, ALPHA_MIN_24H_USD, ALPHA_MIN_LIQUIDITY, ALPHA_MIN_HOLDERS, ALPHA_TARGET_PCT, ALPHA_STOP_PCT, ALPHA_OUTCOME_DAYS, ALPHA_COST_PCT.</details>
+</div>
+
+<div id="view-journal" role="tabpanel" aria-labelledby="tabJournal" hidden>
+ <details class="notice"><summary><b>Your trades, not the alerts':</b> press "I took it" on any alert, or add a trade by hand, then close it with your real exit.</summary><div>The journal compares your real results with the alerts' tracked results: the gap is what slippage, timing and hesitation cost you. Prices for open trades are live (Binance spot, or the Alpha tab for Alpha tokens). Saved in journal.json on your PC. Nothing is ever sent to an exchange.</div></details>
+ <div class="error" id="jErrors"></div>
+ <div class="kpis">
+  <div class="kpi"><div class="label">Closed trades</div><div class="value" id="jClosed">—</div><div class="hint" id="jClosedHint">win rate</div></div>
+  <div class="kpi"><div class="label">Total profit / loss</div><div class="value" id="jPnl">—</div><div class="hint" id="jPnlHint">closed trades, after your fees</div></div>
+  <div class="kpi"><div class="label">Average per trade</div><div class="value" id="jAvg">—</div><div class="hint" id="jAvgHint">best · worst</div></div>
+  <div class="kpi"><div class="label">You vs the alerts</div><div class="value" id="jVs">—</div><div class="hint" id="jVsHint">same alerts, tracked result</div></div>
+ </div>
+ <section class="panel"><div class="section-head"><div><h2 id="jFormTitle">Add a trade</h2><p id="jFormNote">Your real fill. Size and fees are optional but give you dollar results.</p></div></div>
+  <form class="jform" id="jForm" autocomplete="off">
+   <label>Tool<select id="jTool"><option value="ignition">Confirmed ignition</option><option value="early">Early ignition</option><option value="bigmove">Big move</option><option value="alpha">Alpha</option><option value="early2x">Early 2x</option><option value="other">Other</option></select></label>
+   <label>Coin<input id="jSymbol" placeholder="e.g. SUI or EVAA" required></label>
+   <label>Entry price<input id="jEntry" type="number" step="any" min="0" required></label>
+   <label>Size ($)<input id="jSize" type="number" step="any" min="0" placeholder="optional"></label>
+   <label>Stop<input id="jStop" type="number" step="any" min="0" placeholder="optional"></label>
+   <label>Target<input id="jTarget" type="number" step="any" min="0" placeholder="optional"></label>
+   <label>Fees ($, round trip)<input id="jFees" type="number" step="any" min="0" placeholder="optional"></label>
+   <label>Note<input id="jNote" placeholder="why you took it" maxlength="500"></label>
+   <input type="hidden" id="jAlert"><input type="hidden" id="jAlpha">
+   <div class="actions"><button class="btn" type="submit" id="jSave">Save trade</button><button class="btn" type="button" id="jClear">Clear</button></div>
+  </form></section>
+ <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Open trades</h2><p>Live price and unrealized result. Enter your exit price to close a trade.</p></div><span class="chip" id="jOpenChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Opened</th><th>Coin</th><th>Entry</th><th>Stop · target</th><th>Now</th><th>Result</th><th>Close</th></tr></thead><tbody id="jOpen"></tbody></table></div></section>
+ <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Closed trades</h2><p>Your result after fees, next to the alert's own tracked result (after its standard costs).</p></div><span class="chip" id="jClosedChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Closed</th><th>Coin</th><th>Entry → exit</th><th>Your result</th><th>R</th><th>Alert's result</th><th>Note</th><th></th></tr></thead><tbody id="jDone"></tbody></table></div>
+  <div class="changes" id="jByTool"></div></section>
 </div>
 
 <div id="view-early2x" role="tabpanel" aria-labelledby="tabEarly2x" hidden>
@@ -476,9 +531,35 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const tr=(name,x)=>`<tr><td><b>${name}</b></td><td class="mono">${x.resolved}</td><td class="mono green">${x.wins}</td><td class="mono red">${x.losses}</td><td class="mono">${x.flat}</td><td class="mono">${x.pending}</td><td class="mono">${x.winRatePct==null?"—":x.winRatePct.toFixed(0)+"%"}</td><td class="mono">${x.profitablePct==null?"—":x.profitablePct.toFixed(0)+"%"}</td><td class="mono ${col(x.expectancyPct)}">${x.expectancyPct==null?"—":pct(x.expectancyPct)}</td><td class="mono ${col(x.netPct)}">${x.netPct==null?"—":pct(x.netPct)}</td><td class="mono ${col(x.avgPeakPct)}">${x.avgPeakPct==null?"—":pct(x.avgPeakPct)}</td><td class="mono ${col(x.avgLowPct)}">${x.avgLowPct==null?"—":pct(x.avgLowPct)}</td></tr>`;
   $("#perfTiers").innerHTML=tr("Confirmed ignition",blk.byTier.ignition)+(blk.byTier.early?tr("Early ignition"+(cfg().earlyAlerts===false?" (alerts off)":""),blk.byTier.early):"")+tr("Daily setup"+(cfg().setupAlerts?"":" (alerts off)"),blk.byTier.setup)
    +(st.bigmove&&blk.byTier.bigmove?tr(`Big move (+${st.bigmove.targetPct}% / -${st.bigmove.stopPct}% / ${st.bigmove.horizonHours/24}d)${st.bigmove.on?"":" (off)"}`,blk.byTier.bigmove):"");
-  $("#perfBuckets").innerHTML=(blk.buckets||[]).length?blk.buckets.map(b=>`<tr><td>${esc(b.name)}</td><td class="mono">${b.resolved}${b.resolved<20?' <span class="muted">(small sample)</span>':""}</td><td class="mono">${b.winRatePct==null?"—":b.winRatePct.toFixed(0)+"%"}</td><td class="mono">${b.profitablePct==null?"—":b.profitablePct.toFixed(0)+"%"}</td><td class="mono ${col(b.netPct)}">${b.netPct==null?"—":pct(b.netPct)}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Groups appear once ignition alerts from this version have resolved.</td></tr>';
+  $("#perfBuckets").innerHTML=groupRows(blk.buckets,"Groups appear once ignition alerts from this version have resolved.");
+  const ex=(blk.exits||{})[$("#exitTier").value];
+  $("#perfExits").innerHTML=exitRows(ex);
+  $("#perfSpeed").innerHTML=speedRows(blk.speed,"Fills in with alerts from now on: each alert records its price 1, 2 and 5 minutes later.");
+  aiTables(blk.ai,"#perfAi","#perfCal");
+ }
+ // ---------- result tables shared by Ignition and Alpha ----------
+ const small=n=>n&&n<20?' <span class="muted">(small sample)</span>':"";
+ const pctc=v=>v==null?"—":`<span class="${col(v)}">${pct(v)}</span>`;
+ function exitRows(rows){
+  if(!rows||!rows.some(x=>x.resolved))return'<tr><td colspan="7" class="empty">Fills in with alerts from now on: every new alert is followed under each exit until the longest one ends.</td></tr>';
+  return rows.map(x=>`<tr><td>${x.key==="main"?"<b>"+esc(x.label)+"</b>":esc(x.label)}</td><td class="mono">${x.resolved}${small(x.resolved)}</td><td class="mono">${x.inProfitPct==null?"—":x.inProfitPct+"%"}</td><td class="mono">${pctc(x.avgNetPct)}</td><td class="mono">${pctc(x.olderPct)}</td><td class="mono">${pctc(x.newerPct)}</td><td class="mono">${x.bestPct==null?"—":pct(x.bestPct)+" / "+pct(x.worstPct)}</td></tr>`).join("");
+ }
+ function speedRows(sp,empty){
+  if(!sp||!sp.alerts)return`<tr><td colspan="5" class="empty">${esc(empty)}</td></tr>`;
+  return `<tr><td>Delay after the 5-minute candle closed</td><td class="mono">${sp.avgLagSec==null?"—":sp.avgLagSec+" s"}</td><td class="mono">${sp.alerts}</td><td colspan="2" class="muted">from candle close to alert</td></tr>`
+   +sp.marks.map(m=>`<tr><td>Price ${m.minutes} min after the alert</td><td class="mono">${pctc(m.avgPct)}</td><td class="mono">${m.n}</td><td class="mono">${m.ranAwayPct==null?"—":m.ranAwayPct+"%"}</td><td class="mono">${m.fellPct==null?"—":m.fellPct+"%"}</td></tr>`).join("");
+ }
+ const HOLDS={better:'<span class="green">Better in both</span>',worse:'<span class="red">Worse in both</span>',mixed:'<span class="muted">Mixed</span>'};
+ function groupRows(gs,empty){
+  return (gs||[]).length?gs.map(b=>`<tr><td>${esc(b.name)}</td><td class="mono">${b.resolved}${small(b.resolved)}</td><td class="mono">${b.winRatePct==null?"—":Number(b.winRatePct).toFixed(0)+"%"}</td><td class="mono">${(b.inProfitPct??b.profitablePct)==null?"—":Number(b.inProfitPct??b.profitablePct).toFixed(0)+"%"}</td><td class="mono">${pctc(b.avgNetPct??b.netPct)}</td><td class="mono">${pctc(b.olderPct)}</td><td class="mono">${pctc(b.newerPct)}</td><td>${b.holds?HOLDS[b.holds]:'<span class="muted">needs 6+</span>'}</td></tr>`).join(""):`<tr><td colspan="8" class="empty">${esc(empty)}</td></tr>`;
+ }
+ function aiTables(ai,vSel,cSel){
+  const LBL={TAKE:"TAKE",WAIT:"WAIT",SKIP:"NO TRADE"};
+  $(vSel).innerHTML=ai&&ai.reviewed?ai.verdicts.map(v=>`<tr><td><b>${LBL[v.decision]}</b></td><td class="mono">${v.resolved}${small(v.resolved)}</td><td class="mono">${v.hitTargetPct==null?"—":v.hitTargetPct+"%"}</td><td class="mono">${pctc(v.avgNetPct)}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">Needs closed alerts with an AI verdict (GEMINI_API_KEY in .env).</td></tr>';
+  $(cSel).innerHTML=ai&&ai.reviewed?ai.bands.map(b=>`<tr><td>${esc(b.band)}</td><td class="mono">${b.resolved}</td><td class="mono">${b.saidPct==null?"—":b.saidPct+"%"}</td><td class="mono">${b.hitTargetPct==null?"—":b.hitTargetPct+"%"}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">A well-calibrated AI that says 30% should hit about 30%.</td></tr>';
  }
 
+ $("#exitTier").onchange=drawPerf;
  // ---------- leaderboard ----------
  const SORTS={score:c=>c.score,rvol:c=>c.rvol,chg:c=>c.change24h,vol:c=>c.quoteVolume,rank:c=>c.rank==null?-Infinity:-c.rank};
  function distText(c){const d=c.distToHigh;if(d==null)return"—";return d<0?(Math.abs(d)*100).toFixed(1)+"% below 20d high":"+"+(d*100).toFixed(1)+"% above 20d high";}
@@ -515,7 +596,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?["Early","strong"]:e.tier==="bigmove"?["Big move","strong"]:["Setup","watch"];
   const old=v&&e.v!==v?'<span class="badge old">older logic</span>':"";
   const ai=e.ai&&e.ai.decision?` <span class="badge ${e.ai.decision==="TAKE"?"strong":e.ai.decision==="WAIT"?"watch":"risk"}" title="${esc(e.ai.headline||"")}${e.ai.expectedValuePct!=null?" · expected "+e.ai.expectedValuePct+"% per trade":""}">AI: ${e.ai.decision==="SKIP"?"NO TRADE":esc(e.ai.decision)}</span>${e.ai.telegram&&e.ai.telegram!=="sent"?` <span class="badge risk" title="${esc(e.ai.telegram)}">Telegram failed</span>`:""}`:e.ai&&e.ai.error?` <span class="badge risk" title="${esc(e.ai.error)}">AI error</span>`:"";
-  return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}</div><small class="mono">${when(e.time)}</small></div>`;
+  const took=e.tier!=="setup"&&Date.now()-e.time<2*86400000?`<button class="btn xs took" data-took="${esc(e.id)}" title="Add this trade to your journal">I took it</button>`:"";
+  return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}${took}</div><small class="mono">${when(e.time)}</small></div>`;
  }
  function draw(){
   const cs=data.candidates||[],min=cfg().minScore,reg=data.regime||{},u=data.universe||{};
@@ -598,7 +680,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail();});
  const symClick=e=>{const b=e.target.closest("[data-sym]");if(b)openDetail((data.candidates||[]).find(c=>c.symbol===b.dataset.sym));};
  $("#tbody").addEventListener("click",symClick);$("#igBody").addEventListener("click",symClick);$("#bigBody").addEventListener("click",symClick);
- $("#events").addEventListener("click",e=>{const r=e.target.closest("[data-ev]");if(r){const ev=(data.events||[]).find(x=>x.id===r.dataset.ev);if(ev)openDetail(ev.detail,"Alert as it fired · "+when(ev.time));}});
+ $("#events").addEventListener("click",e=>{
+  const tk=e.target.closest("[data-took]");
+  if(tk){e.stopPropagation();const ev=(data.events||[]).find(x=>x.id===tk.dataset.took);if(ev)tookIt({tool:ev.tier==="ignition"?"ignition":ev.tier==="early"?"early":ev.tier==="bigmove"?"bigmove":"other",symbol:(ev.detail&&ev.detail.base)||ev.symbol.replace(/USDT$/,""),price:ev.track&&(ev.track.last||ev.track.entry),alertPrice:ev.track&&ev.track.entry,alertId:ev.id,stop:ev.track&&ev.track.rule?ev.track.entry*(1-ev.track.rule.stopPct/100):null,target:ev.track&&ev.track.rule?ev.track.entry*(1+ev.track.rule.targetPct/100):null});return;}
+  const r=e.target.closest("[data-ev]");if(r){const ev=(data.events||[]).find(x=>x.id===r.dataset.ev);if(ev)openDetail(ev.detail,"Alert as it fired · "+when(ev.time));}});
 
  // ---------- popups ----------
  function beep(){
@@ -646,17 +731,19 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null;
- const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"]];
- const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation"};
+ LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);
+  if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
   if(t==="whales")loadW();
@@ -842,7 +929,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#aResultsHint").textContent=(R.closed?`${R.closed} closed (${R.wins} hit +${c.targetPct}%, ${R.losses} stopped, ${R.flats} timed out) · ${R.open} open`:`hit +${c.targetPct??40}% first · average after costs`)+(E.alerts?` · early tier: ${E.closed?`${E.winPct}% · ${pct1(E.avgNetPct)} on ${E.closed} closed`:E.alerts+" open"}`:"");
   if(c.volMult)$("#aRule").textContent=`Early ignition: two finished 5-minute candles in a row, each at ${c.volMult}× the token's normal 5-minute volume (median of the last 24 hours) and $${Number(c.minCandleUsd).toLocaleString()}+ with ${c.minTrades}+ trades, price up over those 10 minutes (but not more than ${c.maxMove10mPct}%), and not already up ${c.maxChg24Pct}% in 24 hours. Confirmed: the same with ${wusd(c.min24hUsd)}+ traded in the last 24 hours. Tokens need $${Math.round(c.minLiquidityUsd/1000)}k+ of pool liquidity and ${Number(c.minHolders).toLocaleString()}+ holders.`;
   const all=d.rows||[],rows=$("#aFilter").value==="all"?all:all.filter(r=>r.state!=="quiet");
-  $("#aBody").innerHTML=rows.length?rows.map(r=>{const f=r.f||{},x=r.dex,ex=EXPL[r.chain];return `<tr><td><b class="sym">${esc(r.symbol)}</b><span class="sub">${esc(r.chain||"")} · ${esc(r.name||"")}${r.ageDays!=null?` · on Alpha ${r.ageDays}d`:""}</span><span class="sub">${x&&x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">DexScreener</a>`:""}${ex&&r.contract?`${x&&x.url?" · ":""}<a href="${ex}${esc(r.contract)}" target="_blank" rel="noopener">Contract</a>`:""}</span></td>
+  $("#aBody").innerHTML=rows.length?rows.map(r=>{const f=r.f||{},x=r.dex,ex=EXPL[r.chain];return `<tr><td><b class="sym">${esc(r.symbol)}</b><span class="sub">${esc(r.chain||"")} · ${esc(r.name||"")}${r.ageDays!=null?` · on Alpha ${r.ageDays}d`:""}</span><span class="sub">${x&&x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">DexScreener</a>`:""}${ex&&r.contract?`${x&&x.url?" · ":""}<a href="${ex}${esc(r.contract)}" target="_blank" rel="noopener">Contract</a>`:""}</span><button class="btn xs" data-askai="${esc(r.alphaId)}" title="Ask Gemini about this token now">Ask AI</button></td>
    <td>${r.tier==="confirmed"?'<span class="badge strong">Confirmed</span>':r.tier==="early"?'<span class="badge strong" style="color:var(--blue);border-color:#2c4a77;background:#111d30">Early ignition</span>':aState[r.state]||esc(r.state)}${r.state!=="ignited"&&r.fails&&r.fails.length?`<span class="sub">${esc(r.fails.slice(0,2).join(" · "))}</span>`:""}</td>
    <td class="mono">${f.r1!=null?`<b class="${f.r1>=c.volMult&&f.r2>=c.volMult?"green":""}">${f.r1}× / ${f.r2}×</b><span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)} · ${f.trades1} / ${f.trades2} trades</span>`:'<span class="muted">under 24h of history</span>'}</td>
    <td class="mono">${aPx(f.close??r.price)}<span class="sub"><span class="${col(f.move10)}">${pct1(f.move10)} 10m</span> · <span class="${col(f.chg1h)}">${pct1(f.chg1h)} 1h</span> · <span class="${col(f.chg24)}">${pct1(f.chg24??r.chg24List)} 24h</span></span></td>
@@ -855,8 +942,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#aAlertsNote").textContent=`Every alert, tracked from its price: +${c.targetPct??40}% target before -${c.stopPct??10}% stop within ${c.outcomeDays??7} days, after ${c.costPct??1}% costs.`;
   $("#aAlerts").innerHTML=al.length?al.map(a=>{const tr=a.track||{},f=a.f||{},res=tr.status==="open"?`<span class="amber">open</span><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`
    :`<b class="${tr.status==="win"?"green":tr.status==="loss"?"red":""}">${tr.status==="win"?"Target":tr.status==="loss"?"Stopped":"Timed out"} ${pct1(tr.resultPct)}</b><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`;
-   return `<tr><td class="mono">${new Date(a.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}<span class="sub">${aAgo(a.t)}</span></td><td><b>${esc(a.token.symbol)}</b><span class="sub">${esc(a.token.chain||"")}</span></td><td>${(a.tier||"confirmed")==="confirmed"?'<span class="badge strong">Confirmed</span>':'<span class="badge">Early</span>'}</td><td class="mono">${aPx(f.close)}</td><td class="mono">${f.r1}× / ${f.r2}×<span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)}</span></td><td class="mono">${aBuys(a.dex)}</td><td class="mono">${res}</td></tr>`;}).join("")
-   :'<tr><td colspan="7" class="empty">No alerts yet. In the replay the confirmed tier fired about 8 times a day across all Alpha tokens, the early tier about 50.</td></tr>';
+   return `<tr><td class="mono">${new Date(a.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}<span class="sub">${aAgo(a.t)}</span></td><td><b>${esc(a.token.symbol)}</b><span class="sub">${esc(a.token.chain||"")}</span></td><td>${(a.tier||"confirmed")==="confirmed"?'<span class="badge strong">Confirmed</span>':'<span class="badge">Early</span>'}</td><td class="mono">${aPx(f.close)}</td><td class="mono">${f.r1}× / ${f.r2}×<span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)}</span></td><td class="mono">${aBuys(a.dex)}</td><td>${aiBadge(a.ai)}</td><td class="mono">${res}${tr.status==="open"||Date.now()-a.t<2*86400000?`<button class="btn xs" data-atook="${esc(a.id)}" title="Add this trade to your journal">I took it</button>`:""}</td></tr>`;}).join("")
+   :'<tr><td colspan="8" class="empty">No alerts yet. In the replay the confirmed tier fired about 8 times a day across all Alpha tokens, the early tier about 50.</td></tr>';
+  const S=d.stats||{};
+  $("#aExits").innerHTML=exitRows((S.exits||{})[$("#aExitTier").value]);
+  $("#aSpeed").innerHTML=speedRows(S.speed,"Fills in with alerts from now on: each alert records its price 5 and 15 minutes later.");
+  $("#aGroups").innerHTML=groupRows(S.groups,"Groups appear once Alpha alerts have closed (7 days or the target / stop).");
+  aiTables(S.ai,"#aAiRec","#aCal");
   const rp=d.replay;
   $("#aReplayChip").textContent=rp?`${rp.from} to ${rp.to} · ${rp.days} days`:"not run yet";
   const line=(l,x,sub="")=>x&&x.n?`<div><div class="big" style="font-size:17px">${esc(l)}: ${x.winPct.toFixed(1)}% hit +40% first · <span class="${col(x.net)}">${pct1(x.net)}</span> per trade</div><small>${x.n} trades on ${x.tokens} tokens, ${x.lossPct.toFixed(0)}% stopped first${sub}</small></div>`:"";
@@ -873,7 +965,84 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const exc=Object.entries(d.excluded||{}).sort((a,b)=>b[1]-a[1]);
   $("#aExcluded").innerHTML=exc.length?"<b>Left out:</b> "+exc.map(([k,v])=>`${esc(k)} ${v}`).join(" · "):"";
  }
- $("#aFilter").onchange=drawA;
+ $("#aFilter").onchange=drawA;$("#aExitTier").onchange=drawA;
+ const aiBadge=x=>x&&x.decision?`<span class="badge ${x.decision==="TAKE"?"strong":x.decision==="WAIT"?"watch":"risk"}" title="${esc(x.headline||"")}${x.expectedValuePct!=null?" · expected "+x.expectedValuePct+"% per trade":""}">${x.decision==="SKIP"?"NO TRADE":esc(x.decision)}</span>`:x&&x.error?`<span class="badge risk" title="${esc(x.error)}">AI error</span>`:'<span class="muted">—</span>';
+ $("#aAlerts").addEventListener("click",e=>{const b=e.target.closest("[data-atook]");if(!b)return;const a=(ad.alerts||[]).find(x=>x.id===b.dataset.atook);if(!a)return;
+  const row=(ad.rows||[]).find(r=>r.alphaId===a.alphaId),c=ad.config||{};
+  tookIt({tool:"alpha",symbol:a.token.symbol,alphaId:a.alphaId,price:(row&&row.f&&row.f.close)||(a.track&&a.track.last)||a.f.close,alertPrice:a.f.close,alertId:a.id,stop:a.f.close*(1-(c.stopPct||10)/100),target:a.f.close*(1+(c.targetPct||40)/100)});});
+ // Ask Gemini about one Alpha token now (POST /api/ai/alpha)
+ $("#aBody").addEventListener("click",async e=>{const b=e.target.closest("[data-askai]");if(!b)return;
+  const row=(ad.rows||[]).find(r=>r.alphaId===b.dataset.askai);$("#aAiPanel").hidden=false;$("#aAiTitle").textContent="AI check · "+(row?row.symbol:b.dataset.askai);
+  $("#aAi").innerHTML='<div class="muted">Asking Gemini… (one request, 10-30 seconds)</div>';$("#aAiPanel").scrollIntoView({behavior:"smooth",block:"center"});
+  try{const r=await fetch("/api/ai/alpha",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:b.dataset.askai})});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);drawAiBox(j);}
+  catch(err){$("#aAi").innerHTML=`<div class="red">${esc(err.message)}</div>`;}});
+ $("#aAiClose").onclick=()=>{$("#aAiPanel").hidden=true;};
+ function drawAiBox(x){
+  const LBL={TAKE:"TAKE",WAIT:"WAIT",SKIP:"NO TRADE"},cls=x.decision==="TAKE"?"green":x.decision==="WAIT"?"amber":"red",p=x.plan||{};
+  $("#aAi").innerHTML=`<div><div class="big ${cls}">${LBL[x.decision]||esc(x.decision)}: ${esc(x.symbol)}</div><small>${esc(x.headline||"")}</small></div>
+   <div>Chance ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected <b class="${col(x.expectedValuePct)}">${pct(x.expectedValuePct)}</b> per trade · ${esc(x.confidence)} confidence · setup ${x.setupScore}/10</div>
+   ${x.decision!=="SKIP"?`<div class="mono">Entry ${p.entryLow}-${p.entryHigh} · stop ${p.stop} (${p.stopPct}%) · target ${p.target1} (+${p.target1Pct}%) · R:R ${p.rewardRisk}</div>`:""}
+   ${x.waitFor&&x.decision==="WAIT"?`<div><b>Wait for:</b> ${esc(x.waitFor)}</div>`:""}
+   ${x.hardStops&&x.hardStops.length?`<div class="red"><b>Hard stop:</b> ${esc(x.hardStops.join("; "))}</div>`:""}
+   <div><b>Checklist</b><ul>${(x.checklist||[]).map(c=>`<li><span class="${c.status==="pass"?"green":c.status==="fail"?"red":"muted"}">${esc(c.status)}</span> ${esc(c.item)}: ${esc(c.evidence)}</li>`).join("")}</ul></div>
+   <div><b>Key risk:</b> ${esc(x.keyRisk||"")}</div>${(x.guardNotes||[]).length?`<small>${esc(x.guardNotes.join(" "))}</small>`:""}<small>AI opinion on the Alpha tab's data. Research only, not financial advice.</small>`;
+ }
+
+ // ---------- trade journal ----------
+ let jd={};
+ const TOOLN={ignition:"Confirmed ignition",early:"Early ignition",bigmove:"Big move",alpha:"Alpha",early2x:"Early 2x",other:"Other"};
+ async function loadJ(){try{const r=await fetch("/api/journal",{cache:"no-store"});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);jd=j;drawJ();$("#jErrors").style.display="none";}
+  catch(e){$("#jErrors").style.display="block";$("#jErrors").textContent="Cannot load the journal: "+e.message;}}
+ async function jPost(path,body){const r=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);jd=j;drawJ();}
+ const jPx=v=>v==null?"—":Number(v)>=1?Number(v).toFixed(4):Number(v).toPrecision(4);
+ const jUsd=v=>v==null?"—":(v<0?"-":"")+"$"+Math.abs(v).toLocaleString("en-US",{maximumFractionDigits:2});
+ const jWhen=t=>t?new Date(t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
+ function drawJ(){
+  const S=jd.summary||{},T=jd.trades||[];
+  $("#jClosed").textContent=S.closed??0;$("#jClosedHint").textContent=S.closed?`${S.winRatePct}% in profit · ${S.open} open`:`${S.open||0} open`;
+  $("#jPnl").textContent=S.totalPnlUsd==null?"—":jUsd(S.totalPnlUsd);$("#jPnl").className="value "+col(S.totalPnlUsd);
+  $("#jPnlHint").textContent=`closed trades, after your fees${S.openPnlUsd?` · open ${jUsd(S.openPnlUsd)}`:""}`;
+  $("#jAvg").textContent=S.avgPnlPct==null?"—":pct(S.avgPnlPct);$("#jAvg").className="value "+col(S.avgPnlPct);
+  $("#jAvgHint").textContent=S.closed?`best ${pct(S.bestPct)} · worst ${pct(S.worstPct)}${S.avgR!=null?` · ${S.avgR}R average`:""}`:"best · worst";
+  const v=S.vsAlerts||{};$("#jVs").textContent=v.trades?`${pct(v.yourAvgPct)} vs ${pct(v.alertAvgPct)}`:"—";
+  $("#jVsHint").textContent=(v.trades?`you vs the same ${v.trades} alerts`:"needs closed trades from alerts")+(S.avgEntryVsAlertPct!=null?` · you bought ${pct(S.avgEntryVsAlertPct)} vs the alert price`:"");
+  const open=T.filter(x=>x.result&&x.result.open),done=T.filter(x=>x.result&&!x.result.open);
+  $("#jOpenChip").textContent=open.length+" open";$("#jClosedChip").textContent=done.length+" closed";
+  $("#jOpen").innerHTML=open.length?open.map(x=>`<tr><td class="mono">${jWhen(x.entryTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}</span></td><td><b>${esc(x.symbol)}</b>${x.note?`<span class="sub">${esc(x.note)}</span>`:""}</td>
+   <td class="mono">${jPx(x.entryPrice)}<span class="sub">${x.sizeUsd?jUsd(x.sizeUsd):"no size"}${x.alert&&x.alert.price?` · alert ${jPx(x.alert.price)}`:""}</span></td>
+   <td class="mono">${jPx(x.stopPrice)} · ${jPx(x.targetPrice)}</td><td class="mono">${jPx(x.livePrice)}</td>
+   <td class="mono">${x.result.pnlPct==null?"—":`<b class="${col(x.result.pnlPct)}">${pct(x.result.pnlPct)}</b>`}<span class="sub">${x.result.pnlUsd==null?"":jUsd(x.result.pnlUsd)}${x.result.r!=null?` · ${x.result.r}R`:""}</span></td>
+   <td><input class="jexit" data-id="${esc(x.id)}" type="number" step="any" min="0" placeholder="exit price" value="${x.livePrice!=null?Number(Number(x.livePrice).toPrecision(6)):""}" style="width:110px"> <button class="btn xs" data-jclose="${esc(x.id)}">Close</button> <button class="btn xs" data-jdel="${esc(x.id)}" title="Delete">✕</button></td></tr>`).join("")
+   :'<tr><td colspan="7" class="empty">No open trades. Press "I took it" on an alert, or add one above.</td></tr>';
+  $("#jDone").innerHTML=done.length?done.map(x=>{const a=x.alert;return `<tr><td class="mono">${jWhen(x.exitTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}${x.result.holdMin!=null?` · held ${x.result.holdMin<120?x.result.holdMin+" min":Math.round(x.result.holdMin/60)+" h"}`:""}</span></td><td><b>${esc(x.symbol)}</b></td>
+   <td class="mono">${jPx(x.entryPrice)} → ${jPx(x.exitPrice)}</td><td class="mono"><b class="${col(x.result.pnlPct)}">${pct(x.result.pnlPct)}</b><span class="sub">${x.result.pnlUsd==null?"":jUsd(x.result.pnlUsd)}</span></td>
+   <td class="mono">${x.result.r??"—"}</td><td class="mono">${a?(a.netPct==null?`<span class="muted">${esc(a.status)}</span>`:`<span class="${col(a.netPct)}">${pct(a.netPct)}</span>`)+`<span class="sub">${esc(a.label||"")}</span>`:'<span class="muted">no alert</span>'}</td>
+   <td>${esc(x.note||"")}</td><td><button class="btn xs" data-jdel="${esc(x.id)}" title="Delete">✕</button></td></tr>`;}).join("")
+   :'<tr><td colspan="8" class="empty">No closed trades yet.</td></tr>';
+  $("#jByTool").innerHTML=(S.byTool||[]).length?"<b>By tool:</b> "+S.byTool.map(t=>`${esc(TOOLN[t.tool]||t.tool)} ${t.closed} trades, ${t.winRatePct}% in profit, ${pct(t.avgPnlPct)} average`).join(" · "):"";
+ }
+ function jReset(){$("#jForm").reset();$("#jAlert").value="";$("#jAlpha").value="";$("#jFormTitle").textContent="Add a trade";$("#jFormNote").textContent="Your real fill. Size and fees are optional but give you dollar results.";}
+ // "I took it": open the journal with the alert's details filled in
+ function tookIt(o){
+  setTab("journal");jReset();
+  $("#jTool").value=o.tool||"other";$("#jSymbol").value=o.symbol||"";$("#jEntry").value=o.price?Number(Number(o.price).toPrecision(6)):"";
+  $("#jStop").value=o.stop?Number(Number(o.stop).toPrecision(6)):"";$("#jTarget").value=o.target?Number(Number(o.target).toPrecision(6)):"";
+  $("#jAlert").value=o.alertId||"";$("#jAlpha").value=o.alphaId||"";
+  $("#jFormTitle").textContent="I took it: "+(o.symbol||"");
+  $("#jFormNote").textContent=`Alert price ${jPx(o.alertPrice)}. Change the entry to your real fill price, add your size, then save.`;
+  $("#jEntry").focus();$("#jEntry").select();
+ }
+ $("#jForm").addEventListener("submit",async e=>{e.preventDefault();
+  const num=id=>{const v=$(id).value;return v===""?null:Number(v);};
+  try{await jPost("/api/journal",{tool:$("#jTool").value,symbol:$("#jSymbol").value,entryPrice:num("#jEntry"),sizeUsd:num("#jSize"),stopPrice:num("#jStop"),targetPrice:num("#jTarget"),feesUsd:num("#jFees"),note:$("#jNote").value,alertId:$("#jAlert").value||null,alphaId:$("#jAlpha").value||null,entryTime:Date.now()});jReset();}
+  catch(err){$("#jErrors").style.display="block";$("#jErrors").textContent=err.message;}});
+ $("#jClear").onclick=jReset;
+ document.querySelector("#view-journal").addEventListener("click",async e=>{
+  const c=e.target.closest("[data-jclose]"),d=e.target.closest("[data-jdel]");
+  try{
+   if(c){const inp=document.querySelector(`.jexit[data-id="${c.dataset.jclose}"]`),px=Number(inp&&inp.value);if(!(px>0)){inp&&inp.focus();return;}await jPost("/api/journal/update",{id:c.dataset.jclose,exitPrice:px,exitTime:Date.now()});}
+   if(d&&confirm("Delete this trade from the journal?"))await jPost("/api/journal/delete",{id:d.dataset.jdel});
+  }catch(err){$("#jErrors").style.display="block";$("#jErrors").textContent=err.message;}});
 
  // ---------- BTC rotation ----------
  async function loadRot(){

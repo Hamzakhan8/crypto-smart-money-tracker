@@ -25,3 +25,5 @@ rotation_report.json
 alpha_cache/
 alpha_report.json
 alpha_state.json
+journal.json
+journal.demo.json

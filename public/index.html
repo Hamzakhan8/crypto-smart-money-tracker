@@ -36,7 +36,7 @@ details.notice div{margin-top:8px}
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a href="/" class="on" aria-current="page">Market flow</a><a href="/screener">Ignition</a><a href="/screener#early2x">Early 2x</a><a href="/screener#whales">Whales</a><a href="/screener#rotation">BTC rotation</a><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a href="/" class="on" aria-current="page">Market flow</a><a href="/screener">Ignition</a><a href="/screener#alpha">Alpha</a><a href="/screener#early2x">Early 2x</a><a href="/screener#whales">Whales</a><a href="/screener#rotation">BTC rotation</a><a href="/screener#journal">Journal</a><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -50,7 +50,7 @@ details.notice div{margin-top:8px}
     <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Accurate)</option>
   </select>
   <label title="Verifies top candidates with order-book and wallet checks, then adds an independent risk review. Slower and uses more API calls." style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-    <input type="checkbox" id="aiDeep"> Deep mode
+    <input type="checkbox" id="aiDeep"> risk review
   </label>
   <label id="aiTgLabel" style="font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
     <input type="checkbox" id="aiTelegram" checked> Send to Telegram
@@ -214,7 +214,7 @@ details.notice div{margin-top:8px}
   if(!m)return"";
   const models=m.models?Object.values(m.models).join(" → "):"";
   const tools=(m.toolCalls||[]).map(t=>String(t.tool||"").replace(/^get_/,"").replace(/_/g," ")+(t.args&&t.args.symbol?" "+t.args.symbol:"")+(t.ok?"":" (failed)"));
-  const bits=[m.mode==="deep"?"Deep mode":"Fast mode",models,m.cached?"cached result":null,m.durationMs!=null?(m.durationMs/1000).toFixed(1)+"s":null,m.dataAgeSec!=null?"data "+m.dataAgeSec+"s old":null].filter(Boolean);
+  const bits=[m.mode==="deep"?"With risk review":"Fast mode",models,m.cached?"cached result":null,m.durationMs!=null?(m.durationMs/1000).toFixed(1)+"s":null,m.dataAgeSec!=null?"data "+m.dataAgeSec+"s old":null].filter(Boolean);
   return `<div class="ai-meta">${esc(bits.join(" · "))}${tools.length?"<br>Checked: "+esc(tools.join(", ")):""}</div>`;
  }
  function tgNote(t){

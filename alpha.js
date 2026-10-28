@@ -13,6 +13,7 @@
 // no better than a random entry). Every alert is tracked: +40% before -10% within 7 days, after costs. Not advice.
 
 import { readFile, writeFile, rename } from "node:fs/promises";
+import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration } from "./exits.js";
 
 const MIN = 60_000, STEP = 5 * MIN, HOUR = 60 * MIN, DAY = 24 * HOUR;
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : null; };
@@ -195,8 +196,41 @@ export function alphaResults(alerts, tier = null) {
     winPct: done.length ? Math.round((k("win") / done.length) * 100) : null, avgNetPct: done.length ? r2(sum / done.length) : null };
 }
 
-export function createAlpha({ fetchJson, stateFile = null, reportFile = null, sendTelegram = null, telegramConfigured = () => false }) {
+// Conditions the live results are split by (saved with each alert), for the winners-vs-losers table and the AI desk.
+const hr = (a) => a.ctx?.hourUtc;
+export const ALPHA_GROUPS = [
+  ["Confirmed tier", (a) => a.tier === "confirmed"], ["Early tier", (a) => a.tier === "early"],
+  ["Pool liquidity $500k+", (a) => a.token?.liquidity >= 5e5], ["Pool liquidity under $500k", (a) => a.token?.liquidity < 5e5],
+  ["20,000+ holders", (a) => a.token?.holders >= 20_000], ["Under 20,000 holders", (a) => a.token?.holders < 20_000],
+  ["On Alpha under 60 days", (a) => a.token?.ageDays != null && a.token.ageDays < 60], ["On Alpha 60+ days", (a) => a.token?.ageDays >= 60],
+  ["DEX buyers 55%+ in the last 5 min", (a) => a.dex?.buyShare5m >= 55], ["DEX buyers under 55%", (a) => a.dex?.buyShare5m != null && a.dex.buyShare5m < 55],
+  ["Second candle 20x+ normal volume", (a) => a.f?.r2 >= 20], ["Second candle under 20x", (a) => a.f?.r2 < 20],
+  ["Up 10%+ in 24h before the alert", (a) => a.f?.chg24 >= 10], ["Up under 10% in 24h", (a) => a.f?.chg24 < 10],
+  ["Alt season meter: alts leading", (a) => a.ctx?.altSeason === "altsLead"], ["Alt season meter: mixed", (a) => a.ctx?.altSeason === "mixed"],
+  ["Alt season meter: BTC leading", (a) => a.ctx?.altSeason === "btcLeads"], ["BTC regime downtrend", (a) => a.ctx?.riskOff === true],
+  ["BTC up over the last hour", (a) => a.ctx?.btc1h > 0], ["BTC down over the last hour", (a) => a.ctx?.btc1h != null && a.ctx.btc1h <= 0],
+  ["Asia hours (00-08 UTC)", (a) => hr(a) != null && hr(a) < 8], ["Europe hours (08-14 UTC)", (a) => hr(a) >= 8 && hr(a) < 14],
+  ["US hours (14-22 UTC)", (a) => hr(a) >= 14 && hr(a) < 22], ["Late US (22-24 UTC)", (a) => hr(a) >= 22],
+  ["AI said TAKE", (a) => a.ai?.decision === "TAKE"], ["AI said WAIT", (a) => a.ai?.decision === "WAIT"], ["AI said NO TRADE", (a) => a.ai?.decision === "SKIP"],
+  ["Alert within 60s of the candle close", (a) => a.ctx?.lagSec != null && a.ctx.lagSec <= 60], ["Alert 60s+ after the candle close", (a) => a.ctx?.lagSec > 60],
+];
+const AFTER_MARKS_5M = [["m5", 5], ["m15", 15]];
+
+export function createAlpha({ fetchJson, stateFile = null, reportFile = null, sendTelegram = null, telegramConfigured = () => false, context = () => null, onAlert = null }) {
   const cfg = alphaConfig();
+  // alternative exits followed on every alert next to its own rule (exits.js)
+  const exitRules = exitRulesFor({ targetPct: cfg.targetPct, stopPct: cfg.stopPct, hours: cfg.outcomeDays * 24 });
+  const needsAfter = (a) => !!a.track.after && AFTER_MARKS_5M.some(([k]) => a.track.after[k] == null);
+  const needsData = (a) => a.track.status === "open" || exitsOpen(a.track.exits) || needsAfter(a);
+  const cursorOf = (a) => Math.min(a.track.status === "open" ? a.track.checkedTo : Infinity, needsAfter(a) ? a.t : Infinity,
+    ...Object.values(a.track.exits || {}).filter((x) => x.x == null).map((x) => (x.to != null ? x.to + STEP : a.t)));
+  function follow(a, k) {
+    let changed = advanceAlpha(a, k, cfg);
+    const done = k.filter((r) => r[0] + STEP <= Date.now()).map((r) => ({ t: r[0], o: r[1], h: r[2], l: r[3], c: r[4] }));
+    if (a.track.exits && applyExits(a.track.exits, exitRules, a.f.close, a.t, done, STEP)) changed = true;
+    if (a.track.after && recordAfter(a.track.after, a.f.close, a.t, done, STEP, AFTER_MARKS_5M)) changed = true;
+    return changed;
+  }
   const st = { status: "starting", error: null, updatedAt: null, nextScanAt: null, listed: 0, eligible: 0, excluded: {}, rows: [], sources: { alpha: "waiting", dex: "waiting" }, scanMs: null };
   const candles = new Map(); // alphaId -> rows
   let store = { version: 1, alerts: [] }, replay = null, busy = false, started = false;
@@ -233,7 +267,7 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
       if (k.length < 1500) break;
       t = k[k.length - 1][0] + STEP;
     }
-    const keepFrom = Math.min(now - 302 * STEP, ...store.alerts.filter((a) => a.alphaId === id && a.track.status === "open").map((a) => a.track.checkedTo));
+    const keepFrom = Math.min(now - 302 * STEP, ...store.alerts.filter((a) => a.alphaId === id && needsData(a)).map(cursorOf));
     rows = rows.filter((r) => r[0] >= keepFrom);
     candles.set(id, rows);
     return rows;
@@ -268,41 +302,68 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
     const excluded = {}, uni = [];
     for (const x of list) { const why = alphaEligible(x, cfg); if (why) excluded[why] = (excluded[why] || 0) + 1; else uni.push(tokenOf(x)); }
     const byId = new Map(list.map((x) => [x.alphaId, x]));
-    // open alerts keep being tracked even if the token drops out of the scan
-    const ids = new Set(uni.map((x) => x.alphaId)), tracked = store.alerts.filter((a) => a.track.status === "open" && !ids.has(a.alphaId) && byId.has(a.alphaId));
+    // alerts still being followed keep their token in the scan even if it drops out of the list
+    const ids = new Set(uni.map((x) => x.alphaId)), tracked = new Map();
+    for (const a of store.alerts) if (needsData(a) && !ids.has(a.alphaId) && byId.has(a.alphaId)) tracked.set(a.alphaId, tokenOf(byId.get(a.alphaId)));
+    // hottest tokens first (heating up or busy last scan), so an ignition is caught in the first seconds of the scan
+    const prev = new Map(st.rows.map((r) => [r.alphaId, r])), heat = (x) => { const p = prev.get(x.alphaId); return p ? STATE_RANK[p.state] * 1000 + (p.f?.r2 ?? 0) : 0; };
+    const order = [...uni].sort((a, b) => heat(b) - heat(a));
     let failed = 0;
     const end = Math.floor(Date.now() / STEP) * STEP, start = end - 300 * STEP, rows = [];
-    await mapLimit([...uni, ...tracked.map((a) => tokenOf(byId.get(a.alphaId)))], 3, async (x) => {
+    await mapLimit([...order, ...tracked.values()], 4, async (x) => {
       try {
-        const open = store.alerts.filter((a) => a.alphaId === x.alphaId && a.track.status === "open");
-        const since = open.length && !candles.has(x.alphaId) ? Math.min(...open.map((a) => a.track.checkedTo)) : undefined; // after a restart: fill the gap
+        const open = store.alerts.filter((a) => a.alphaId === x.alphaId && needsData(a));
+        const since = open.length && !candles.has(x.alphaId) ? Math.min(...open.map(cursorOf)) : undefined; // after a restart: fill the gap
         const k = await fetchCandles(x.alphaId, since);
-        for (const a of open) advanceAlpha(a, k, cfg);
+        for (const a of open) follow(a, k);
         if (!ids.has(x.alphaId)) return;
         const g = toGrid(k, start, end), f = alphaFeatures(g, g.length - 1, cfg), c = classifyAlpha(f, cfg);
-        rows.push({ ...x, f, state: c.state, tier: c.tier, fails: c.fails });
+        const row = { ...x, f, state: c.state, tier: c.tier, fails: c.fails };
+        rows.push(row);
+        if (row.tier) await raise(row); // alert right away, not at the end of the scan
       } catch { failed++; }
     });
     if (failed && failed >= uni.length * 0.5) st.sources.alpha = `partial (${failed} tokens failed)`;
     const dex = await dexFor(rows); // ~10 DexScreener calls (30 tokens each) per scan
-    for (const r of rows) r.dex = dex.get(r.alphaId) || null;
-    // new alerts: the rule passed on the last two finished candles, at most one per token and tier per 24 hours
-    for (const r of rows.filter((x) => x.tier)) {
-      const last = store.alerts.filter((a) => a.alphaId === r.alphaId && (a.tier || "confirmed") === r.tier).pop();
-      if (last && r.f.t - last.t < DAY) continue;
-      const { f, dex: d, fails, tier, state, ...token } = r;
-      const a = { id: `${r.alphaId}-${tier}-${f.t}`, alphaId: r.alphaId, tier, t: f.t, f, dex: d, token, track: { status: "open", checkedTo: f.t, peakPct: 0, lowPct: 0, last: f.close } };
-      store.alerts.push(a);
-      if (cfg.alerts && sendTelegram && (tier === "confirmed" || cfg.alertEarly)) sendTelegram(alphaTelegram(a, cfg, replay)).catch(() => {});
+    for (const r of rows) r.dex = dex.get(r.alphaId) || r.dex || null;
+    // a token Binance removed from Alpha gets no more candles: close what is still open once the window is long over
+    for (const a of store.alerts) if (needsData(a) && Date.now() > a.t + (cfg.outcomeDays + 2) * DAY) {
+      if (a.track.status === "open") Object.assign(a.track, { status: "flat", noData: true, resultPct: r2(((a.track.last ?? a.f.close) / a.f.close - 1) * 100 - cfg.costPct), endedAt: a.track.checkedTo });
+      for (const x of Object.values(a.track.exits || {})) if (x.x == null) Object.assign(x, { x: r2((x.last / a.f.close - 1) * 100), why: "no data" });
+      if (a.track.after) for (const [k2] of AFTER_MARKS_5M) a.track.after[k2] ??= false; // false = never measured
     }
-    // a token Binance removed from Alpha gets no more candles: close its alert at the last price once the window is long over
-    for (const a of store.alerts) if (a.track.status === "open" && Date.now() > a.t + (cfg.outcomeDays + 2) * DAY)
-      Object.assign(a.track, { status: "flat", noData: true, resultPct: r2(((a.track.last ?? a.f.close) / a.f.close - 1) * 100 - cfg.costPct), endedAt: a.track.checkedTo });
     store.alerts = store.alerts.slice(-500);
     rows.sort((a, b) => STATE_RANK[b.state] - STATE_RANK[a.state] || (b.f?.r2 ?? 0) - (a.f?.r2 ?? 0));
     Object.assign(st, { status: "ready", error: null, updatedAt: Date.now(), listed: list.length, eligible: uni.length, excluded, rows, scanMs: Date.now() - t0 });
     await save();
   }
+  // A new alert: the rule passed on the last two finished candles, at most one per token and tier per 24 hours.
+  async function raise(r) {
+    const last = store.alerts.filter((a) => a.alphaId === r.alphaId && (a.tier || "confirmed") === r.tier).pop();
+    if (last && r.f.t - last.t < DAY) return;
+    if (!r.dex) r.dex = (await dexFor([r]).catch(() => new Map())).get(r.alphaId) || null;
+    const { f, dex: d, fails, tier, state, ...token } = r, now = Date.now();
+    const a = { id: `${r.alphaId}-${tier}-${f.t}`, alphaId: r.alphaId, tier, t: f.t, createdAt: now, f, dex: d, token,
+      ctx: { ...(context() || {}), lagSec: Math.round((now - f.t) / 1000) },
+      track: { status: "open", checkedTo: f.t, peakPct: 0, lowPct: 0, last: f.close, exits: newExits(exitRules, f.close), after: {} } };
+    store.alerts.push(a);
+    if (cfg.alerts && sendTelegram && (tier === "confirmed" || cfg.alertEarly)) sendTelegram(alphaTelegram(a, cfg, replay)).catch(() => {});
+    if (onAlert) Promise.resolve().then(() => onAlert(a)).catch(() => {});
+  }
+  // Live results: by tier, under each exit rule, by condition (with older / newer halves), speed, and the AI's calls.
+  function stats() {
+    const closed = store.alerts.filter((a) => a.track.status !== "open" && Number.isFinite(a.track.resultPct));
+    const items = closed.map((a) => ({ ...a, netPct: a.track.resultPct, win: a.track.status === "win" }));
+    const overall = items.length ? r2(items.reduce((x, it) => x + it.netPct, 0) / items.length) : null;
+    const exitItems = (tier) => store.alerts.filter((a) => (a.tier || "confirmed") === tier && a.track.exits)
+      .map((a) => ({ exits: a.track.exits, t: a.t, mainPct: a.track.status !== "open" && Number.isFinite(a.track.resultPct) ? a.track.resultPct + cfg.costPct : undefined }));
+    const main = `+${cfg.targetPct}% / -${cfg.stopPct}% (${cfg.outcomeDays} days): the alert's rule`;
+    return { costPct: cfg.costPct, exits: { confirmed: exitSummary(exitItems("confirmed"), exitRules, cfg.costPct, main), early: exitSummary(exitItems("early"), exitRules, cfg.costPct, main) },
+      speed: speedSummary(store.alerts.filter((a) => a.track.after).map((a) => ({ lagSec: a.ctx?.lagSec, after: a.track.after })), AFTER_MARKS_5M, 2),
+      groups: groupSummary(items, ALPHA_GROUPS, overall), overallNetPct: overall, ai: aiCalibration(items) };
+  }
+  let statsCache = { at: 0, v: null };
+  const statsNow = () => { if (Date.now() - statsCache.at > 20_000) statsCache = { at: Date.now(), v: stats() }; return statsCache.v; };
   async function tick() {
     if (busy) return;
     busy = true;
@@ -310,9 +371,9 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
     catch (e) { st.error = e.message; st.status = st.rows.length ? "ready" : "error"; }
     finally { busy = false; schedule(); }
   }
-  // scan ~25 seconds after each 5-minute candle closes (every scanMinutes), so the two candles tested are finished
+  // scan 5 seconds after each 5-minute candle closes (every scanMinutes): Alpha's closed candle is final within ~2 seconds
   function schedule() {
-    const now = Date.now(), every = cfg.scanMinutes * MIN, next = Math.floor(now / every) * every + every + 25_000;
+    const now = Date.now(), every = cfg.scanMinutes * MIN, next = Math.floor(now / every) * every + every + 5_000;
     st.nextScanAt = next;
     setTimeout(tick, next - now);
   }
@@ -329,7 +390,23 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
       return { status: st.status, error: st.error, updatedAt: st.updatedAt, nextScanAt: st.nextScanAt, scanMs: st.scanMs, listed: st.listed, eligible: st.eligible, excluded: st.excluded,
         sources: st.sources, config: cfg, telegramOn: cfg.alerts && telegramConfigured(), states: ALPHA_STATES,
         counts: Object.fromEntries(Object.keys(ALPHA_STATES).map((k) => [k, st.rows.filter((r) => r.state === k).length])),
-        rows: st.rows.slice(0, 80), alerts, results: alphaResults(store.alerts, "confirmed"), resultsEarly: alphaResults(store.alerts, "early"), replay };
+        rows: st.rows.slice(0, 80), alerts, results: alphaResults(store.alerts, "confirmed"), resultsEarly: alphaResults(store.alerts, "early"), replay, stats: statsNow() };
     },
+    annotate(id, patch) { const a = store.alerts.find((x) => x.id === id); if (!a) return false; Object.assign(a, patch); statsCache.at = 0; save(); return true; },
+    alertById: (id) => store.alerts.find((x) => x.id === id) || null,
+    // Live data for one token (by Alpha id or symbol), for the AI desk.
+    tokenFor(key) {
+      const k = String(key || "").toUpperCase(), row = st.rows.find((r) => r.alphaId.toUpperCase() === k || String(r.symbol).toUpperCase() === k);
+      if (!row) return null;
+      return { ...row, alerts: store.alerts.filter((a) => a.alphaId === row.alphaId).slice(-3), quote: quotes.get(row.alphaId) || "USDT" };
+    },
+    // Groups that match an alert's conditions, with their live results (10+ closed alerts).
+    matchingGroups(a, minResolved = 10) {
+      const groups = statsNow().groups, x = a.ctx ? a : { ...a, ctx: context() || {} }; // a token checked now: today's conditions
+      return ALPHA_GROUPS.filter(([, fn]) => { try { return fn(x); } catch { return false; } }).map(([name]) => groups.find((g) => g.name === name))
+        .filter((g) => g && g.resolved >= minResolved).map((g) => ({ group: g.name, resolved: g.resolved, hitTargetPct: g.winRatePct, avgNetPct: g.avgNetPct, olderPct: g.olderPct, newerPct: g.newerPct }));
+    },
+    results: () => ({ confirmed: alphaResults(store.alerts, "confirmed"), early: alphaResults(store.alerts, "early") }),
+    replayRates: () => replay,
   };
 }

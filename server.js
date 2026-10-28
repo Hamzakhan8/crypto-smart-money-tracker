@@ -8,8 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
-import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent } from "./screener.js";
-import { handleAiRequest, reviewAlert, setMarketFlowSource } from "./ai-trade.js";
+import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext } from "./screener.js";
+import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource } from "./ai-trade.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -34,13 +34,30 @@ const ai = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) 
 const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
 const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
 let aiReviewTimes = [];
-if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
+const aiBudget = () => {
   const now = Date.now();
   aiReviewTimes = aiReviewTimes.filter((t) => now - t < 3_600_000);
-  if (aiReviewTimes.length >= AI_REVIEWS_PER_HOUR) return;
+  if (aiReviewTimes.length >= AI_REVIEWS_PER_HOUR) return false;
   aiReviewTimes.push(now);
+  return true;
+};
+if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
+  if (!aiBudget()) return;
   try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol, ev.tier) }); }
   catch (e) { annotateEvent(ev.id, { ai: { error: e.message, at: Date.now() } }); }
+});
+// Confirmed Alpha alerts get the same automatic review (ALPHA_AI_REVIEW=all: early ones too, =0: none), from the same
+// hourly budget. Its Telegram follow-up is sent only when Alpha alerts go to Telegram.
+if (AI_AUTO_REVIEW && env.ALPHA_AI_REVIEW !== "0") onAlphaAlert(async (a) => {
+  if (a.tier !== "confirmed" && env.ALPHA_AI_REVIEW !== "all") return;
+  if (!aiBudget()) return;
+  try { annotateAlpha(a.id, { ai: await reviewAlpha(ai, a, { telegramOn: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all" }) }); }
+  catch (e) { annotateAlpha(a.id, { ai: { error: e.message, at: Date.now() } }); }
+});
+// Saved with every alert: the share of Market Flow Radar coins whose last 5 minutes were mostly aggressive buying.
+setFlowContext(() => {
+  const cs = (state.coins || []).filter((c) => Number.isFinite(c.buyRatio5m));
+  return cs.length >= 10 ? { buyShare: Math.round((cs.filter((c) => c.buyRatio5m >= 55).length / cs.length) * 100) } : null;
 });
 
 const state = {

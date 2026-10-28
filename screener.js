@@ -70,6 +70,7 @@ import { createRotation } from "./rotation.js";
 import { startFlows, handleFlowsRequest } from "./flows.js";
 import { startWhales, handleWhalesRequest } from "./whales.js";
 import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
+import { sendTelegram as tgSend, telegramStatus, checkTelegram } from "./telegram.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -1010,13 +1011,8 @@ async function fastLayer(ready) {
 
 // ───────────────────────────── alerts + outcomes ─────────────────────────────
 async function sendTelegram(text) {
-  try {
-    await fetchJson(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST", headers: { "content-type": "application/json" }, retries: 1,
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-    });
-    delete state.errors.Telegram;
-  } catch (e) { state.errors.Telegram = e.message; }
+  const r = await tgSend(text);
+  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
 }
 
 let persistTimer = null;
@@ -1127,8 +1123,8 @@ function updateEvents(results) {
   if (fresh.length) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
-    // AI review: quick tiers only (the AI desk's plans are built around their +target / -stop rule)
-    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early") for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+    // AI review: the quick tiers, and big-move alerts when their Telegram alerts are on (the AI gets that tier's rule)
+    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early" || (ev.tier === "bigmove" && BIG_ALERTS)) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
 }
 
@@ -1440,9 +1436,18 @@ const jsonResponse = (res, code, data) => {
 // Read-only view of the live screener (candidates, regime, breadth, stats, config), used by the AI trade desk.
 export const screenerSnapshot = () => state;
 
+let lastTgTest = 0;
 // Answers the screener's API routes; returns false for anything else so the caller can carry on.
 export async function handleScreenerRequest(req, res, url) {
-  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60) }); return true; }
+  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: telegramStatus() }); return true; }
+  if (url.pathname === "/api/telegram/test" && req.method === "POST") { // "Send test message" button (this site only, at most every 10s)
+    const sameSite = String(req.headers["content-type"] || "").includes("application/json") && (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    if (Date.now() - lastTgTest < 10_000) { jsonResponse(res, 429, { error: "Wait a few seconds between tests", telegram: telegramStatus() }); return true; }
+    lastTgTest = Date.now();
+    const r = await tgSend("Smart Money Tracker: test message. Telegram works: ignition alerts and AI verdicts (TAKE / WAIT / NO TRADE) will arrive here.");
+    jsonResponse(res, 200, { ...r, telegram: telegramStatus() }); return true;
+  }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;
   if (await handleFlowsRequest(req, res, url)) return true;
@@ -1465,6 +1470,8 @@ export function startScreener(baseUrl = "") {
   console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, ` +
     `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
   console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
+  if (!DEMO) checkTelegram().then((m) => console.log(`Telegram: ${m}`));
+  else console.log("Telegram: off in demo mode");
   loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); });
   rotation.start();
   if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }

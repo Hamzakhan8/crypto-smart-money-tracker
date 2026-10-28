@@ -39,7 +39,7 @@ if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
   aiReviewTimes = aiReviewTimes.filter((t) => now - t < 3_600_000);
   if (aiReviewTimes.length >= AI_REVIEWS_PER_HOUR) return;
   aiReviewTimes.push(now);
-  try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol) }); }
+  try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol, ev.tier) }); }
   catch (e) { annotateEvent(ev.id, { ai: { error: e.message, at: Date.now() } }); }
 });
 

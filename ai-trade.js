@@ -5,8 +5,11 @@
 //     dossier, and every plan is checked in code (stop below entry, target above, sensible distances, reward:risk).
 //   • Deterministic guards after the model: TAKE only for coins that are igniting now (early / confirmed tier), never
 //     for coins that already ran; weak reward:risk becomes WAIT; simulated data is labelled and capped.
-//   • Base rates are part of the prompt: most ignitions fail, so the model is told how often this tier won in the replay
-//     and live, and that profits depend on small losses.
+//   • Base rates are part of the prompt: most ignitions fail, so the model starts from how often this kind of alert hit
+//     its target and its stop (replay, or live once 30+ resolved) and may move that by at most 15 points with evidence.
+//   • Decisions are expected-value based: chance of target x target - chance of stop x stop - costs. The code checks the
+//     arithmetic, applies hard stops (selling now, wide spread, thin book, BTC falling) and lets
+//     TAKE stand only with +0.5% or more expected per trade (AI_MIN_EV_PCT) and reward:risk 1.5+. Default: no trade.
 //
 // Dossier per coin: the screener's signal (tier, ignition score and parts, 5m/15m/1h volume, buyers, daily RSI, trend,
 // what it still lacks), the Market Flow Radar's taker flow (flow score, 1m / 5m aggressive buying, net flow, relative
@@ -24,6 +27,7 @@ import { screenerSnapshot, fetchJson, CONFIG } from "./screener.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
+import { sendTelegram } from "./telegram.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -32,13 +36,49 @@ const MIN = 60_000, HOUR = 3_600_000;
 const DOSSIER_TTL = 60_000, RESULT_TTL = 3 * MIN;
 const BATCH_MAX = 12;
 const LEVELS = ["low", "medium", "high"];
-// From the 60-day replay of 51 crypto tokens on 5-minute candles (screener v6 exit rule, 0.2% fees + 0.1% slippage).
-// hitTargetPct = reached the target before the stop; profitablePct = closed with a profit after costs.
+// From the 60-day replay of 47 Binance crypto tokens on 5-minute candles, Aug 29 - Oct 28 2026 (screener v6 exit rule,
+// 0.2% fees + 0.1% slippage). hitTargetPct = target before stop, hitStopPct = stop first, the rest ended flat.
 const REPLAY = {
-  source: "60-day replay of 51 Binance crypto tokens on 5-minute candles (screener-backtest.js)",
+  source: "60-day replay of 47 Binance crypto tokens on 5-minute candles, Aug 29 - Oct 28 2026 (screener-backtest.js)",
   rule: `take profit +${CONFIG.targetPct}%, stop -${CONFIG.stopPct}%, else exit after ${CONFIG.outcomeHours}h; ${CONFIG.feePct}% fees + ${CONFIG.slippagePct}% slippage`,
-  confirmed: { hitTargetPct: 31, profitablePct: 51, avgNetPct: 1.09 }, early: { hitTargetPct: 23, profitablePct: 45, avgNetPct: 0.19 },
+  confirmed: { signals: 122, hitTargetPct: 30, hitStopPct: 21, flatPct: 48, avgNetPct: 0.93 }, early: { signals: 266, hitTargetPct: 25, hitStopPct: 29, flatPct: 45, avgNetPct: 0.55 },
 };
+const COST_PCT = (CONFIG.feePct || 0) + (CONFIG.slippagePct || 0);
+const MIN_EV_PCT = Number.isFinite(Number(env.AI_MIN_EV_PCT)) && env.AI_MIN_EV_PCT !== "" && env.AI_MIN_EV_PCT !== undefined ? Number(env.AI_MIN_EV_PCT) : 0.5;
+// How often each kind of alert reached its target before its stop (hitTargetPct) or its stop first (hitStopPct); the
+// rest ended flat. The AI starts from these numbers. Live results replace them once 30+ alerts of a tier have resolved.
+export const BASE_RATES = {
+  confirmed: { ...REPLAY.confirmed, source: REPLAY.source },
+  early: { ...REPLAY.early, source: REPLAY.source },
+  bigmove: { hitTargetPct: 8.5, hitStopPct: 39, avgNetPct: 1.55, source: "90-day replay of every Binance USDT pair (bigmove-backtest.js)",
+    note: "made money in the Aug-Sep altcoin rally and lost in October: it depends on the market" },
+  none: { hitTargetPct: 15, hitStopPct: 40, source: "no ignition signal: assumed below the early tier" },
+};
+const ruleFor = (tier) => (tier === "bigmove" && CONFIG.bigmove
+  ? { targetPct: CONFIG.bigmove.targetPct, stopPct: CONFIG.bigmove.stopPct, holdHours: CONFIG.bigmove.outcomeHours }
+  : { targetPct: CONFIG.targetPct, stopPct: CONFIG.stopPct, holdHours: CONFIG.outcomeHours });
+// What the alert is tracked as and the starting probabilities for the AI.
+export function alertContext(tier, snap = {}) {
+  const t = BASE_RATES[tier] ? tier : "none", base = BASE_RATES[t];
+  const live = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[t] ? snap.stats?.current?.byTier?.[{ confirmed: "ignition", early: "early", bigmove: "bigmove" }[t]] : null;
+  const useLive = !!live && live.resolved >= 30;
+  return {
+    tier: t, label: { confirmed: "confirmed ignition", early: "early ignition", bigmove: "big-move ignition (small coin waking up)", none: "no ignition signal" }[t],
+    trackedAs: ruleFor(t), costPct: r(COST_PCT, 2), baseRate: base,
+    live: live && live.resolved ? { resolved: live.resolved, hitTargetPct: live.winRatePct, hitStopPct: r((live.losses / live.resolved) * 100, 1), avgNetPct: live.netPct } : null,
+    anchorProbTargetPct: Math.round(useLive ? live.winRatePct : base.hitTargetPct),
+    anchorProbStopPct: Math.round(useLive ? (live.losses / live.resolved) * 100 : base.hitStopPct), anchorFrom: useLive ? "live results" : "replay",
+  };
+}
+// Breadth of the screener's coins: is the market lifting most coins or few?
+export function marketRegime(snap = {}) {
+  const cs = (snap.candidates || []).filter((c) => c.core !== false && Number.isFinite(c.change24h));
+  if (cs.length < 10) return null;
+  const ch = cs.map((c) => c.change24h).sort((a, b) => a - b), med = ch[ch.length >> 1];
+  const up = (cs.filter((c) => c.change24h > 0).length / cs.length) * 100, above = (cs.filter((c) => c.aboveSma).length / cs.length) * 100;
+  return { coins: cs.length, shareUp24hPct: Math.round(up), median24hPct: r(med), shareAbove20dAvgPct: Math.round(above),
+    label: above >= 60 && med > 0 ? "broad strength" : above <= 35 || med < -2 ? "weak market" : "mixed" };
+}
 
 const r = (v, d = 2) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
 const sig = (v) => (Number.isFinite(v) ? Number(v.toPrecision(6)) : null);
@@ -148,8 +188,8 @@ function flowBreadth() {
 
 // ───────────────────────────── dossier ─────────────────────────────
 const dossierCache = new Map();
-export async function buildDossier(symbol) {
-  const hit = dossierCache.get(symbol);
+export async function buildDossier(symbol, tierHint = null) {
+  const key = `${symbol}:${tierHint || ""}`, hit = dossierCache.get(key);
   if (hit && Date.now() - hit.at < DOSSIER_TTL) return hit.d;
   const snap = screenerSnapshot();
   const cand = (snap.candidates || []).find((c) => c.symbol === symbol) || null;
@@ -167,11 +207,13 @@ export async function buildDossier(symbol) {
   const vol1h = s.h1.map((c) => c.qv), medVol = [...vol1h.slice(-25, -1)].sort((a, b) => a - b)[12];
   const ret = (cs, n) => (cs.length > n ? r(pct(cs[cs.length - 1].c, cs[cs.length - 1 - n].c)) : null);
 
-  // Reference plan from the screener's own exit rule plus structure / volatility alternatives (long only).
-  const stopRule = price * (1 - CONFIG.stopPct / 100);
+  // Reference plan from the alert's own exit rule plus structure / volatility alternatives (long only).
+  const tier = tierHint || (cand?.ignition === "ignited" ? ((cand.igScore ?? 0) >= CONFIG.igniteMinScore ? "confirmed" : "early") : cand?.bigmove === "ignited" ? "bigmove" : null);
+  const alert = alertContext(tier, snap), rule = alert.trackedAs;
+  const stopRule = price * (1 - rule.stopPct / 100);
   const stopStructure = support && pct(support, price) > -8 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
   const stopAtr = atr1h ? price * (1 - (1.5 * atr1h) / 100) : null;
-  const tRule = price * (1 + CONFIG.targetPct / 100), tRes = resistance && pct(resistance, price) < 25 ? resistance * 0.997 : null;
+  const tRule = price * (1 + rule.targetPct / 100), tRes = resistance && pct(resistance, price) < Math.max(25, rule.targetPct) ? resistance * 0.997 : null;
   const rr = (stop, target) => (stop && target && price > stop ? r((target - price) / (price - stop)) : null);
   const plan = {
     entry: sig(price), entryZone: [sig(price * (1 - Math.min(0.4, 0.25 * (atr1h || 1)) / 100)), sig(price)],
@@ -180,18 +222,17 @@ export async function buildDossier(symbol) {
     rewardRisk: { ruleTargetRuleStop: rr(stopRule, tRule), resistanceRuleStop: rr(stopRule, tRes), ruleTargetSupportStop: rr(stopStructure, tRule) },
   };
 
-  const tier = cand?.ignition === "ignited" ? ((cand.igScore ?? 0) >= CONFIG.igniteMinScore ? "confirmed" : "early") : null;
   const live = snap.stats?.current?.byTier || {};
   const liveRate = (b) => (b && b.resolved ? { resolved: b.resolved, winRatePct: b.winRatePct, avgNetPct: b.netPct } : { resolved: 0 });
   const d = {
-    symbol, asOf: new Date().toISOString(), price: sig(price), dataQuality: {
+    symbol, asOf: new Date().toISOString(), price: sig(price), alert, dataQuality: {
       demo: !!snap.demo, screenerStatus: snap.status, inScreener: !!cand,
       notes: [snap.demo ? "Screener is in DEMO mode: its signal is simulated (market data below is live)." : null,
         !cand ? "Not in the screener's current list (no ignition data); judged on market data only." : null,
         flow.simulated ? "Market Flow Radar is in DEMO mode: its flow numbers are simulated." : null].filter(Boolean),
     },
     screener: cand ? {
-      state: cand.ignition || "none", tier, moved: cand.moved, movedWhy: cand.movedWhy, stillNeeds: cand.missing,
+      state: cand.ignition || "none", tier, bigmove: cand.bigmove || null, moved: cand.moved, movedWhy: cand.movedWhy, stillNeeds: cand.missing,
       ignitionScore: cand.igScore, ignitionParts: cand.igParts, dailySetupScore: cand.score, dailySetupReasons: cand.reasons?.slice(0, 4),
       volume: { last2x5mVsNormal: [cand.prevR5, cand.r5], rolling15mVsNormal: cand.rvol15, last1hVsNormal: cand.rvol1h, tradesVsNormal: cand.tradesRatio },
       buyersPct: { last10m: cand.buyRatio10m, last15m: cand.buyRatio15m },
@@ -223,50 +264,80 @@ export async function buildDossier(symbol) {
       btcChange24hPct: snap.regime?.btcChange24hPct, btc1hPct: snap.regime?.btc1hPct, btc4hPct: snap.regime?.btc4hPct,
       marketWideSurge: !!snap.breadth?.marketWide, shareOfTokensSurging: snap.breadth?.hotShare, takerFlowBreadth: flowBreadth(),
       btcRegime: cand?.rotation?.regimeLabel || null, narrativeRanks: cand?.rotation?.narratives?.filter((x) => x.rank != null).slice(0, 3) || null,
+      regime: marketRegime(snap),
+    },
+    livePerformance: {
+      byTier: Object.fromEntries(Object.entries(live).map(([k, b]) => [k, liveRate(b)])),
+      aiCalls: (snap.stats?.current?.buckets || []).filter((b) => /^AI said/.test(b.name)).map((b) => ({ call: b.name.replace("AI said ", ""), resolved: b.resolved, hitTargetPct: b.winRatePct, avgNetPct: b.netPct })),
     },
     referencePlan: plan,
     baseRates: { replay: REPLAY, live: { confirmed: liveRate(live.ignition), early: liveRate(live.early) } },
   };
-  dossierCache.set(symbol, { at: Date.now(), d });
+  dossierCache.set(key, { at: Date.now(), d });
   if (dossierCache.size > 60) dossierCache.delete(dossierCache.keys().next().value);
   return d;
 }
 
 // ───────────────────────────── prompts + schemas ─────────────────────────────
 const RULES = `
-- This is a long-only spot setup flagged by a volume-ignition screener. Decide whether to buy now.
-- Use ONLY numbers in the DOSSIER and quote them exactly. No news, no invented levels or targets. If something is null or
-  unavailable, say so and do not guess.
-- Base rates matter: most ignitions do not reach the target (see baseRates: about a quarter to a third do), and only about
-  half close in profit. A trade only pays if losses stay small, so reward:risk and a clear invalidation level matter more
-  than excitement. Early-tier signals barely break even on average; confirmed ones did clearly better.
-- marketFlow is the Market Flow Radar's Binance spot taker flow for the last 1-5 minutes (flow score 0-100, share of
-  aggressive buying, net buy-minus-sell USD). It shows aggressive buying on one exchange, not informed or "smart" money.
-  smartMoneyWallets are on-chain wallet signals from Binance Web3; keep them separate from the spot flow.
-- Weigh together: the screener tier (confirmed > early > not igniting), 1h and 4h trend alignment, live taker flow
-  (does aggressive buying still dominate, or has it turned to selling?), room to resistance vs
-  distance to the stop, order-book support, futures crowding (funding above ~0.05% per 8h, open interest jumping while
-  price stalls, a high long/short ratio), whale deposits to exchanges (supply), DEX net selling, BTC falling or a
-  market-wide surge, and data quality.
-- TAKE = buy now inside the entry zone. WAIT = interesting, but name the exact confirmation that is missing. SKIP = no trade.
-  Choose TAKE only when the evidence lines up and reward:risk is at least 1.5; when unsure, WAIT or SKIP.
-- Plans: long only, no leverage. Entry, stop and targets must come from dossier.price, dossier.levels or
-  dossier.referencePlan. Risk at most 1% of the account per trade.
-- Be concise and concrete.`.trim();
+You decide whether to buy one Binance spot coin RIGHT NOW. Long only, no leverage. The default answer is SKIP (no trade):
+TAKE has to be earned by the evidence. Most ignition alerts fail, and a skipped trade costs nothing.
+
+Use ONLY the DOSSIER and quote its numbers exactly. Never invent prices, levels, news or data. null or "unavailable" means
+unknown, and unknown is not good news. marketFlow is aggressive buying on Binance spot in the last 1-5 minutes, not
+"smart money"; smartMoneyWallets are separate on-chain signals.
+
+Work through these steps in order and show them in your answer:
+1. HARD STOPS. If any one applies, the answer is SKIP: the coin already ran (screener.moved); BTC down more than 1% in 1h
+   or 2% in 4h; aggressive selling right now (marketFlow 5m buyers under 45% with negative net flow); spread above 30 bps
+   or less than $20k of bids within 1% (you could not get out). List the ones that apply in hardStops (empty if none).
+2. CHECKLIST. For each item give pass / fail / unknown and the dossier number that decides it:
+   trigger (alert.tier, volume vs normal, how many candles held it), executed buying (screener buyers %, marketFlow),
+   trend (1h and 4h direction vs the trade), room (distance to resistance vs distance to the stop: an ignition just under
+   a recent high is normal, but a 15d or 7d high right overhead caps the move), liquidity (spread, depth),
+   positioning (futures funding / open interest / long-short, whale exchange deposits, DEX net selling),
+   market (BTC, market.regime breadth, market-wide surge), track record (livePerformance of this tier and of AI calls).
+3. PROBABILITY. Start from alert.anchorProbTargetPct (how often this kind of alert hit its target before its stop) and
+   alert.anchorProbStopPct (how often it hit the stop first); the rest end flat. Move them only for checklist evidence,
+   at most 15 points each way, and say which items moved them. A weak market regime, BTC weakness or poor live results
+   lower the target chance; strong confirmed volume with buyers in control and room to run raise it.
+4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct, using your plan's
+   target and stop. The code recomputes it.
+5. DECIDE.
+   TAKE only if there is no hard stop, the expected value is at least +0.5% per trade, reward:risk is at least 1.5 and
+   the price is inside the entry zone now.
+   WAIT when the setup is close and one specific thing is missing: waitFor must name a price level, a condition and a
+   time limit, e.g. "a 5m close above 0.0512 with buyers 55%+ within 30 minutes; otherwise no trade".
+   SKIP (no trade) for everything else, including when the data is too thin to judge.
+6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs
+   (its target, stop and holding time; a big-move alert aims for its large target over days). Risk at most 1% of the
+   account per trade.
+Be concise and concrete.`.trim();
 
 const ANALYST_SYSTEM = `You are a disciplined crypto spot trader and risk manager reviewing one setup.\n\n${RULES}`;
 const REVIEWER_SYSTEM = `You are a skeptical head of risk double-checking a trader's call. Find reasons it is wrong: numbers that do not
-match the dossier, ignored red flags (crowded futures, exchange deposits, weak trend, no room to resistance, BTC weakness),
-or a plan whose stop or target is not supported by the levels.\n\n${RULES}\n
+match the dossier, a missed hard stop, probabilities moved far from the alert's base rate without evidence, an expected
+value that does not add up, ignored red flags (crowded futures, exchange deposits, weak trend, no room to resistance, BTC
+weakness, a weak market regime), or a plan whose stop or target is not supported by the levels.\n\n${RULES}\n
 Verdict: "agree" (call is sound), "downgrade" (TAKE should be WAIT, or WAIT should be SKIP), "reject" (should be SKIP).`;
 const TRIAGE_SYSTEM = `You are a disciplined crypto spot trader triaging several setups from a volume-ignition screener at once.\n\n${RULES}
-For each coin give a decision and the single most important reason and risk. Rank the best setups highest.`;
+For each coin give a decision, the chance of its target and of its stop (starting from that coin's alert anchors), and the
+single most important reason and risk. Rank the best setups highest.`;
 
 const strArr = { type: Type.ARRAY, items: { type: Type.STRING } };
 const DECISION_SCHEMA = {
   type: Type.OBJECT,
   properties: {
     decision: { type: Type.STRING, enum: ["TAKE", "WAIT", "SKIP"] },
+    hardStops: { ...strArr, description: "Hard stops that apply; empty if none" },
+    checklist: {
+      type: Type.ARRAY,
+      items: { type: Type.OBJECT, properties: { item: { type: Type.STRING }, status: { type: Type.STRING, enum: ["pass", "fail", "unknown"] }, evidence: { type: Type.STRING } },
+        required: ["item", "status", "evidence"] },
+    },
+    probTargetPct: { type: Type.INTEGER, description: "Chance (0-100) the target is hit before the stop within the holding time" },
+    probStopPct: { type: Type.INTEGER, description: "Chance (0-100) the stop is hit first" },
+    probReason: { type: Type.STRING, description: "Which checklist items moved the chances away from the anchors" },
     confidence: { type: Type.STRING, enum: LEVELS },
     setupScore: { type: Type.INTEGER, description: "Setup quality 0-10" },
     headline: { type: Type.STRING, description: "One line" },
@@ -280,11 +351,12 @@ const DECISION_SCHEMA = {
       },
       required: ["entryLow", "entryHigh", "stop", "target1", "holdHours"],
     },
-    waitFor: { type: Type.STRING, description: "For WAIT: the exact confirmation needed; otherwise empty" },
+    waitFor: { type: Type.STRING, description: "For WAIT: price level, condition and time limit; otherwise empty" },
     invalidation: { type: Type.STRING },
     keyRisk: { type: Type.STRING },
   },
-  required: ["decision", "confidence", "setupScore", "headline", "thesis", "bullishPoints", "bearishPoints", "plan", "waitFor", "invalidation", "keyRisk"],
+  required: ["decision", "hardStops", "checklist", "probTargetPct", "probStopPct", "probReason", "confidence", "setupScore", "headline", "thesis",
+    "bullishPoints", "bearishPoints", "plan", "waitFor", "invalidation", "keyRisk"],
 };
 const REVIEW_SCHEMA = {
   type: Type.OBJECT,
@@ -301,9 +373,10 @@ const TRIAGE_SCHEMA = {
         type: Type.OBJECT,
         properties: {
           symbol: { type: Type.STRING }, decision: { type: Type.STRING, enum: ["TAKE", "WAIT", "SKIP"] }, confidence: { type: Type.STRING, enum: LEVELS },
+          probTargetPct: { type: Type.INTEGER }, probStopPct: { type: Type.INTEGER },
           setupScore: { type: Type.INTEGER }, reason: { type: Type.STRING }, keyRisk: { type: Type.STRING },
         },
-        required: ["symbol", "decision", "confidence", "setupScore", "reason", "keyRisk"],
+        required: ["symbol", "decision", "confidence", "probTargetPct", "probStopPct", "setupScore", "reason", "keyRisk"],
       },
     },
   },
@@ -321,7 +394,8 @@ export function applyGuards(d, out) {
   let confidence = LEVELS.includes(out.confidence) ? out.confidence : "low";
   const sc = d.screener;
   if (sc?.moved) { if (decision !== "SKIP") notes.push(`Already moved (${(sc.movedWhy || []).join(", ")}): the screener never chases.`); decision = "SKIP"; }
-  if (decision === "TAKE" && sc?.state !== "ignited") { decision = "WAIT"; notes.push("Not igniting right now (screener: " + (sc ? sc.state : "no signal") + "), so TAKE becomes WAIT."); }
+  const igniting = sc?.state === "ignited" || (d.alert?.tier === "bigmove" && sc?.bigmove === "ignited");
+  if (decision === "TAKE" && !igniting) { decision = "WAIT"; notes.push("Not igniting right now (screener: " + (sc ? sc.state : "no signal") + "), so TAKE becomes WAIT."); }
   if (sc?.tier !== "confirmed") confidence = cap(confidence, "medium");
   if (d.dataQuality.demo) { confidence = "low"; notes.push("Screener signal is simulated (demo mode)."); }
   if (d.market.marketWideSurge || (d.market.btc4hPct != null && d.market.btc4hPct < -1)) confidence = lower(confidence);
@@ -329,6 +403,35 @@ export function applyGuards(d, out) {
     confidence = lower(confidence); notes.push("Buying against a 4h downtrend: confidence lowered one step.");
   }
   return { decision, confidence, notes };
+}
+
+// Hard stops the code can check itself (the model is asked for the same ones).
+export function hardStops(d, plan) {
+  const out = [], m = d.market || {}, mf = d.marketFlow, ob = d.orderBook;
+  if ((m.btc1hPct ?? 0) < -1 || (m.btc4hPct ?? 0) < -2) out.push(`BTC falling (${m.btc1hPct ?? "n/a"}% 1h, ${m.btc4hPct ?? "n/a"}% 4h)`);
+  if (mf?.available && mf.buyRatio5mPct < 45 && mf.netFlow5mUsd < 0) out.push(`aggressive selling now (${mf.buyRatio5mPct}% buyers over 5m, net ${mf.netFlow5mUsd} USD)`);
+  if (ob?.spreadBps > 30) out.push(`spread ${ob.spreadBps} bps`);
+  const b1 = (ob?.bands || []).find((x) => x.withinPct === 1);
+  if (b1 && b1.bidUsd < 20_000) out.push(`only $${b1.bidUsd} of bids within 1%`);
+  return out;
+}
+
+// Expected value per trade from the (anchored) probabilities, then the final call. TAKE needs no hard stop, EV >=
+// AI_MIN_EV_PCT and reward:risk >= 1.5; a TAKE that fails becomes WAIT (EV not far below zero) or SKIP.
+export function decide(d, out, plan, minEv = MIN_EV_PCT) {
+  const a = d.alert || alertContext(d.screener?.tier || null), notes = [];
+  const anT = a.anchorProbTargetPct, anS = a.anchorProbStopPct, n = (v, dflt) => (Number.isFinite(Number(v)) ? Number(v) : dflt);
+  let pT = clamp(n(out.probTargetPct, anT), Math.max(0, anT - 15), Math.min(100, anT + 15));
+  let pS = clamp(n(out.probStopPct, anS), Math.max(0, anS - 15), Math.min(100, anS + 15));
+  if (pT + pS > 100) pS = 100 - pT;
+  if (pT !== n(out.probTargetPct, anT) || pS !== n(out.probStopPct, anS)) notes.push(`Chances held within 15 points of this alert's base rate (${anT}% target / ${anS}% stop).`);
+  const ev = r((pT / 100) * (plan.target1Pct ?? 0) - (pS / 100) * Math.abs(plan.stopPct ?? 0) - a.costPct, 2);
+  const hard = hardStops(d, plan);
+  let decision = out.decision;
+  if (hard.length && decision !== "SKIP") { notes.push(`Hard stop: ${hard.join("; ")}. No trade.`); decision = "SKIP"; }
+  if (decision === "TAKE" && !(ev >= minEv)) { decision = ev >= -0.5 ? "WAIT" : "SKIP"; notes.push(`Expected value ${ev}% per trade is below +${minEv}%, so TAKE became ${decision === "SKIP" ? "no trade" : "WAIT"}.`); }
+  if (decision === "TAKE" && !(plan.rewardRisk >= 1.5)) { decision = "WAIT"; notes.push(`Reward:risk ${plan.rewardRisk} is under 1.5, so TAKE became WAIT.`); }
+  return { decision, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, hardStops: hard, notes };
 }
 
 // Long plan sanity: numbers in order and within believable distances; otherwise the reference plan is used.
@@ -339,7 +442,7 @@ export function checkPlan(d, plan) {
     && Math.abs(pct(p.entryHigh, price)) <= 3 && pct(p.stop, p.entryHigh) >= -12 && pct(p.stop, p.entryHigh) <= -0.3 && pct(p.target1, p.entryHigh) <= 40;
   const ref = d.referencePlan;
   const use = ok ? p : { entryLow: ref.entryZone[0], entryHigh: ref.entryZone[1], stop: ref.stops.screenerRule, target1: ref.targets.screenerRule,
-    target2: ref.targets.nearResistance, holdHours: CONFIG.outcomeHours };
+    target2: ref.targets.nearResistance, holdHours: (d.alert?.trackedAs || ruleFor(null)).holdHours };
   const mid = (use.entryLow + use.entryHigh) / 2;
   return {
     plan: { ...use, entryLow: sig(use.entryLow), entryHigh: sig(use.entryHigh), stop: sig(use.stop), target1: sig(use.target1),
@@ -360,9 +463,9 @@ const pickModel = (v, fallback) => {
 
 async function analyzeOne(ai, symbol, opts) {
   const t0 = Date.now();
-  const d = await buildDossier(symbol);
+  const d = await buildDossier(symbol, opts.tier || null);
   const res = await generate(ai, {
-    model: opts.model, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nDecide: TAKE, WAIT or SKIP.`,
+    model: opts.model, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nWork through the steps, then decide: TAKE, WAIT or SKIP (no trade).`,
     config: { systemInstruction: ANALYST_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: DECISION_SCHEMA },
   });
   const out = jsonFrom(res, "Analyst");
@@ -382,9 +485,13 @@ async function analyzeOne(ai, symbol, opts) {
   if (out.decision !== analystDecision) g.notes.unshift(`Risk review (${review.verdict}): ${analystDecision} became ${out.decision}.`);
   const pc = checkPlan(d, out.plan);
   if (pc.replaced) g.notes.push("The model's plan did not fit the levels, so the screener's reference plan is shown.");
-  if (g.decision === "TAKE" && !(pc.plan.rewardRisk >= 1.2)) { g.decision = "WAIT"; g.notes.push(`Reward:risk ${pc.plan.rewardRisk} is too low for TAKE.`); }
+  const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
+  g.notes.push(...dz.notes);
+  if (dz.decision !== "TAKE" && g.decision === "TAKE") g.confidence = lower(g.confidence);
   return {
-    symbol, decision: g.decision, modelDecision: analystDecision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    symbol, decision: dz.decision, modelDecision: analystDecision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
+    hardStops: [...new Set([...(dz.hardStops || []), ...(out.hardStops || [])])], checklist: Array.isArray(out.checklist) ? out.checklist.slice(0, 12) : [],
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
     plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes, review,
     dossier: d, meta: { model: opts.model, reviewModel: opts.deep ? opts.reviewModel : null, durationMs: Date.now() - t0, at: Date.now(), cached: false },
@@ -393,7 +500,8 @@ async function analyzeOne(ai, symbol, opts) {
 
 // The important fields only, for triaging many coins in one call.
 const compact = (d) => ({
-  symbol: d.symbol, price: d.price, screener: d.screener && { state: d.screener.state, tier: d.screener.tier, moved: d.screener.moved, stillNeeds: d.screener.stillNeeds?.slice(0, 3),
+  symbol: d.symbol, price: d.price, alert: { tier: d.alert.tier, trackedAs: d.alert.trackedAs, anchorProbTargetPct: d.alert.anchorProbTargetPct, anchorProbStopPct: d.alert.anchorProbStopPct },
+  screener: d.screener && { state: d.screener.state, tier: d.screener.tier, moved: d.screener.moved, stillNeeds: d.screener.stillNeeds?.slice(0, 3),
     ignitionScore: d.screener.ignitionScore, volume: d.screener.volume, buyersPct: d.screener.buyersPct, movePct: d.screener.movePct, dailyRsi: d.screener.dailyRsi },
   trend1h: d.chart.trend1h?.state, trend4h: d.chart.trend4h?.state, returnsPct: d.chart.returnsPct, atr1hPct: d.chart.atrPct["1h"],
   roomToResistancePct: d.levels.roomToResistancePct, distanceToSupportPct: d.levels.distanceToSupportPct, referenceRewardRisk: d.referencePlan.rewardRisk,
@@ -415,16 +523,18 @@ async function analyzeMany(ai, symbols, opts) {
   const first = dossiers[0];
   const res = await generate(ai, {
     model: opts.model,
-    contents: `MARKET (JSON)\n${JSON.stringify(first.market)}\n\nBASE RATES (JSON)\n${JSON.stringify(first.baseRates)}\n\nCOINS (JSON)\n${JSON.stringify(dossiers.map(compact))}\n\nTriage every coin.`,
+    contents: `MARKET (JSON)\n${JSON.stringify(first.market)}\n\nLIVE PERFORMANCE (JSON)\n${JSON.stringify(first.livePerformance)}\n\nCOST PER TRADE: ${first.alert.costPct}%\n\nCOINS (JSON)\n${JSON.stringify(dossiers.map(compact))}\n\nTriage every coin.`,
     config: { systemInstruction: TRIAGE_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: TRIAGE_SCHEMA },
   });
   const out = jsonFrom(res, "Triage");
   const bySym = new Map((out.coins || []).map((c) => [String(c.symbol).toUpperCase().replace(/USDT$/, "") + "USDT", c]));
   const coins = dossiers.map((d) => {
     const c = bySym.get(d.symbol) || { decision: "SKIP", confidence: "low", setupScore: 0, reason: "The model did not return this coin.", keyRisk: "" };
-    const g = applyGuards(d, c);
-    return { symbol: d.symbol, price: d.price, tier: d.screener?.tier || null, state: d.screener?.state || "none", decision: g.decision, modelDecision: c.decision,
-      confidence: g.confidence, setupScore: clamp(Math.round(c.setupScore || 0), 0, 10), reason: c.reason, keyRisk: c.keyRisk, guardNotes: g.notes,
+    const g = applyGuards(d, c), rule = d.alert.trackedAs;
+    const dz = decide(d, { ...c, decision: g.decision }, { target1Pct: rule.targetPct, stopPct: -rule.stopPct, rewardRisk: d.referencePlan.rewardRisk.ruleTargetRuleStop });
+    return { symbol: d.symbol, price: d.price, tier: d.alert.tier === "none" ? null : d.alert.tier, state: d.screener?.state || "none", decision: dz.decision, modelDecision: c.decision,
+      confidence: g.confidence, setupScore: clamp(Math.round(c.setupScore || 0), 0, 10), reason: c.reason, keyRisk: c.keyRisk, guardNotes: [...g.notes, ...dz.notes],
+      probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct,
       referenceRewardRisk: d.referencePlan.rewardRisk.ruleTargetRuleStop };
   });
   const order = { TAKE: 0, WAIT: 1, SKIP: 2 };
@@ -443,29 +553,26 @@ function cached(key, ttl, refresh, run) {
 }
 
 // ───────────────────────────── Telegram ─────────────────────────────
-async function telegram(text) {
-  const token = env.TELEGRAM_BOT_TOKEN, chat = env.TELEGRAM_CHAT_ID;
-  if (!token || !chat) return { sent: false, skipped: "Telegram is not configured" };
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000), disable_web_page_preview: true }),
-    });
-    return res.ok ? { sent: true } : { sent: false, error: `HTTP ${res.status}` };
-  } catch (e) { return { sent: false, error: e.message }; }
-}
-const tgSingle = (x) => [`AI TRADE DESK: ${x.symbol} -> ${x.decision} (${x.confidence} confidence, setup ${x.setupScore}/10)`, x.headline,
-  x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk}` : null,
-  x.decision === "WAIT" && x.waitFor ? `Wait for: ${x.waitFor}` : null, `Key risk: ${x.keyRisk}`, ...x.guardNotes,
+const telegram = (text) => sendTelegram(text); // shared sender: failures are logged and shown on the screener page
+export const LABEL = { TAKE: "TAKE", WAIT: "WAIT", SKIP: "NO TRADE" };
+const ICON = { TAKE: "🟢", WAIT: "🟡", SKIP: "🔴" };
+export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
+  x.headline,
+  `Chance: ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct >= 0 ? "+" : ""}${x.expectedValuePct}% per trade · ${x.confidence} confidence · setup ${x.setupScore}/10`,
+  x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk} | hold ${x.plan.holdHours}h` : null,
+  x.decision === "WAIT" && x.waitFor ? `Trigger: ${x.waitFor}` : null,
+  x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
 // Automatic review of a new screener alert (called by server.js): one analysis with the default model, a short summary
 // saved with the alert, and a Telegram follow-up unless AI_REVIEW_TELEGRAM=0.
-export async function reviewAlert(ai, symbol) {
-  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, deep: false };
-  const out = await cached(`one:${symbol}:${opts.model}:-`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
-  if (env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached) telegram(`(AI review of the new ${symbol.replace(/USDT$/, "")} alert)\n${tgSingle(out)}`);
+export async function reviewAlert(ai, symbol, tier = null) {
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, deep: false, tier: tier === "ignition" ? "confirmed" : tier };
+  const out = await cached(`one:${symbol}:${opts.model}:-:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
+  const tg = env.AI_REVIEW_TELEGRAM !== "0" && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`)) : null;
   return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
-    model: out.meta.model, at: Date.now() };
+    probTargetPct: out.probTargetPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
+    telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
 }
 
 // ───────────────────────────── API ─────────────────────────────
@@ -518,9 +625,10 @@ export async function handleAiRequest(req, res, url, ai) {
           : view.coins.filter((c) => !c.moved && (c.state === "ignited" || c.state === "heating")).map((c) => c.symbol)).slice(0, limit);
         if (!symbols.length) return jsonResponse(res, 200, { marketView: "No igniting or heating coins right now.", coins: [], failed: [], meta: { at: Date.now() } }), true;
         const out = await cached(`many:${symbols.join(",")}:${opts.model}`, RESULT_TTL, body.refresh === true, () => analyzeMany(ai, symbols, opts));
-        const takes = out.coins.filter((c) => c.decision === "TAKE");
-        const tg = body.notify === true && !out.meta.cached && takes.length
-          ? await telegram([`AI TRADE DESK: ${takes.length} TAKE of ${out.coins.length} coins`, out.marketView, ...takes.map((c) => `- ${c.symbol} (${c.confidence}, ${c.setupScore}/10): ${c.reason}`),
+        const n = (k) => out.coins.filter((c) => c.decision === k).length;
+        const tg = body.notify === true && !out.meta.cached && out.coins.length
+          ? await telegram([`AI TRADE DESK: ${n("TAKE")} TAKE · ${n("WAIT")} WAIT · ${n("SKIP")} NO TRADE (of ${out.coins.length} coins)`, out.marketView,
+            ...out.coins.slice(0, 12).map((c) => `${ICON[c.decision]} ${LABEL[c.decision]} ${c.symbol.replace(/USDT$/, "")}: ${c.probTargetPct}% target / ${c.probStopPct}% stop, expected ${c.expectedValuePct}% · ${c.reason}`),
             "AI opinion on screener data. Research only, not financial advice."].join("\n")) : null;
         jsonResponse(res, 200, { ...out, telegram: tg });
       }

@@ -155,3 +155,72 @@ test("big-move tracking: +40% before -10% over days on 1-minute candles, stop ch
   sc.applyCandles(both, rule, t0, [{ t: t0 + 60_000, o: 1, h: 1.45, l: 0.88, c: 1.2 }]);
   assert.equal(both.outcome, "loss"); // a candle touching both counts as a loss
 });
+
+test("AI desk: expected value decides; chances stay near the alert's base rate; hard stops mean no trade", () => {
+  const alert = desk.alertContext("confirmed");
+  const d = { price: 100, alert, screener: { state: "ignited", tier: "confirmed", moved: false }, dataQuality: { demo: false }, market: { btc1hPct: 0.2, btc4hPct: 0.5 },
+    chart: { trend4h: { state: "uptrend" } }, levels: { roomToResistancePct: 8 }, marketFlow: { available: true, buyRatio5mPct: 62, netFlow5mUsd: 5000 },
+    orderBook: { spreadBps: 4, bands: [{ withinPct: 1, bidUsd: 90_000, askUsd: 70_000 }] } };
+  const plan = { target1Pct: 6, stopPct: -3, rewardRisk: 2 };
+  const good = desk.decide(d, { decision: "TAKE", probTargetPct: 40, probStopPct: 30 }, plan);
+  assert.equal(good.decision, "TAKE");
+  assert.equal(good.expectedValuePct, +(0.4 * 6 - 0.3 * 3 - alert.costPct).toFixed(2)); // 2.4 - 0.9 - 0.3 = 1.2
+  const greedy = desk.decide(d, { decision: "TAKE", probTargetPct: 90, probStopPct: 5 }, plan); // far above the base rate
+  assert.equal(greedy.probTargetPct, alert.anchorProbTargetPct + 15);
+  assert.ok(greedy.notes.some((n) => /base rate/.test(n)));
+  const thin = desk.decide(d, { decision: "TAKE", probTargetPct: 25, probStopPct: 45 }, plan); // EV 1.5 - 1.35 - 0.3 < 0.5
+  assert.equal(thin.decision, "WAIT");
+  const bad = desk.decide({ ...d, alert: desk.alertContext("none") }, { decision: "TAKE", probTargetPct: 5, probStopPct: 55 }, plan); // EV far below zero
+  assert.equal(bad.decision, "SKIP");
+  assert.equal(desk.decide(d, { decision: "TAKE", probTargetPct: 40, probStopPct: 30 }, { ...plan, rewardRisk: 1.2 }).decision, "WAIT");
+  assert.equal(desk.decide({ ...d, levels: { roomToResistancePct: 0.4 } }, { decision: "TAKE", probTargetPct: 40, probStopPct: 30 }, plan).decision, "TAKE"); // right under a recent high is normal for an ignition
+  for (const [patch, re] of [[{ market: { btc1hPct: -1.4 } }, /BTC falling/], [{ marketFlow: { available: true, buyRatio5mPct: 38, netFlow5mUsd: -900 } }, /selling now/],
+    [{ orderBook: { spreadBps: 45, bands: [] } }, /spread/], [{ orderBook: { spreadBps: 4, bands: [{ withinPct: 1, bidUsd: 8000 }] } }, /bids within 1%/]]) {
+    const r = desk.decide({ ...d, ...patch }, { decision: "TAKE", probTargetPct: 40, probStopPct: 30 }, plan);
+    assert.equal(r.decision, "SKIP", JSON.stringify(patch));
+    assert.ok(r.hardStops.some((h) => re.test(h)), JSON.stringify(r.hardStops));
+  }
+});
+
+test("AI desk: alert context per tier, live results take over once 30 have resolved, market breadth", () => {
+  const big = desk.alertContext("bigmove");
+  assert.equal(big.trackedAs.targetPct, 40); assert.equal(big.trackedAs.stopPct, 10);
+  assert.equal(big.anchorProbTargetPct, Math.round(desk.BASE_RATES.bigmove.hitTargetPct));
+  assert.equal(desk.alertContext("nonsense").tier, "none");
+  const live = desk.alertContext("early", { stats: { current: { byTier: { early: { resolved: 40, winRatePct: 35, losses: 12, netPct: 0.8 } } } } });
+  assert.equal(live.anchorFrom, "live results"); assert.equal(live.anchorProbTargetPct, 35); assert.equal(live.anchorProbStopPct, 30);
+  const few = desk.alertContext("early", { stats: { current: { byTier: { early: { resolved: 5, winRatePct: 80, losses: 1, netPct: 3 } } } } });
+  assert.equal(few.anchorFrom, "replay");
+  const mk = (n, chg, sma) => Array.from({ length: n }, (_, i) => ({ core: true, change24h: chg, aboveSma: i < sma }));
+  assert.equal(desk.marketRegime({ candidates: mk(20, 3, 15) }).label, "broad strength");
+  assert.equal(desk.marketRegime({ candidates: mk(20, -3, 4) }).label, "weak market");
+  assert.equal(desk.marketRegime({ candidates: mk(5, 1, 3) }), null); // too few coins to judge
+});
+
+test("AI desk: Telegram message says TAKE / WAIT / NO TRADE with chances and the plan", () => {
+  const x = { symbol: "REZUSDT", decision: "SKIP", headline: "Sellers took over", probTargetPct: 18, probStopPct: 52, expectedValuePct: -1.7, confidence: "low", setupScore: 3,
+    plan: { entryLow: 1, entryHigh: 1.01, stop: 0.97, stopPct: -3, target1: 1.06, target1Pct: 6, rewardRisk: 2, holdHours: 12 }, waitFor: "", hardStops: ["spread 45 bps"], keyRisk: "thin book" };
+  const t = desk.tgSingle(x, "(AI review of the new early alert)");
+  assert.match(t, /^🔴 NO TRADE: REZ \(AI review/);
+  assert.match(t, /18% target \/ 52% stop · expected -1.7% per trade/);
+  assert.match(t, /Hard stop: spread 45 bps/);
+  assert.doesNotMatch(t, /Entry /);
+  const take = desk.tgSingle({ ...x, decision: "TAKE", expectedValuePct: 1.2, hardStops: [] });
+  assert.match(take, /^🟢 TAKE: REZ/); assert.match(take, /Entry 1-1.01 \| stop 0.97 \(-3%\) \| target 1.06 \(\+6%\)/);
+  assert.match(desk.tgSingle({ ...x, decision: "WAIT", waitFor: "5m close above 1.02 within 30 min" }), /Trigger: 5m close above 1.02/);
+});
+
+test("Telegram: failures are explained in plain words", async () => {
+  const tg = await import("../telegram.js");
+  assert.match(tg.telegramHint(401, "Unauthorized"), /bot token is wrong/);
+  assert.match(tg.telegramHint(400, "Bad Request: chat not found"), /chat not found.*pressed Start/);
+  assert.match(tg.telegramHint(403, "Forbidden: bot was blocked by the user"), /blocked the bot/);
+  assert.match(tg.telegramHint(403, "Forbidden: bot is not a member of the channel chat"), /add it to the group/);
+  assert.match(tg.telegramHint(0, "ENOTFOUND"), /cannot reach api.telegram.org/);
+  const saved = [process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID];
+  delete process.env.TELEGRAM_BOT_TOKEN; delete process.env.TELEGRAM_CHAT_ID;
+  assert.equal((await tg.sendTelegram("hi")).sent, false);              // not configured: nothing is sent, nothing breaks
+  assert.match(await tg.checkTelegram(), /not configured/);
+  if (saved[0] !== undefined) process.env.TELEGRAM_BOT_TOKEN = saved[0];
+  if (saved[1] !== undefined) process.env.TELEGRAM_CHAT_ID = saved[1];
+});

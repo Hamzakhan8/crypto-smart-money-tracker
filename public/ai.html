@@ -108,7 +108,7 @@ details.notice div{margin-top:8px}
   const m=c.market||{},br=(c.baseRates||{}),rep=br.replay||{},live=br.live||{};
   const liveTxt=(b,n)=>b&&b.resolved?`${n} <b>${num(b.profitablePct??b.winRatePct,0)}%</b> in profit of ${b.resolved}`:`${n} no resolved alerts yet`;
   $("#strip").innerHTML=`<span>BTC <b class="${col(m.btc1hPct)}">${pct(m.btc1hPct)}</b> 1h · <b class="${col(m.btc4hPct)}">${pct(m.btc4hPct)}</b> 4h · <b class="${col(m.btcChange24hPct)}">${pct(m.btcChange24hPct)}</b> 24h</span>${m.marketWide?'<span class="amber">Market-wide surge: signals are less token-specific</span>':""}`+
-   (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Replay: confirmed hit target <b>${rep.confirmed.hitTargetPct}%</b>, closed in profit <b>${rep.confirmed.profitablePct}%</b>, avg <b>${pct(rep.confirmed.avgNetPct,2)}</b> · early avg <b>${pct(rep.early.avgNetPct,2)}</b></span>`:"")+
+   (rep.confirmed?`<span title="${esc(rep.source)} · ${esc(rep.rule)}">Replay: confirmed hit target <b>${rep.confirmed.hitTargetPct}%</b>, stop <b>${rep.confirmed.hitStopPct}%</b>, avg <b>${pct(rep.confirmed.avgNetPct,2)}</b> · early avg <b>${pct(rep.early.avgNetPct,2)}</b></span>`:"")+
    `<span>Live: ${liveTxt(live.ignition,"confirmed")} · ${liveTxt(live.early,"early")}</span>`;
   const list=c.coins||[];
   $("#listHint").textContent=`${list.filter(x=>x.state==="ignited").length} igniting, ${list.filter(x=>x.state==="heating").length} heating up. Refreshes every 20 seconds.`;
@@ -116,7 +116,7 @@ details.notice div{margin-top:8px}
   $("#coins").innerHTML=list.length?list.map(x=>{
    const tag=x.state==="ignited"?`<span class="badge ${x.tier}">${x.tier==="confirmed"?"Confirmed":"Early"}</span>`:x.state==="ran"?'<span class="badge ran">Already ran</span>':'<span class="badge heating">Heating</span>';
    const sig=x.r5!=null?`5m ${num(x.prevR5,1)}× → ${num(x.r5,1)}×`:`15m ${num(x.rvol15,1)}×`;
-   const last=x.last?`<span class="dec ${esc(x.last.decision)}">${esc(x.last.decision)}</span><span class="sub">${esc(x.last.confidence)} · ${esc(ago(x.last.at))}</span>`:'<span class="muted">—</span>';
+   const last=x.last?`<span class="dec ${esc(x.last.decision)}">${esc(LBL[x.last.decision]||x.last.decision)}</span><span class="sub">${esc(x.last.confidence)} · ${esc(ago(x.last.at))}</span>`:'<span class="muted">—</span>';
    return `<tr class="${selected===x.symbol?"sel":""}"><td><b>${esc(x.base)}</b> ${tag}<span class="sub">${price(x.price)}${x.narrative?" · "+esc(x.narrative):""}${x.igScore!=null?" · score "+x.igScore:""}</span></td>
     <td class="mono">${sig}<span class="sub">buyers ${num(x.buy10,0)}% · RSI ${num(x.rsi,0)}</span>${x.state==="heating"&&x.missing.length?`<span class="sub amber">needs: ${esc(x.missing.join(", "))}</span>`:""}${x.moved?`<span class="sub red">${esc((x.movedWhy||[]).join(", "))}</span>`:""}</td>
     <td class="mono"><span class="${col(x.ret10m)}">${pct(x.ret10m)}</span> 10m<span class="sub">${pct(x.change24h)} 24h</span></td><td>${last}</td>
@@ -169,11 +169,18 @@ details.notice div{margin-top:8px}
  }
  const dossierHtml=(d,open)=>`<details ${open?"open":""}><summary>Full data sent to the AI (JSON)</summary><pre>${esc(JSON.stringify(d,null,2))}</pre></details>`;
 
+ const LBL={TAKE:"TAKE",WAIT:"WAIT",SKIP:"NO TRADE"};
+ const evTxt=x=>x.expectedValuePct==null?"":`chance ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected <b class="${x.expectedValuePct>=0.5?"green":x.expectedValuePct<0?"red":"amber"}">${x.expectedValuePct>0?"+":""}${x.expectedValuePct}%</b> per trade`;
  function drawResult(x){
   const p=x.plan||{},take=x.decision==="TAKE";
   $("#resTitle").textContent=x.symbol;$("#resSub").textContent=x.meta&&x.meta.cached?"Saved result from "+ago(x.meta.at)+" (re-run with Analyze after 3 minutes)":"Fresh analysis";
-  const changed=x.modelDecision&&x.modelDecision!==x.decision?`<span class="sub">Gemini said ${esc(x.modelDecision)}; the rules changed it (see below)</span>`:"";
-  $("#result").innerHTML=`<div class="hero"><div class="big ${esc(x.decision)}">${esc(x.decision)}</div><div><h3>${esc(x.headline)}</h3><p>${esc(x.confidence)} confidence · setup ${x.setupScore}/10 · price ${price(x.dossier&&x.dossier.price)}</p>${changed}</div></div>
+  const changed=x.modelDecision&&x.modelDecision!==x.decision?`<span class="sub">Gemini said ${esc(LBL[x.modelDecision]||x.modelDecision)}; the rules changed it (see below)</span>`:"";
+  const al=(x.dossier&&x.dossier.alert)||{};
+  const how=(x.hardStops||[]).length||(x.checklist||[]).length?`<div class="sec">How the AI decided</div>
+   ${(x.hardStops||[]).length?`<div class="callout red"><b>Hard stop:</b> ${x.hardStops.map(esc).join("; ")}</div>`:""}
+   <div class="table-wrap"><table class="table"><tbody>${(x.checklist||[]).map(c=>`<tr><td><b>${esc(c.item)}</b></td><td><span class="dec ${c.status==="pass"?"TAKE":c.status==="fail"?"SKIP":"WAIT"}">${esc(c.status)}</span></td><td class="muted">${esc(c.evidence)}</td></tr>`).join("")}</tbody></table></div>
+   <p class="meta">Started from this alert's base rate: ${esc(al.anchorProbTargetPct)}% hit the target, ${esc(al.anchorProbStopPct)}% hit the stop (${esc(al.anchorFrom||"")}; ${esc(al.label||"")}, tracked as +${al.trackedAs?al.trackedAs.targetPct:"?"}% / -${al.trackedAs?al.trackedAs.stopPct:"?"}%). ${esc(x.probReason||"")}</p>`:"";
+  $("#result").innerHTML=`<div class="hero"><div class="big ${esc(x.decision)}">${esc(LBL[x.decision]||x.decision)}</div><div><h3>${esc(x.headline)}</h3><p>${evTxt(x)}</p><p>${esc(x.confidence)} confidence · setup ${x.setupScore}/10 · price ${price(x.dossier&&x.dossier.price)}</p>${changed}</div></div>
    <div class="thesis">${esc(x.thesis)}</div>
    ${(x.guardNotes||[]).length?`<div class="callout">${x.guardNotes.map(esc).join("<br>")}</div>`:""}
    ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>Wait for:</b> ${esc(x.waitFor)}</div>`:""}
@@ -182,6 +189,7 @@ details.notice div{margin-top:8px}
     stat("Target 2",price(p.target2))+stat("Reward : risk",num(p.rewardRisk)+" : 1","",p.rewardRisk>=1.5?"green":p.rewardRisk<1.2?"red":"")+stat("Hold",num(p.holdHours,0)+"h","then exit if neither hit")}</div>
    <div class="callout red"><b>Invalidated if:</b> ${esc(x.invalidation)}<br><b>Key risk:</b> ${esc(x.keyRisk)}</div>
    <div class="cols"><div><div class="sec green">For the trade</div><ul>${(x.bullishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div><div><div class="sec red">Against the trade</div><ul>${(x.bearishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div></div>
+   ${how}
    ${x.review?`<div class="sec">Risk review (${esc(x.meta.reviewModel||"")})</div><div class="callout ${x.review.verdict==="agree"?"blue":"red"}"><b>${esc(x.review.verdict)}</b>: ${esc(x.review.reason)}${(x.review.risks||[]).length?"<br>"+x.review.risks.map(esc).join("<br>"):""}</div>`:""}
    ${factsHtml(x.dossier||{})}${dossierHtml(x.dossier||{},false)}
    <div class="meta">${esc(x.meta.model)}${x.meta.reviewModel?" + "+esc(x.meta.reviewModel):""} · ${num(x.meta.durationMs/1000,1)}s${x.telegram?(x.telegram.sent?' · <span class="green">sent to Telegram</span>':" · Telegram: "+esc(x.telegram.skipped||x.telegram.error)):""}<br>Long only. Risk at most 1% of your account. AI opinion on data, not financial advice.</div>`;
@@ -190,8 +198,8 @@ details.notice div{margin-top:8px}
   $("#resTitle").textContent="All ignition coins";$("#resSub").textContent=(b.meta&&b.meta.cached?"Saved result from "+ago(b.meta.at):"Fresh triage")+(b.meta&&b.meta.model?" · "+b.meta.model:"");
   $("#result").innerHTML=`<div class="thesis">${esc(b.marketView)}</div>
    <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Decision</th><th>Why</th><th>Key risk</th><th></th></tr></thead><tbody>${(b.coins||[]).map(c=>`<tr>
-    <td><b>${esc(c.symbol.replace(/USDT$/,""))}</b>${c.tier?` <span class="badge ${c.tier}">${c.tier==="confirmed"?"Confirmed":"Early"}</span>`:` <span class="badge heating">${esc(c.state)}</span>`}<span class="sub">ref. R:R ${num(c.referenceRewardRisk)}</span></td>
-    <td><span class="dec ${esc(c.decision)}">${esc(c.decision)}</span><span class="sub">${esc(c.confidence)} · ${c.setupScore}/10</span>${c.modelDecision!==c.decision?`<span class="sub amber">AI: ${esc(c.modelDecision)}</span>`:""}</td>
+    <td><b>${esc(c.symbol.replace(/USDT$/,""))}</b>${c.tier?` <span class="badge ${c.tier==="bigmove"?"confirmed":c.tier}">${c.tier==="confirmed"?"Confirmed":c.tier==="bigmove"?"Big move":"Early"}</span>`:` <span class="badge heating">${esc(c.state)}</span>`}<span class="sub">ref. R:R ${num(c.referenceRewardRisk)}</span></td>
+    <td><span class="dec ${esc(c.decision)}">${esc(LBL[c.decision]||c.decision)}</span><span class="sub">${c.probTargetPct}% target / ${c.probStopPct}% stop · EV ${c.expectedValuePct>0?"+":""}${c.expectedValuePct}%</span><span class="sub">${esc(c.confidence)} · ${c.setupScore}/10</span>${c.modelDecision!==c.decision?`<span class="sub amber">AI: ${esc(LBL[c.modelDecision]||c.modelDecision)}</span>`:""}</td>
     <td>${esc(c.reason)}${(c.guardNotes||[]).length?`<span class="sub amber">${c.guardNotes.map(esc).join(" ")}</span>`:""}</td><td class="muted">${esc(c.keyRisk)}</td>
     <td><button class="btn sm" data-an="${esc(c.symbol)}">Full analysis</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">Nothing to analyze.</td></tr>'}</tbody></table></div>
    ${(b.failed||[]).length?`<div class="callout red">No data for: ${b.failed.map(f=>esc(f.symbol)+" ("+esc(f.error)+")").join(", ")}</div>`:""}

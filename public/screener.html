@@ -474,7 +474,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    since=`<span class="track mono"><b class="${ocCls}">${ocTxt}</b>${exit} · now <b class="${col(now)}">${pct1(now)}</b> · peak ${pct1(hi)} · low ${pct1(lo)}${t.hiW!=null?" (in window)":""}</span>`;}
   const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?["Early","strong"]:e.tier==="bigmove"?["Big move","strong"]:["Setup","watch"];
   const old=v&&e.v!==v?'<span class="badge old">older logic</span>':"";
-  const ai=e.ai&&e.ai.decision?` <span class="badge ${e.ai.decision==="TAKE"?"strong":e.ai.decision==="WAIT"?"watch":"risk"}" title="${esc(e.ai.headline||"")}">AI: ${esc(e.ai.decision)}</span>`:"";
+  const ai=e.ai&&e.ai.decision?` <span class="badge ${e.ai.decision==="TAKE"?"strong":e.ai.decision==="WAIT"?"watch":"risk"}" title="${esc(e.ai.headline||"")}${e.ai.expectedValuePct!=null?" · expected "+e.ai.expectedValuePct+"% per trade":""}">AI: ${e.ai.decision==="SKIP"?"NO TRADE":esc(e.ai.decision)}</span>${e.ai.telegram&&e.ai.telegram!=="sent"?` <span class="badge risk" title="${esc(e.ai.telegram)}">Telegram failed</span>`:""}`:e.ai&&e.ai.error?` <span class="badge risk" title="${esc(e.ai.error)}">AI error</span>`:"";
   return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}</div><small class="mono">${when(e.time)}</small></div>`;
  }
  function draw(){
@@ -507,7 +507,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <div class="source-row"><span>Binance Monitoring list (never alerted)</span><b class="status-pill">${u.monitoring==null?"—":u.monitoring+" tokens"}</b></div>
    ${data.binancePausedUntil?`<div class="source-row"><span>Binance rate limit</span><b class="status-pill red">Paused · resumes ${time(data.binancePausedUntil)}</b></div>`:""}
    <div class="source-row"><span>Setup alerts</span><b class="status-pill ${cfg().setupAlerts?"green":"amber"}">${cfg().setupAlerts?"On":"Off · watchlist only"}</b></div>
-   <div class="source-row"><span>Telegram alerts</span><b class="status-pill">${data.telegramConfigured?"Configured":"Optional · env vars"}</b></div>
+   ${(()=>{const t=data.telegram||{},res=tgTest&&Date.now()-tgTest.at<60000?tgTest:null;
+    const st=!t.configured?'<span class="amber">not set up: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env</span>':t.lastError?`<span class="red">${esc(t.lastError)}</span>`:t.lastSentAt?`<span class="green">working · last message ${time(t.lastSentAt)}</span>`:`<span class="green">${t.bot?esc(t.bot)+" ready":"configured"}</span> · no alert sent yet`;
+    return `<div class="source-row"><span>Telegram (ignition alerts + AI verdicts)</span><b class="status-pill" style="white-space:normal">${st}</b></div>
+    <div class="source-row"><span>${t.sent||0} sent · ${t.failed||0} failed since start${res?` · test: <b class="${res.ok?"green":"red"}">${esc(res.text)}</b>`:""}</span><button class="btn sm" id="tgTest" ${t.configured?"":"disabled"}>Send test message</button></div>`;})()}
    <div class="source-row"><span>Last successful scan</span><b class="status-pill mono">${time(data.lastUpdated)}</b></div>`;
   const hn=data.hotNarratives||[];
   $("#narrChips").innerHTML=hn.length?hn.map(h=>`<span class="badge strong">${esc(h.name)} ${pct(h.change24hPct)}</span>`).join(""):'<span class="muted" style="font-size:12px">None above the threshold right now.</span>';
@@ -516,6 +519,17 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#events").innerHTML=ev.length?ev.slice(0,15).map(histRow).join(""):'<div class="empty">No alerts yet. A quiet feed is okay.</div>';
   drawIgnite();drawBig();drawTable();drawPerf();
  }
+
+ // ---------- Telegram test ----------
+ let tgTest=null;
+ $("#sources").addEventListener("click",async e=>{
+  if(!e.target.closest("#tgTest"))return;
+  e.target.disabled=true;e.target.textContent="Sending…";
+  try{const r=await fetch("/api/telegram/test",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});const j=await r.json();
+   tgTest={at:Date.now(),ok:!!j.sent,text:j.sent?"sent, check Telegram":(j.error||j.skipped||"not sent")};if(j.telegram)data.telegram=j.telegram;}
+  catch(err){tgTest={at:Date.now(),ok:false,text:err.message};}
+  draw();
+ });
 
  // ---------- detail modal ----------
  function openDetail(c,eyebrow){

@@ -5,6 +5,7 @@ whales_state.json
 whales_state.demo.json
 backtest_cache/
 backtest_report.json
+bigmove_report.json
 screener_state.demo.json
 # Installed packages and files the app rewrites while it runs. Already-tracked copies stay tracked until removed
 # with `git rm --cached` (see README, "Keeping git clean").

@@ -7,7 +7,8 @@
     "start": "node server.js",
     "test": "node --test",
     "screener": "node screener.js",
-    "backtest": "node screener-backtest.js"
+    "backtest": "node screener-backtest.js",
+    "bigmove-backtest": "node bigmove-backtest.js"
   },
   "dependencies": {
     "@google/genai": "^2.30.0"

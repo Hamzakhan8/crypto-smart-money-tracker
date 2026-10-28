@@ -25,7 +25,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
 
 Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition alerts (early and confirmed) and AI messages are sent: the AI's verdict on each new alert and results you send from the AI desk. Everything else stays on screen. To also send them: RADAR_TELEGRAM=1 (Market Flow Radar "Strong flow"), WHALES_TELEGRAM=1 (whale transfers), FLOWS_TELEGRAM=1 (DEX rotations). AI_REVIEW_TELEGRAM=0 stops the AI follow-ups.
 
-Tests: `npm test` checks the signal, outcome-tracking, AI safety and Early 2x scoring / tracking logic (no internet or API key needed).
+Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier and Early 2x scoring / tracking logic (no internet or API key needed).
 
 Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
    ```bash
@@ -108,6 +108,12 @@ Confirmed ignition alert: the same, plus an ignition score of 65+ (volume that k
 Every alert is tracked as a trade: take profit at +6%, stop at -3%, otherwise sell after 12 hours, judged on 1-minute candles, after 0.2% fees and 0.1% slippage. The performance panel shows "hit target" and "closed in profit" for each tier, and splits results by the AI's verdict.
 
 In a 60-day replay of 51 crypto tokens (node screener-backtest.js), the confirmed tier hit the target 31% of the time, closed in profit 51% of the time and averaged +1.09% per trade after costs (the old +4% / -2.5% / 6h exit: +0.45%). Early alerts averaged +0.19%. Past results do not guarantee future results. Settings (optional): SCREENER_TARGET_PCT=6 · SCREENER_STOP_PCT=3 · SCREENER_OUTCOME_HOURS=12 · SCREENER_SLIPPAGE_PCT=0.1 · SCREENER_EARLY_RVOL=3 · SCREENER_MAX_DAILY_RSI=65 · SCREENER_BTC_4H_MIN=-0.1 · SCREENER_EARLY_ALERTS=0 to keep only confirmed alerts · SCREENER_IGNITE_MIN_SCORE=65.
+
+Big-move tier (+40% before -10%): the same kind of 5-minute ignition (two finished 5m candles at 2× and 2.5× normal volume, price up, 52%+ aggressive buying), on a smaller coin ($1M-$10M of 24h volume) whose daily volume is already 1.5× or more its 20-day average. It has its own exit rule, +40% before -10% within 7 days, its own row in the performance panel and its own "Big-move watch" table: green = the 5m ignition fired (an alert), amber = waking up, waiting for the trigger. For this tier only, the screener also scans coins with $1M-$5M of daily volume; the quick tiers above never see them and work exactly as before.
+
+What the data says (node bigmove-backtest.js: 90 days of 5m candles for every Binance USDT pair, a signal counted only if the coin had $1M+ of volume at that moment, 0.3% costs): about 1 in 10 of these ignitions reached +40% before -10% within a week. They made money in the August-September altcoin rally (+2.5% per trade on average, about 9.5% hit the target) and lost in October (-1.8% per trade, 7.9% hit), though less than 5m ignitions in general (-3.5%). No other filter tested held up in both periods: the quick tiers' gates did worse for moves this size, and market-trend filters flipped between months. So it is a research tier, not a proven edge, and its Telegram alerts are off until you set SCREENER_BIGMOVE_ALERTS=1. Re-run node bigmove-backtest.js every month (the first run downloads 500+ coins and takes 30-60 minutes; then it is cached): it shows each month separately, so you can see when the market starts paying this kind of move again.
+
+Settings (optional): SCREENER_BIGMOVE_ALERTS=1 (Telegram) · SCREENER_BIGMOVE_TARGET_PCT=40 · SCREENER_BIGMOVE_STOP_PCT=10 · SCREENER_BIGMOVE_OUTCOME_HOURS=168 · SCREENER_BIGMOVE_MIN_VOLUME=1000000 · SCREENER_BIGMOVE_MAX_VOLUME=10000000 · SCREENER_BIGMOVE_MIN_DAILY_RVOL=1.5 · SCREENER_BIGMOVE_COOLDOWN_HOURS=24 · SCREENER_BIGMOVE=0 to switch the tier off. The AI desk keeps reviewing the quick tiers only.
 
 8. AI Trade Desk (Gemini)
 Open http://localhost:3000/ai (needs GEMINI_API_KEY in .env). It lists the coins the screener flags as igniting or heating up.

@@ -125,3 +125,33 @@ test("AI desk: Market Flow data from the Radar, or computed for coins it does no
   assert.equal(pepe.flowScore, 40); assert.match(pepe.source, /computed now/); assert.equal(pepe.smartMoneyWallets.matchingSignals.length, 1);
   assert.equal(pepe.smartMoneyWallets.matchingSignals[0].direction, "buy");
 });
+
+test("big-move tier: small coin waking up + 5m ignition; size and daily-volume bounds; reasons when not yet", () => {
+  const ok = { quoteVolume: 3e6, rvolD: 2.1, r5: 3.4, prevR5: 2.6, ret10: 0.8, buy10: 58 };
+  assert.equal(sc.classifyBigMove(ok).state, "ignited");
+  assert.equal(sc.classifyBigMove({ ...ok, quoteVolume: 0.5e6 }).state, null);           // too small to trade
+  assert.equal(sc.classifyBigMove({ ...ok, quoteVolume: 40e6 }).state, null);            // too big for a +40% move
+  const quiet = sc.classifyBigMove({ ...ok, rvolD: 1.1 });
+  assert.equal(quiet.state, null);
+  assert.match(quiet.miss[0], /20-day average/);
+  const waiting = sc.classifyBigMove({ ...ok, r5: 1.2, buy10: 45 });
+  assert.equal(waiting.state, "watch");
+  assert.ok(waiting.miss.some((m) => /5m candles/.test(m)) && waiting.miss.some((m) => /buyers/.test(m)), JSON.stringify(waiting.miss));
+  assert.equal(sc.classifyBigMove({ ...ok, ret10: -0.2 }).state, "watch");
+  assert.equal(sc.classifyBigMove({ ...ok, r5: null, prevR5: null }).miss[0], "5m check");
+  assert.equal(sc.classifyBigMove(ok, { ...sc.DEFAULT_BIGMOVE, minDailyRvol: 3 }).state, null); // settings are respected
+  assert.equal(sc.DEFAULT_BIGMOVE.targetPct, 40);
+  assert.equal(sc.DEFAULT_BIGMOVE.stopPct, 10);
+});
+
+test("big-move tracking: +40% before -10% over days on 1-minute candles, stop checked first", () => {
+  const rule = { targetPct: 40, stopPct: 10, hz: 7 * 24 * 3_600_000 }, t0 = 1_700_000_000_000;
+  const win = { entry: 1 };
+  const path = [[1, 1.05, 0.95, 1.02], [1.02, 1.2, 0.93, 1.18], [1.18, 1.41, 1.1, 1.4]].map(([o, h, l, c], i) => ({ t: t0 + 60_000 + i * 86_400_000, o, h, l, c }));
+  sc.applyCandles(win, rule, t0, path);
+  assert.equal(win.outcome, "win");
+  assert.equal(win.exitPct, 40);
+  const both = { entry: 1 };
+  sc.applyCandles(both, rule, t0, [{ t: t0 + 60_000, o: 1, h: 1.45, l: 0.88, c: 1.2 }]);
+  assert.equal(both.outcome, "loss"); // a candle touching both counts as a loss
+});

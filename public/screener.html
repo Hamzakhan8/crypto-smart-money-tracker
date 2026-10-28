@@ -94,6 +94,10 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <div class="notice" id="mwBanner" style="display:none;margin:0 18px 12px"><b>Market-wide volume surge:</b> many tokens are surging together, so the ignition bar is raised 50% to avoid alerting on a market move that is not specific to one token.</div>
  <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
 </section>
+<section class="panel" style="margin-bottom:14px" id="bigPanel">
+ <div class="section-head"><div><h2>Big-move watch: +40% before -10%</h2><p id="bigHint">Smaller coins whose daily volume is already expanding.</p></div><span class="chip" id="bigCount">—</span></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>State</th><th>Daily volume</th><th>Last two 5m candles</th><th>Moved</th><th>Market cap</th><th>Target · stop</th></tr></thead><tbody id="bigBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
+</section>
 <section class="panel">
  <div class="section-head"><div><h2>Setup leaderboard</h2><p>Daily setup quality. Click a token to see exactly how its score was built</p></div><span class="chip" id="count">—</span></div>
  <div class="section-head" style="padding-top:0"><div class="filters">
@@ -365,12 +369,30 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   }).join(""):'<tr><td colspan="7" class="empty">'+(data.warmup&&data.warmup.loaded<data.warmup.total?`Warming up: loaded daily charts for ${data.warmup.loaded} of ${data.warmup.total} tokens…`:"Nothing is igniting right now. Quiet is normal.")+'</td></tr>';
  }
 
+ // ---------- big-move watch ----------
+ function drawBig(){
+  const b=cfg().bigmove||{};
+  $("#bigPanel").style.display=b.on===false?"none":"";
+  if(b.on===false)return;
+  const rows=(data.candidates||[]).filter(c=>c.bigmove).sort((a,z)=>(z.bigmove==="ignited")-(a.bigmove==="ignited")||(z.rvol||0)-(a.rvol||0)).slice(0,20);
+  $("#bigCount").textContent=rows.length+" coins";
+  $("#bigHint").textContent=`Smaller coins (${money(b.minVolume)}-${money(b.maxVolume)} of 24h volume) whose daily volume is already ${b.minDailyRvol}×+ their 20-day average. Green = the 5-minute ignition fired too (alert); amber = waking up, waiting for the trigger. Tracked as +${b.targetPct}% before -${b.stopPct}% within ${b.outcomeHours/24} days, separately from the quick tiers. In a 90-day replay of every Binance USDT pair it made money in the Aug-Sep altcoin rally and lost in October: a research tier, not a proven edge. Telegram: ${b.telegram?"on":"off (SCREENER_BIGMOVE_ALERTS=1)"}.`;
+  $("#bigBody").innerHTML=rows.length?rows.map(c=>{const g=c.big||{},ign=c.bigmove==="ignited";
+   return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${price(c.price)}${c.core?"":" · small coin"}</span></td>
+   <td><span class="badge ${ign?"strong":"watch"}">${ign?"Big-move ignition":"Waking up"}</span>${!ign&&(c.bigMissing||[]).length?`<span class="sub amber">needs: ${esc(c.bigMissing.slice(0,2).join(", "))}</span>`:""}</td>
+   <td class="mono green">${c.rvol==null?"—":c.rvol.toFixed(2)+"×"} of 20d avg<span class="sub">${money(c.quoteVolume)} in 24h</span></td>
+   <td class="mono">${g.r5==null?"—":g.prevR5.toFixed(1)+"× → "+g.r5.toFixed(1)+"×"}<span class="sub">${g.buyRatio10m==null?"":g.buyRatio10m.toFixed(0)+"% buyers"}</span></td>
+   <td class="mono"><span class="${col(c.change24h)}">${pct1(c.change24h)}</span> 24h<span class="sub">${g.ret10m==null?"":pct1(g.ret10m)+" 10m"}</span></td>
+   <td class="mono">${money(c.marketCap)}</td>
+   <td class="mono green">${price(c.price*(1+b.targetPct/100))}<span class="sub red">stop ${price(c.price*(1-b.stopPct/100))}</span></td></tr>`;}).join(""):'<tr><td colspan="7" class="empty">No smaller coin is waking up right now.</td></tr>';
+ }
+
  // ---------- alert performance ----------
  function drawPerf(){
   const st=data.stats;
   if(!st||!st.current){$("#perfChip").textContent="no data yet";return;}
   const scope=$("#perfScope").value,blk=st[scope]||st.current,o=blk.overall;
-  $("#perfRule").textContent=`Exit rule: take profit at +${st.targetPct}%, stop at -${st.stopPct}%, otherwise sell after ${st.horizonHours}h (judged on 1-minute candles). Results are after ${st.feePct}% fees and ${st.slippagePct??0}% slippage.`;
+  $("#perfRule").textContent=`Exit rule: take profit at +${st.targetPct}%, stop at -${st.stopPct}%, otherwise sell after ${st.horizonHours}h (judged on 1-minute candles). Results are after ${st.feePct}% fees and ${st.slippagePct??0}% slippage.`+(st.bigmove&&st.bigmove.on?` Big-move alerts have their own rule: +${st.bigmove.targetPct}% before -${st.bigmove.stopPct}% within ${st.bigmove.horizonHours/24} days (their own row; not in the totals above).`:"");
   $("#perfChip").textContent=o.total+" alerts tracked";
   $("#perfNote").textContent=scope==="current"
    ?(st.olderCount?`Showing only alerts from scanner v${st.version}. ${st.olderCount} older alert${st.olderCount===1?"":"s"} used earlier logic (they included stablecoins and tokenized stocks), so they are kept out of these numbers.`:`Showing alerts from scanner v${st.version}.`)
@@ -382,7 +404,8 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   $("#pExpHint").textContent=`After ${st.costPct??st.feePct}% fees and slippage · gross ${o.expectancyPct==null?"—":pct(o.expectancyPct)}`;
   $("#pPend").textContent=o.pending;
   const tr=(name,x)=>`<tr><td><b>${name}</b></td><td class="mono">${x.resolved}</td><td class="mono green">${x.wins}</td><td class="mono red">${x.losses}</td><td class="mono">${x.flat}</td><td class="mono">${x.pending}</td><td class="mono">${x.winRatePct==null?"—":x.winRatePct.toFixed(0)+"%"}</td><td class="mono">${x.profitablePct==null?"—":x.profitablePct.toFixed(0)+"%"}</td><td class="mono ${col(x.expectancyPct)}">${x.expectancyPct==null?"—":pct(x.expectancyPct)}</td><td class="mono ${col(x.netPct)}">${x.netPct==null?"—":pct(x.netPct)}</td><td class="mono ${col(x.avgPeakPct)}">${x.avgPeakPct==null?"—":pct(x.avgPeakPct)}</td><td class="mono ${col(x.avgLowPct)}">${x.avgLowPct==null?"—":pct(x.avgLowPct)}</td></tr>`;
-  $("#perfTiers").innerHTML=tr("Confirmed ignition",blk.byTier.ignition)+(blk.byTier.early?tr("Early ignition"+(cfg().earlyAlerts===false?" (alerts off)":""),blk.byTier.early):"")+tr("Daily setup"+(cfg().setupAlerts?"":" (alerts off)"),blk.byTier.setup);
+  $("#perfTiers").innerHTML=tr("Confirmed ignition",blk.byTier.ignition)+(blk.byTier.early?tr("Early ignition"+(cfg().earlyAlerts===false?" (alerts off)":""),blk.byTier.early):"")+tr("Daily setup"+(cfg().setupAlerts?"":" (alerts off)"),blk.byTier.setup)
+   +(st.bigmove&&blk.byTier.bigmove?tr(`Big move (+${st.bigmove.targetPct}% / -${st.bigmove.stopPct}% / ${st.bigmove.horizonHours/24}d)${st.bigmove.on?"":" (off)"}`,blk.byTier.bigmove):"");
   $("#perfBuckets").innerHTML=(blk.buckets||[]).length?blk.buckets.map(b=>`<tr><td>${esc(b.name)}</td><td class="mono">${b.resolved}${b.resolved<20?' <span class="muted">(small sample)</span>':""}</td><td class="mono">${b.winRatePct==null?"—":b.winRatePct.toFixed(0)+"%"}</td><td class="mono">${b.profitablePct==null?"—":b.profitablePct.toFixed(0)+"%"}</td><td class="mono ${col(b.netPct)}">${b.netPct==null?"—":pct(b.netPct)}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Groups appear once ignition alerts from this version have resolved.</td></tr>';
  }
 
@@ -391,7 +414,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  function distText(c){const d=c.distToHigh;if(d==null)return"—";return d<0?(Math.abs(d)*100).toFixed(1)+"% below 20d high":"+"+(d*100).toFixed(1)+"% above 20d high";}
  function drawTable(){
   const q=$("#search").value.trim().toLowerCase(),ms=Number($("#minScore").value),no=$("#narrOnly").value==="1",hm=$("#hideMoved").value==="1";
-  const all=(data.candidates||[]).filter(c=>(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative)&&(!hm||!c.moved));
+  const all=(data.candidates||[]).filter(c=>c.core!==false&&(c.base.toLowerCase().includes(q)||String(c.name).toLowerCase().includes(q))&&c.score>=ms&&(!no||c.narrative)&&(!hm||!c.moved));
   const key=SORTS[$("#sortBy").value]||SORTS.score,lim=Number($("#rowLimit").value);
   const sorted=[...all].sort((a,b)=>(key(b)??-Infinity)-(key(a)??-Infinity));
   const rows=lim>0?sorted.slice(0,lim):sorted;
@@ -419,7 +442,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
    const oc=t.outcome,ocTxt=oc==="win"?"WIN":oc==="loss"?"LOSS":oc==="flat"?"FLAT":oc==="unclear"?"UNCLEAR":"PENDING",ocCls=oc==="win"?"green":oc==="loss"?"red":"muted";
    const exit=Number.isFinite(t.exitPct)?` <b class="${col(t.exitPct)}">${pct1(t.exitPct)}</b>`:"";
    since=`<span class="track mono"><b class="${ocCls}">${ocTxt}</b>${exit} · now <b class="${col(now)}">${pct1(now)}</b> · peak ${pct1(hi)} · low ${pct1(lo)}${t.hiW!=null?" (in window)":""}</span>`;}
-  const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?["Early","strong"]:["Setup","watch"];
+  const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?["Early","strong"]:e.tier==="bigmove"?["Big move","strong"]:["Setup","watch"];
   const old=v&&e.v!==v?'<span class="badge old">older logic</span>':"";
   const ai=e.ai&&e.ai.decision?` <span class="badge ${e.ai.decision==="TAKE"?"strong":e.ai.decision==="WAIT"?"watch":"risk"}" title="${esc(e.ai.headline||"")}">AI: ${esc(e.ai.decision)}</span>`:"";
   return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}</div><small class="mono">${when(e.time)}</small></div>`;
@@ -460,7 +483,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   if(data.mainUrl)$("#mainLink").href=data.mainUrl;
   const ev=data.events||[];
   $("#events").innerHTML=ev.length?ev.slice(0,15).map(histRow).join(""):'<div class="empty">No alerts yet. A quiet feed is okay.</div>';
-  drawIgnite();drawTable();drawPerf();
+  drawIgnite();drawBig();drawTable();drawPerf();
  }
 
  // ---------- detail modal ----------
@@ -489,7 +512,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  $("#modal").addEventListener("click",e=>{if(e.target===$("#modal"))closeDetail();});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail();});
  const symClick=e=>{const b=e.target.closest("[data-sym]");if(b)openDetail((data.candidates||[]).find(c=>c.symbol===b.dataset.sym));};
- $("#tbody").addEventListener("click",symClick);$("#igBody").addEventListener("click",symClick);
+ $("#tbody").addEventListener("click",symClick);$("#igBody").addEventListener("click",symClick);$("#bigBody").addEventListener("click",symClick);
  $("#events").addEventListener("click",e=>{const r=e.target.closest("[data-ev]");if(r){const ev=(data.events||[]).find(x=>x.id===r.dataset.ev);if(ev)openDetail(ev.detail,"Alert as it fired · "+when(ev.time));}});
 
  // ---------- popups ----------
@@ -498,10 +521,10 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type="sine";o.frequency.value=880;g.gain.value=.08;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+.18);}catch{}
  }
  function popup(ev,test){
-  const c=ev.detail||{},ign=ev.tier==="ignition"||ev.tier==="early",el=document.createElement("div");
+  const c=ev.detail||{},ign=ev.tier==="ignition"||ev.tier==="early",big=ev.tier==="bigmove",el=document.createElement("div");
   el.className="toast"+(test?" test":"");
-  const tag=test?"TEST ALERT":ev.tier==="early"?"EARLY IGNITION":ev.tier==="ignition"?(ev.v>=5?"CONFIRMED IGNITION":"IGNITION"):"NEW SETUP";
-  const headline=ign?(c.r5!=null?`last two 5m candles ${c.prevR5.toFixed(1)}× and ${c.r5.toFixed(1)}× normal volume · ${c.buyRatio10m==null?"—":c.buyRatio10m.toFixed(0)}% buyers`:`15m volume ${c.rvol15==null?"—":c.rvol15.toFixed(1)}× normal for this hour · ${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)}% buyers${c.persist!=null?" · held "+c.persist+"/"+c.persistOf:""}`):((c.reasons||[]).slice(0,3).join(" · ")||ev.message);
+  const tag=test?"TEST ALERT":ev.tier==="early"?"EARLY IGNITION":ev.tier==="ignition"?(ev.v>=5?"CONFIRMED IGNITION":"IGNITION"):big?"BIG-MOVE IGNITION":"NEW SETUP";
+  const headline=big&&c.big?`24h volume ${c.rvol}× its 20-day average · last two 5m candles ${c.big.prevR5}× and ${c.big.r5}× normal · ${c.big.buyRatio10m}% buyers · tracked as +${(ev.track&&ev.track.rule||{}).targetPct}% before -${(ev.track&&ev.track.rule||{}).stopPct}%`:ign?(c.r5!=null?`last two 5m candles ${c.prevR5.toFixed(1)}× and ${c.r5.toFixed(1)}× normal volume · ${c.buyRatio10m==null?"—":c.buyRatio10m.toFixed(0)}% buyers`:`15m volume ${c.rvol15==null?"—":c.rvol15.toFixed(1)}× normal for this hour · ${c.buyRatio15m==null?"—":c.buyRatio15m.toFixed(0)}% buyers${c.persist!=null?" · held "+c.persist+"/"+c.persistOf:""}`):((c.reasons||[]).slice(0,3).join(" · ")||ev.message);
   const struct=ign?structure(c):"";
   el.innerHTML=`<h4><span><span class="tag">${tag}</span> &nbsp;${esc(c.base||ev.symbol)}</span><button class="x" aria-label="Dismiss">✕</button></h4><p>${esc(headline)}</p>${struct?`<p>${esc(struct)}</p>`:""}<p class="mono">Moved so far: ${esc(moveLine(c))}</p><p class="mono">${price(c.price)}${c.rank?" · rank #"+c.rank:""} · ${ign?"ignition score "+ev.score+" · daily "+c.score:"score "+ev.score}</p>`;
   const kill=()=>el.remove();
@@ -512,7 +535,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   beep();
   if(!test){
    if(document.hidden)document.title="● "+(c.base||ev.symbol)+" "+(ign?"ignition":"setup")+" | "+baseTitle;
-   if("Notification" in window&&Notification.permission==="granted"){try{new Notification(`${c.base||ev.symbol}: ${ev.tier==="early"?"early ignition":ev.tier==="ignition"?"confirmed ignition":"early setup"}`,{body:headline+" | moved "+moveLine(c)});}catch{}}
+   if("Notification" in window&&Notification.permission==="granted"){try{new Notification(`${c.base||ev.symbol}: ${ev.tier==="early"?"early ignition":ev.tier==="ignition"?"confirmed ignition":big?"big-move ignition":"early setup"}`,{body:headline+" | moved "+moveLine(c)});}catch{}}
   }
  }
  document.addEventListener("visibilitychange",()=>{if(!document.hidden)document.title=baseTitle;});

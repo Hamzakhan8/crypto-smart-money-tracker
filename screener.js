@@ -113,6 +113,16 @@ const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 12) * 3_600_000;
 const FEE_PCT = num("SCREENER_FEE_PCT", 0.2);                  // round-trip fees subtracted from every result (0.1% in + 0.1% out)
 const SLIPPAGE_PCT = num("SCREENER_SLIPPAGE_PCT", 0.1);        // estimated fill cost per trade, also subtracted
 const COST_PCT = FEE_PCT + SLIPPAGE_PCT;
+// ---- big-move tier: a 5m ignition on a smaller coin whose daily volume is already expanding, tracked as +40% before
+// -10% within 7 days (its own exit rule). Separate from the quick tiers above, which stay as they are. bigmove-backtest.js
+// replays it on every Binance USDT pair.
+const BIG_ON = env.SCREENER_BIGMOVE !== "0";
+const BIG_ALERTS = env.SCREENER_BIGMOVE_ALERTS === "1";        // Telegram for this tier: off until enabled (see README: it lost money in Oct)
+const BIG_TARGET_PCT = num("SCREENER_BIGMOVE_TARGET_PCT", 40);
+const BIG_STOP_PCT = num("SCREENER_BIGMOVE_STOP_PCT", 10);
+const BIG_OUTCOME_MS = num("SCREENER_BIGMOVE_OUTCOME_HOURS", 168) * 3_600_000;
+const BIG_COOLDOWN_MS = num("SCREENER_BIGMOVE_COOLDOWN_HOURS", 24) * 3_600_000;
+const BIG_5M_LIMIT = 20;                                        // small coins per scan that get the 5m check
 const ROOM_REF_PCT = 4;                                         // move the "too slow" check and the score's room points were tuned on
 const LEGACY_RULE = { targetPct: 4, stopPct: 2.5, hz: 6 * 3_600_000 }; // how alerts before v6 were tracked
 const EXCLUDE_NONCRYPTO = env.SCREENER_EXCLUDE_NONCRYPTO !== "0";
@@ -136,7 +146,7 @@ export const STABLES = new Set(["USDT", "USDC", "FDUSD", "TUSD", "DAI", "USDE", 
 export const NONCRYPTO = new Set(["PAXG", "XAUT", "WBTC", "WBETH", "BNSOL", "STETH", "WSTETH", "CBBTC", "BETH", "WETH"]);
 const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
-const BN = "https://api.binance.com";
+const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, ""); // e.g. https://data-api.binance.vision
 const BF = "https://fapi.binance.com";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(here, DEMO ? "screener_state.demo.json" : "screener_state.json"); // demo never touches real history
@@ -151,10 +161,17 @@ export const DEFAULT_IGNITION = {
   btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExt: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
   earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, maxRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
 };
+export const DEFAULT_BIGMOVE = {
+  minVolume: num("SCREENER_BIGMOVE_MIN_VOLUME", 1_000_000), maxVolume: num("SCREENER_BIGMOVE_MAX_VOLUME", 10_000_000), // 24h quote volume, USDT
+  minDailyRvol: num("SCREENER_BIGMOVE_MIN_DAILY_RVOL", 1.5),    // 24h volume vs its 20-day average
+  r5: num("SCREENER_BIGMOVE_R5", 2.5), prevR5: num("SCREENER_BIGMOVE_PREV_R5", 2), minBuy: num("SCREENER_BIGMOVE_MIN_BUY", 52),
+  targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, outcomeHours: BIG_OUTCOME_MS / 3_600_000,
+};
 export const CONFIG = {
   version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
   igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, igniteMinScore: IGNITE_MIN_SCORE, btcDropPausePct: BTC_DROP_PAUSE,
   minMove15m: MIN_RET15, maxMove15m: MAX_RET15, marketWideShare: MARKET_WIDE_SHARE, minQuoteVolume: MIN_QUOTE_VOLUME,
+  bigmove: { on: BIG_ON, telegram: BIG_ALERTS, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
 };
 
 const state = {
@@ -184,6 +201,7 @@ const state = {
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+    bigmove: { on: BIG_ON, telegram: BIG_ALERTS, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
   mainUrl: env.MAIN_URL || "/", // inside server.js the Market Flow Radar is on the same server; standalone sets it below
@@ -513,6 +531,19 @@ export function classifyIgnition(f, change24h, distToHigh = 0, p = DEFAULT_IGNIT
 // Ignition confidence score, 0-100. Needs the 5m confirmation data (f.persist != null).
 // Buyer share did not separate winners from losers in the first results, so it now weighs less; price structure
 // (12h breakout, rising 4h trend) and room to move weigh more.
+// Big-move tier. x: { quoteVolume, rvolD (24h volume vs 20-day average), r5, prevR5, ret10, buy10 } from finished
+// candles. "ignited" = small coin waking up AND the 5m ignition fired; "watch" = waking up, the 5m trigger has not fired.
+export function classifyBigMove(x, p = DEFAULT_BIGMOVE) {
+  if (!x || !(x.quoteVolume >= p.minVolume) || x.quoteVolume > p.maxVolume) return { state: null, miss: [] };
+  if (!(x.rvolD >= p.minDailyRvol)) return { state: null, miss: [`24h volume ${p.minDailyRvol}x its 20-day average`] };
+  const miss = [];
+  if (x.r5 == null || x.prevR5 == null) miss.push("5m check");
+  else if (!(x.r5 >= p.r5 && x.prevR5 >= p.prevR5)) miss.push(`two 5m candles at ${p.prevR5}x and ${p.r5}x normal volume`);
+  if (!(x.ret10 > 0)) miss.push("price turning up");
+  if (!(x.buy10 >= p.minBuy)) miss.push(`buyers ${p.minBuy}%+`);
+  return { state: miss.length ? "watch" : "ignited", miss };
+}
+
 export function ignitionScore(f, ctxScore, funding, narrative, p = DEFAULT_IGNITION) {
   const parts = {
     volume: { pts: 0, max: 20 }, persistence: { pts: 0, max: 15 }, buyers: { pts: 0, max: 10 }, structure: { pts: 0, max: 20 },
@@ -544,11 +575,15 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
   const priceChg = n(tk.priceChangePercent) || 0;
   const s = scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg);
   if (fast) fast.rsiD = t.rsi;
-  const ig = classifyIgnition(fast, priceChg, t.distToHigh);
+  // coins under SCREENER_MIN_QUOTE_VOLUME are scanned for the big-move tier only; the quick tiers never see them
+  const core = quoteVol >= MIN_QUOTE_VOLUME;
+  const ig = core ? classifyIgnition(fast, priceChg, t.distToHigh) : { state: null, moved: false, movedWhy: [], miss: [], slow: false };
+  const e5 = fast?.early ?? fast?.bigEarly ?? null;
+  const bm = BIG_ON && fast ? classifyBigMove({ quoteVolume: quoteVol, rvolD: t.rvol, r5: e5?.r5, prevR5: e5?.prevR5, ret10: e5?.ret10, buy10: e5?.buy10 }) : { state: null, miss: [] };
   let score = s.score, label = labelFor(score);
   if (ig.moved) { score = Math.min(score, MOVED_SCORE_CAP); label = "Already moved"; }
   let igs = null;
-  if (fast && fast.persist != null && !ig.moved && !ig.slow) igs = ignitionScore(fast, score, funding, narrative);
+  if (core && fast && fast.persist != null && !ig.moved && !ig.slow) igs = ignitionScore(fast, score, funding, narrative);
   return {
     symbol: base + "USDT", base, name: info?.name || base, rank: info?.rank ?? null, marketCap: info?.mc ?? null,
     monitoring: isMonitoring(info), seed: isSeed(info),
@@ -571,6 +606,8 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
     closePos5: round(fast?.early?.closePos5, 2), btc4h: round(fast?.btc4h, 2),
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
     igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
+    core, bigmove: bm.state, bigMissing: bm.miss,
+    big: bm.state ? { r5: round(e5?.r5, 2), prevR5: round(e5?.prevR5, 2), ret10m: round(e5?.ret10, 2), buyRatio10m: round(e5?.buy10, 1) } : null,
     rotation: rotation ? rotation.context(base) : null,
     score, label, reasons: s.reasons, parts: s.parts, updatedAt: Date.now(),
   };
@@ -912,7 +949,8 @@ async function fastLayer(ready) {
   if (w15.error) state.errors["15m windows"] = w15.error; else delete state.errors["15m windows"];
   let seasonal = 0, slow = 0;
   const slowBelow = MIN_RANGE_RATIO * ROOM_REF_PCT;
-  for (const [base, info] of ready) {
+  const core = new Set(ready.filter(([, , tk]) => (n(tk.quoteVolume) || 0) >= MIN_QUOTE_VOLUME).map(([b]) => b));
+  for (const [base, info, tk] of ready) {
     const w = w15.map.get(base + "USDT");
     const d = dailyCache.get(base);
     const avgDaily = d ? mean(d.qvols.slice(-20)) : 0;
@@ -925,19 +963,21 @@ async function fastLayer(ready) {
       avgDaily, hourly, seasonal: !!hourly, rvol15: exp15 > 0 ? Number(w.quoteVolume) / exp15 : 0,
       ret15: Number(w.priceChangePercent), spreadBps: spreads.get(base) ?? null, range6h: hourly?.range6h ?? null,
       monitoring: !ALLOW_MONITORING && isMonitoring(info),
+      qv24: n(tk?.quoteVolume) || 0, rvolD: avgDaily > 0 ? (n(tk?.quoteVolume) || 0) / avgDaily : null,
     });
   }
   state.warmup.seasonal = seasonal;
   state.universe.slow = slow;
   // Market-wide check: if many tokens surge together, it is a market move, not a token-specific ignition.
-  const hotShare = out.size ? [...out.values()].filter((f) => f.rvol15 >= 2).length / out.size : 0;
+  const coreF = [...out].filter(([b]) => core.has(b)).map(([, f]) => f);
+  const hotShare = coreF.length ? coreF.filter((f) => f.rvol15 >= 2).length / coreF.length : 0;
   const marketWide = hotShare >= MARKET_WIDE_SHARE;
   state.breadth = { hotShare: round(hotShare, 3), marketWide };
   const btc15 = out.get("BTC")?.ret15 ?? 0;
   const regimeOff = REGIME_GATE && rotation?.riskOff() ? rotation.regimeLabel() : null;
   for (const f of out.values()) { f.marketWide = marketWide; f.rs15 = f.ret15 - btc15; f.regimeOff = regimeOff; }
 
-  const heating = [...out.entries()].filter(([, f]) => f.rvol15 >= 2 && !(f.range6h != null && f.range6h < slowBelow))
+  const heating = [...out.entries()].filter(([b, f]) => core.has(b) && f.rvol15 >= 2 && !(f.range6h != null && f.range6h < slowBelow))
     .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, 60);
   if (heating.length) {
     const [w1h, w4h] = await Promise.all([windowTickers([...new Set([...heating.map(([b]) => b + "USDT"), "BTCUSDT"])], "1h"),
@@ -956,6 +996,14 @@ async function fastLayer(ready) {
     const strong = heating.filter(([, f]) => f.ret15 <= MAX_RET15 && (f.ret1h ?? 0) <= MAX_RET1H && f.range6h != null &&
       (f.spreadBps == null || f.spreadBps <= MAX_SPREAD_BPS)).slice(0, 20);
     await mapLimit(strong, 4, async ([base, f]) => { await analyze5m(base, f); });
+  }
+  // Big-move tier: 5m check for coins in its volume band whose daily volume is expanding. The result goes into
+  // f.bigEarly (never f.early), so the quick tiers classify every coin exactly as before.
+  if (BIG_ON) {
+    const P = DEFAULT_BIGMOVE, done = new Set(heating.filter(([, f]) => f.early).map(([b]) => b));
+    const big = [...out.entries()].filter(([b, f]) => !done.has(b) && f.hourly && f.qv24 >= P.minVolume && f.qv24 <= P.maxVolume && f.rvolD >= P.minDailyRvol && f.rvol15 >= 1.5)
+      .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, BIG_5M_LIMIT);
+    await mapLimit(big, 4, async ([base, f]) => { const g = { hourly: f.hourly, avgDaily: f.avgDaily }; await analyze5m(base, g); f.bigEarly = g.early || null; });
   }
   return out;
 }
@@ -1010,19 +1058,21 @@ function updateEvents(results) {
   const now = Date.now();
   const fresh = [];
   const fire = (c, tier, score, message, lines) => {
+    const rule = tier === "bigmove" ? { targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hz: BIG_OUTCOME_MS } : { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS };
     fresh.push({
       id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score,
-      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : c.label,
-      time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price,
-        rule: { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS } },
+      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : tier === "bigmove" ? "Big-move ignition" : c.label,
+      time: now, message, detail: c, track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
-    if (!DEMO && tier !== "setup" && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) { // only ignition alerts go to Telegram
+    if (!DEMO && tier !== "setup" && (tier !== "bigmove" || BIG_ALERTS) && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) { // only ignition alerts go to Telegram
       const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
+        : tier === "bigmove" ? `BIG-MOVE IGNITION: ${c.base} (small coin waking up; research target +${BIG_TARGET_PCT}%, stop -${BIG_STOP_PCT}%)`
         : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)`;
+      const hz = rule.hz / 3_600_000;
       sendTelegram(`${head}\n` +
-        `Moved so far: ${sgn(c.ret15m)} 15m | ${sgn(c.ret1h)} 1h | ${sgn(c.change24h)} 24h\n` +
-        lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${TARGET_PCT}% before -${STOP_PCT}% within ${OUTCOME_MS / 3_600_000}h.` +
+        `Moved so far: ${sgn(c.ret15m ?? c.big?.ret10m)} ${c.ret15m != null ? "15m" : "10m"} | ${sgn(c.change24h)} 24h\n` +
+        lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${rule.targetPct}% before -${rule.stopPct}% within ${hz >= 48 ? hz / 24 + " days" : hz + "h"}.` +
         "\nSet entry, stop-loss and target first. Research signal only, not financial advice.");
     }
   };
@@ -1051,12 +1101,25 @@ function updateEvents(results) {
         }
       });
   }
-  // 2) Setup tier (off unless SCREENER_SETUP_ALERTS=1): strong daily context that has NOT already moved.
+  // 2) Big-move tier: own exit rule and cooldown, independent of the quick tiers (a coin can be in both).
+  if (BIG_ON && exclusionsReady) {
+    const cdB = DEMO ? 90_000 : BIG_COOLDOWN_MS;
+    const bigLines = (c) => [
+      `24h volume ${c.rvol}x its 20-day average (${Math.round(c.quoteVolume / 1e5) / 10}M USDT): a smaller coin waking up`,
+      `last two 5m candles ${c.big.prevR5}x and ${c.big.r5}x normal volume for this hour, ${c.big.buyRatio10m}% aggressive buying`,
+      c.marketCap ? `market cap ~$${Math.round(c.marketCap / 1e6)}M` : null, `entry ${c.price}, target ${round(c.price * (1 + BIG_TARGET_PCT / 100), 8)}, stop ${round(c.price * (1 - BIG_STOP_PCT / 100), 8)}`,
+    ].filter(Boolean);
+    results.filter((c) => c.bigmove === "ignited" && c.big).sort((a, b) => (b.rvol ?? 0) - (a.rvol ?? 0)).slice(0, 3).forEach((c) => {
+      if (now - (lastAlertAt.get(`bigmove:${c.symbol}`) || 0) < cdB) return;
+      fire(c, "bigmove", Math.round(c.score), `${c.base} big-move ignition (24h volume ${c.rvol}x normal)`, bigLines(c));
+    });
+  }
+  // 3) Setup tier (off unless SCREENER_SETUP_ALERTS=1): strong daily context that has NOT already moved.
   if (SETUP_ALERTS) {
     const cd2 = DEMO ? 90_000 : COOLDOWN_MS;
     for (const c of results) { // sorted by score, high to low
       if (c.score < MIN_SCORE_ALERT) break;
-      if (c.moved || fresh.length >= MAX_ALERTS_PER_SCAN || fresh.some((f) => f.symbol === c.symbol)) continue;
+      if (!c.core || c.moved || fresh.length >= MAX_ALERTS_PER_SCAN || fresh.some((f) => f.symbol === c.symbol)) continue;
       if (now - (lastAlertAt.get(`setup:${c.symbol}`) || 0) < cd2) continue;
       fire(c, "setup", c.score, `${c.base} early setup (score ${c.score}/100)`, c.reasons);
     }
@@ -1064,7 +1127,8 @@ function updateEvents(results) {
   if (fresh.length) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
-    for (const ev of fresh) if (ev.tier !== "setup") for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+    // AI review: quick tiers only (the AI desk's plans are built around their +target / -stop rule)
+    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early") for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
 }
 
@@ -1090,7 +1154,7 @@ function updateTracking(priceByBase) {
     const t = e.track;
     if (!t || !e.detail || !t.entry) continue;
     const rule = ruleOf(e), p = priceByBase.get(e.detail.base), age = now - e.time;
-    if (age <= DAY_MS && Number.isFinite(p)) {
+    if (age <= Math.max(DAY_MS, rule.hz) && Number.isFinite(p)) {
       t.last = p; t.high = Math.max(t.high, p); t.low = Math.min(t.low, p); changed = true;
     }
     if (t.outcome) continue;
@@ -1191,9 +1255,9 @@ const BUCKETS = [
 function statsBlock(evs) {
   const ig = evs.filter((e) => e.tier === "ignition" || e.tier === "early");
   return {
-    overall: summarize(evs),
+    overall: summarize(evs.filter((e) => e.tier !== "bigmove")), // quick tiers; the big-move tier has its own rule and row
     byTier: { ignition: summarize(evs.filter((e) => e.tier === "ignition")), early: summarize(evs.filter((e) => e.tier === "early")),
-      setup: summarize(evs.filter((e) => e.tier === "setup")) },
+      setup: summarize(evs.filter((e) => e.tier === "setup")), bigmove: summarize(evs.filter((e) => e.tier === "bigmove")) },
     buckets: BUCKETS.map(([name, fn]) => {
       const s = summarize(ig.filter((e) => e.detail && fn(e.detail)));
       return { name, resolved: s.resolved, winRatePct: s.winRatePct, profitablePct: s.profitablePct, expectancyPct: s.expectancyPct, netPct: s.netPct };
@@ -1204,6 +1268,7 @@ function computeStats() {
   const evs = state.events;
   return {
     targetPct: TARGET_PCT, stopPct: STOP_PCT, horizonHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT, costPct: round(COST_PCT, 2), version: LOGIC_VERSION,
+    bigmove: { on: BIG_ON, targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, horizonHours: BIG_OUTCOME_MS / 3_600_000 },
     olderCount: evs.filter((e) => e.v !== LOGIC_VERSION).length,
     current: statsBlock(evs.filter((e) => e.v === LOGIC_VERSION)), all: statsBlock(evs),
   };
@@ -1227,7 +1292,7 @@ async function scan() {
   for (const [base, info] of universe) {
     const tk = tickers.get(base);
     if (!tk || BLOCKLIST.has(base)) continue;
-    if ((n(tk.quoteVolume) || 0) < MIN_QUOTE_VOLUME) continue;
+    if ((n(tk.quoteVolume) || 0) < (BIG_ON ? Math.min(MIN_QUOTE_VOLUME, DEFAULT_BIGMOVE.minVolume) : MIN_QUOTE_VOLUME)) continue;
     if (STABLES.has(base) || info.tags.some((t) => /stable/i.test(t)) ||
       (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || isNonCryptoInfo(info)))) { excluded++; continue; }
     eligible.push([base, info, tk]);
@@ -1256,16 +1321,17 @@ async function scan() {
   pre.sort((a, b) => b.c.score - a.c.score);
 
   // Add open-interest change for the best candidates only.
-  const deep = pre.slice(0, DEEP_SCAN_LIMIT).filter((p) => funding.has(p.base));
+  const deep = pre.filter((p) => p.c.core).slice(0, DEEP_SCAN_LIMIT).filter((p) => funding.has(p.base));
   await mapLimit(deep, 4, async (p) => {
     const oi = await oiChange24h(p.base);
     p.c = buildCandidate(p.base, p.info, p.tk, p.t, p.nar, funding.get(p.base), oi, p.f);
   });
 
   const results = pre.map((p) => p.c).sort((a, b) => b.score - a.score);
-  const top = results.slice(0, 150), inTop = new Set(top.map((c) => c.symbol));
-  state.candidates = [...top, ...results.filter((c) => c.ignition && !inTop.has(c.symbol))];
-  state.universe = { binance: tickers.size, eligible: eligible.length, excluded, slow: state.universe.slow,
+  const top = results.filter((c) => c.core).slice(0, 150), inTop = new Set(top.map((c) => c.symbol));
+  state.candidates = [...top, ...results.filter((c) => (c.ignition || c.bigmove) && !inTop.has(c.symbol))];
+  const smallCoins = eligible.filter(([, , tk]) => (n(tk.quoteVolume) || 0) < MIN_QUOTE_VOLUME).length;
+  state.universe = { binance: tickers.size, eligible: eligible.length - smallCoins, smallCoins, excluded, slow: state.universe.slow,
     rankedBy: meta.coins.size ? "market cap" : "24h volume", monitoring: ready.filter(([, info]) => isMonitoring(info)).length };
   state.metaStatus = metaStatus();
   state.status = ready.length === 0 && eligible.length ? "warming_up" : "connected";

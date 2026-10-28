@@ -39,13 +39,22 @@ console.log(`\n\nBTC ROTATION BACKTEST · history ${r.historyFrom} to ${r.asOf} 
 console.log("BTC NOW");
 console.log(`  ${r.regimeNow ? r.regimeNow.label + ": " + r.regimeNow.desc : "not enough history"}`);
 if (r.btc) console.log(`  7d ${pct(r.btc.ret7)} · 30d ${pct(r.btc.ret30)} · vs 20d avg ${pct(r.btc.vsSma20)} · vs 50d avg ${pct(r.btc.vsSma50)}`);
+const rs = r.regimeStats;
+if (rs?.now) console.log(`  Day ${rs.ageDays} of this regime; it usually lasts ${rs.medianDays[rs.now] ?? "?"} days (median). ${HOLD} days later it was: ${Object.entries(rs[`in${HOLD}Days`] || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${REGIMES[k].label.replace("BTC ", "")} ${v}%`).join(", ")}`);
+const a = r.altSeason;
+if (a) console.log(`\nALT SEASON METER: ${a.label}. ETH/BTC ${pct(a.ethBtc30)} in 30 days (trend ${a.ethTrend > 0 ? "up" : a.ethTrend < 0 ? "down" : "flat"}) · median narrative ${pct(a.altVsBtc30)} vs BTC over 30 days · ${a.breadthPct ?? "—"}% of coins above their 20-day average`);
 console.log(`  Time BTC spent in each regime (weeks): ${REGIME_KEYS.map((k) => `${(REGIMES[k].label.replace("BTC ", "")[0].toUpperCase() + REGIMES[k].label.replace("BTC ", "").slice(1))} ${r.heatmap.regimeWeeks[k]}`).join(" · ")}`);
 
 if (r.backtest) {
-  const b = r.backtest, W = [50, 9, 8, 9, 7, 10, 8];
+  const b = r.backtest, W = [58, 9, 8, 9, 7, 10, 8, 10, 10];
   console.log(`\nSTRATEGIES, ${b.from} to ${b.to} (${b.weeks} rebalances; regime statistics only from weeks that had finished)`);
-  console.log(row(["Strategy", "Total", "Yearly", "Worst DD", "Sharpe", "Beat BTC", "Cash"], W));
-  for (const s of b.strategies) console.log(row([s.label, pct(s.totalPct, 0), pct(s.cagrPct, 0), pct(s.maxDdPct, 0), s.sharpe, s.beatBtcPct + "% wk", s.cashPct + "%"], W));
+  console.log(row(["Strategy", "Total", "Yearly", "Worst DD", "Sharpe", "Beat BTC", "Cash", "Older half", "Newer half"], W));
+  for (const s of b.strategies) console.log(row([s.label, pct(s.totalPct, 0), pct(s.cagrPct, 0), pct(s.maxDdPct, 0), s.sharpe, s.beatBtcPct + "% wk", s.cashPct + "%", pct(s.olderPct, 0), pct(s.newerPct, 0)], W));
+  for (const v of b.strategies.filter((s) => /^(combined|tokens)./.test(s.key))) {
+    const base = b.strategies.find((s) => s.key === v.key.replace(/(Alt|Flow)$/, ""));
+    const both = v.olderPct > base.olderPct && v.newerPct > base.newerPct;
+    console.log(`  ${v.label}: ${both ? "better than the current ranking in BOTH halves" : "not better in both halves"} (older ${pct(v.olderPct, 0)} vs ${pct(base.olderPct, 0)}, newer ${pct(v.newerPct, 0)} vs ${pct(base.newerPct, 0)})`);
+  }
 } else console.log("\nNot enough history to backtest (needs about 300 days of narrative data).");
 
 console.log(`\nBEST NARRATIVE PER BTC REGIME (average ${HOLD}-day return vs BTC, all history)`);
@@ -57,9 +66,10 @@ for (const k of REGIME_KEYS) {
 }
 
 console.log(`\nNARRATIVE RANKING NOW (${r.regimeNow?.label ?? "—"})`);
-const W3 = [4, 18, 6, 14, 8, 10, 9, 8];
-console.log(row(["#", "Narrative", "Score", "This regime", "Weeks", "14d vs BTC", "Breadth", "Trend"], W3));
-for (const x of r.ranking.slice(0, 12)) console.log(row([x.rank, x.name, x.score, pct(x.regimeStat?.avgPct, 2) + (x.regimeStat ? ` (${x.regimeStat.hitPct}%)` : ""), x.regimeStat?.weeks, pct(x.mom14), x.breadthPct + "%", x.trend ? "up" : "down"], W3));
+const W3 = [4, 18, 6, 14, 8, 10, 9, 8, 12, 9];
+console.log(row(["#", "Narrative", "Score", "This regime", "Weeks", "14d vs BTC", "Breadth", "Trend", "Money flow", "Stage"], W3));
+for (const x of r.ranking.slice(0, 12)) console.log(row([x.rank, x.name, x.score, pct(x.regimeStat?.avgPct, 2) + (x.regimeStat ? ` (${x.regimeStat.hitPct}%)` : ""), x.regimeStat?.weeks, pct(x.mom14), x.breadthPct + "%", x.trend ? "up" : "down",
+  x.volShare7Pct == null ? "—" : `${x.volShare7Pct}% ${x.flow >= 1.1 ? "↑" : x.flow <= 0.9 ? "↓" : "→"}`, x.stage], W3));
 console.log(`\nThe backtested rule would hold now: narratives ${r.holdingsNow.combined.join(", ")} · coins ${r.holdingsNow.tokens.join(", ")}`);
 
 console.log("\nTOKEN PICKS IN THE TOP 3 NARRATIVES (daily price action)");

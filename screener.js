@@ -224,6 +224,8 @@ const rotation = LIBRARY_ONLY ? null : createRotation({
   getNarratives: (prices) => binanceNarratives(prices), demo: DEMO, days: Math.min(2000, Math.max(300, num("ROTATION_DAYS", 1000))), holdDays: num("ROTATION_HOLD_DAYS", 7), feePct: FEE_PCT,
   only: (env.ROTATION_NARRATIVES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
   startDelayMs: num("ROTATION_START_DELAY_SECONDS", 45) * 1000, usedWeight: () => binanceWeight,
+  recordFile: path.join(here, DEMO ? "rotation_record.demo.json" : "rotation_record.json"), // daily coin lists + live weekly picks
+  sendTelegram: (t) => tgSend(t), telegramOn: env.ROTATION_TELEGRAM === "1",                // regime / holdings change message: off by default
 });
 
 // ───────────────────────────── utilities ─────────────────────────────

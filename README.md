@@ -27,7 +27,7 @@ Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition 
 
 Not receiving messages? When `node server.js` starts it prints a "Telegram:" line: "bot @yourbot, sending to chat ..." means the token works; anything else says what is wrong. The screener's Data health panel shows the status, the last message and the last error, and has a "Send test message" button. Common fixes: a wrong token (copy it again from @BotFather); "chat not found" (open your bot in Telegram and press Start, check TELEGRAM_CHAT_ID; a group id starts with -100 and the bot must be in the group); a blocked bot (press Start / Unblock). Restart the server after editing .env. Also remember that ignition alerts are rare (often one or two a day across all coins), AI follow-ups need GEMINI_API_KEY and arrive only after an ignition alert, and big-move alerts reach Telegram only with SCREENER_BIGMOVE_ALERTS=1.
 
-Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier and Early 2x scoring / tracking logic (no internet or API key needed).
+Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier, Early 2x scoring / tracking and BTC rotation logic (no internet or API key needed).
 
 Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
    ```bash
@@ -154,6 +154,29 @@ Settings (optional, in .env): EARLY2X_MCAP_MIN=10000000 · EARLY2X_MCAP_PREFERRE
 Telegram: off until you set EARLY2X_ALERTS=1. Then only new high-priority candidates are sent, once per coin per 24 hours unless the state improves. No trades are ever placed.
 
 Data and storage: snapshots and tracking live in early2x_state.json (kept out of git). The file carries a version number and is upgraded automatically when the format changes, so there is no database or migration to run; delete the file to start the record again. GET /api/early2x/signals returns every snapshot with its tracking, for your own analysis. CoinGecko's free API is slow, so supply data arrives a few minutes after the first start (until then it earns no points).
+
+10. BTC rotation (narratives by BTC regime)
+Open http://localhost:3000/screener#rotation. Every day BTC's daily chart is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on), and is ranked by how it did against BTC in past weeks with the same regime (50%), its 14-day strength vs BTC now (30%) and the share of its coins above their 20-day average (20%). The rule holds the top 2 narratives in an uptrend (or up to 5 coins scoring 65+ inside them), re-decided every 7 days, and cash while BTC is in a downtrend.
+
+This week: what the rule holds, the coins, the next decision date, the last time the holdings changed, the BTC regime with how many days it has lasted, how long it usually lasts and where BTC was 7 days later in past days like this.
+
+Alt season meter: is money moving from BTC into altcoins? Three signals vote: the ETH/BTC trend (above its 50-day average with a rising 20-day average, or the opposite), the typical narrative's 30-day return vs BTC (up from +2%, down from -2%) and the share of all narrative coins above their 20-day average (up from 55%, down from 35%). Two votes the same way give "Alts leading" or "BTC leading", otherwise "Mixed". The last 120 days are shown as a strip.
+
+Money flow and stage: each narrative's share of all altcoin trading volume over 7 days, with an arrow comparing it to its 30-day share, and a life-cycle stage: early (more coins turning up, few at 30-day highs yet, volume following), running, late (most coins at 30-day highs, or money leaving a strong run), cooling, quiet. Both are shown for context; neither is part of the score (see below).
+
+How BTC regimes behave: how long each regime usually lasts (median days) and which regimes usually came right after it.
+
+Forward record: every 7 days the screener saves what the rule holds with that day's prices and judges it 7 days later with prices that came afterwards, after fees. Unlike the backtest it cannot be fitted to the past, and a coin that is later delisted keeps its last price instead of vanishing. It also saves the coins in each narrative every day, so later backtests can use the lists as they really were (today's lists leave out coins that died, which flatters every narrative). Both live in rotation_record.json (kept out of git); demo mode does not record.
+
+Backtest (node rotation-backtest.js, or the Backtest panel): each strategy is also shown on the older and the newer half of the weeks, because a change is only worth making if it wins in both. On real Binance data from Oct 2024 to Oct 2026 (107 weekly decisions, 11 narratives, 99 coins, 0.2% per round trip):
+- Rotation ranking (top 2 narratives): +28% (older half +45%, newer half -12%); Hold BTC: +28% (+83% / -30%); token picks: +136% (+50% / +57%).
+- Variant, hold BTC while the alt season meter says "BTC leading": +37% (+53% / -11%), better in both halves but by only 1 point in the newer half, so it is shown next to the rule ("Variant that holds BTC...") and not used.
+- Variant, money flow as a fifth of the score: +4% (+27% / -18%), worse in both halves, so money flow is shown but not scored.
+- Variant, token picks with the same BTC-leading filter: +113% (+36% / +57%), worse.
+- One week decides most of it: token picks made +159% in a single week of a meme pump in April 2026 (币安人生 2.5×, ORDI 1.9×) and are -9% without that week; the rotation ranking is -5% without its best week. So none of these is a proven edge.
+Narrative lists are today's, so these numbers are also flattered by survivorship; the forward record is the honest test.
+
+Settings (optional, in .env): ROTATION_TELEGRAM=1 sends a message when the BTC regime or the holdings change (off by default; ignition and AI stay the only default Telegram messages) · ROTATION_HOLD_DAYS=7 · ROTATION_DAYS=1000 (days of history) · ROTATION_NARRATIVES=AI,Meme (only these).
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

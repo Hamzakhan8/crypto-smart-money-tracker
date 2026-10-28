@@ -22,7 +22,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .btn:focus-visible,.coin-link:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 /* detail modal */
 .modal-backdrop{position:fixed;inset:0;z-index:20;background:rgba(3,7,12,.82);display:none;align-items:center;justify-content:center;padding:18px}.modal-backdrop.open{display:flex}.modal{width:min(760px,100%);max-height:92vh;overflow:auto;background:#0f1722;border:1px solid #33465c;border-radius:18px;box-shadow:0 24px 90px #000a}.modal-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:20px;border-bottom:1px solid var(--line)}.modal-head h2{margin:0;font-size:22px}.modal-head p{color:var(--muted);margin:6px 0 0;font-size:12px}
-.book-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 20px}.book-stat{background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:12px}.book-stat span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}.book-stat strong{display:block;font-size:15px;margin-top:7px}
+.book-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 20px}.book-stat{background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:12px}.book-stat>span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}.book-stat strong{display:block;font-size:15px;margin-top:7px}.book-stat small{display:block;color:var(--muted);font-size:11px;margin-top:4px;line-height:1.4}
 .sec{padding:6px 20px 0;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
 .parts{display:grid;gap:10px;padding:10px 20px 8px}.part{display:grid;grid-template-columns:105px 1fr 56px;gap:10px;align-items:center;font-size:12px}.part .bar{height:7px;background:#263443;border-radius:6px;overflow:hidden}.part .bar i{display:block;height:100%;background:var(--green)}.part .bar i.neg{background:var(--red)}.part b{text-align:right}
 .reasons{margin:8px 0 0;padding:0 20px 8px 38px;line-height:1.8}.modal-foot{padding:8px 20px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:11px}
@@ -39,6 +39,13 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .chart{padding:4px 18px 6px;overflow-x:auto}.chart svg{width:100%;min-width:620px;height:auto;display:block}.legend{display:flex;flex-wrap:wrap;gap:14px;padding:0 18px 10px;font-size:12px;color:var(--muted)}.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .heat td.cell{text-align:center;font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}.heat td.cell small{display:block;font-size:10px;opacity:.75;margin-top:2px}.heat th.now{color:var(--green)}.heat td.lowconf{opacity:.55}
 .yes{color:var(--green);font-weight:800}
+.regime-age{margin-top:12px!important;color:var(--ink)!important;font-size:13px}.regime-age b{font-weight:800}
+.week{padding:0 18px 18px;display:grid;gap:14px}.week .big{font-size:22px;font-weight:800;letter-spacing:-.02em}.week small{display:block;color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5}.week .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.week .variant{border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--muted);line-height:1.55}.week .variant b{color:var(--ink)}
+.altstate{display:inline-block;font-size:20px;font-weight:800;letter-spacing:-.02em;padding:6px 12px;border-radius:10px;border:1px solid var(--line)}.altstate.altsLead{color:var(--green);border-color:#236a53;background:#102a25}.altstate.mixed{color:var(--amber);border-color:#6d5621;background:#2b2414}.altstate.btcLeads{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.votes{display:grid;gap:8px;margin-top:12px}.vote{display:grid;grid-template-columns:22px 1fr auto;gap:10px;align-items:center;background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px}.vote .v{font-weight:800;text-align:center}.vote small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.altbar{display:flex;gap:1px;height:18px;margin-top:14px;border-radius:5px;overflow:hidden}.altbar i{flex:1;background:var(--line)}.altbar i.altsLead{background:var(--green)}.altbar i.mixed{background:#6d5621}.altbar i.btcLeads{background:var(--red)}.altbar-l{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:5px}
+.stage{display:inline-block;font-size:10px;font-weight:800;border-radius:7px;padding:4px 7px;border:1px solid var(--line);color:var(--muted)}.stage.early{color:var(--green);border-color:#236a53;background:#102a25}.stage.running{color:var(--blue);border-color:#2c4a77;background:#111d30}.stage.late{color:var(--amber);border-color:#6d5621;background:#2b2414}.stage.cooling{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.changes{padding:0 18px 16px;font-size:12px;color:var(--muted);line-height:1.8}.changes b{color:var(--ink)}
 /* whale moves view */
 .lower>*{min-width:0}  /* let side-by-side panels shrink on phones; wide tables scroll inside their panel */
 .cat{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:6px;padding:2px 5px;margin-left:5px;color:var(--muted);vertical-align:1px}
@@ -164,32 +171,42 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
  <section class="panel regime-hero">
-  <div><div class="lbl">BTC regime now <span id="rAsOf"></span></div><h2 id="rRegime">Loading history…</h2><p id="rRegimeDesc">The first load downloads daily candles for every narrative coin and takes a few minutes. It refreshes once a day after the daily close.</p><div class="regime-strip" id="rStrip"></div></div>
+  <div><div class="lbl">BTC regime now <span id="rAsOf"></span></div><h2 id="rRegime">Loading history…</h2><p id="rRegimeDesc">The first load downloads daily candles for every narrative coin and takes a few minutes. It refreshes once a day after the daily close.</p><p class="regime-age" id="rRegimeAge"></p><div class="regime-strip" id="rStrip"></div></div>
   <div class="regime-stats" id="rBtcStats"></div>
  </section>
  <div class="lower" style="margin-top:0">
-  <section class="panel"><div class="section-head"><div><h2>What the backtested rule holds now</h2><p>Re-decided every <span id="rHoldDays">7</span> days. Cash when BTC is in a downtrend.</p></div></div><div class="hold" id="rHold"></div></section>
+  <section class="panel"><div class="section-head"><div><h2>This week</h2><p>What the backtested rule holds. Re-decided every <span id="rHoldDays">7</span> days; cash when BTC is in a downtrend.</p></div></div><div class="week" id="rWeek"></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Alt season meter</h2><p>Is money moving from BTC into altcoins? Three signals vote: ETH/BTC trend, the typical narrative vs BTC, and how many coins are above their 20-day average.</p></div></div><div class="week" id="rAlt"></div></section>
+ </div>
+ <div class="lower">
+  <section class="panel"><div class="section-head"><div><h2>How BTC regimes behave</h2><p>From the daily history: how long each regime usually lasts and what came right after it.</p></div></div><div class="table-wrap"><table class="table cards"><thead><tr><th>BTC regime</th><th>Usually lasts</th><th>What came next</th></tr></thead><tbody id="rRegStats"></tbody></table></div></section>
   <section class="panel"><div class="section-head"><div><h2>Best narrative in each BTC regime</h2><p>Average return vs BTC over the following week, all history</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>BTC regime</th><th>Narrative</th><th>Avg vs BTC</th><th>Hit</th><th>Weeks</th><th>Confidence</th></tr></thead><tbody id="rBest"></tbody></table></div></section>
  </div>
  <section class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>Narrative ranking</h2><p>Score = 50% how it did vs BTC in past weeks with this same BTC regime + 30% its 14-day strength vs BTC now + 20% share of its coins above their 20-day average. Only narratives in an uptrend can be held.</p></div><span class="chip" id="rRankCount">—</span></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>#</th><th>Narrative</th><th>Score</th><th>In this regime (history)</th><th>14d vs BTC</th><th>30d</th><th>Coins above 20d avg</th><th>Trend</th><th>Held</th></tr></thead><tbody id="rRank"></tbody></table></div>
+  <div class="section-head"><div><h2>Narrative ranking</h2><p>Score = 50% how it did vs BTC in past weeks with this same BTC regime + 30% its 14-day strength vs BTC now + 20% share of its coins above their 20-day average. Only narratives in an uptrend can be held. Money flow = its share of all altcoin trading volume over 7 days, with the arrow comparing it to 30 days (shown, not scored: adding it made the backtest worse). Stage: early (more coins turning up, few at highs yet), running, late (most coins at 30-day highs or money leaving a strong run), cooling, quiet.</p></div><span class="chip" id="rRankCount">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>#</th><th>Narrative</th><th>Score</th><th>In this regime (history)</th><th>14d vs BTC</th><th>30d</th><th>Coins above 20d avg</th><th>Money flow</th><th>Stage</th><th>Trend</th><th>Held</th></tr></thead><tbody id="rRank"></tbody></table></div>
  </section>
  <section class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Token picks in the top 3 narratives</h2><p>Daily price action: trend, 14-day strength vs BTC, distance from the 30-day high, not stretched above the 20-day average, rising volume. "Bought" = what the token rule would hold now.</p></div><span class="chip" id="rPickCount">—</span></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Narrative</th><th>Score</th><th>14d vs BTC</th><th>vs 30d high</th><th>vs 20d avg</th><th>Volume 7d vs 30d</th><th>Trend</th><th>Rule</th></tr></thead><tbody id="rPicks"></tbody></table></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Narrative</th><th>Score</th><th>14d vs BTC</th><th>vs 30d high</th><th>vs 20d avg</th><th>Volume 7d vs 30d</th><th>Trend</th><th>Rule</th></tr></thead><tbody id="rPicks"></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Forward record</h2><p id="rRecNote">Every week the screener saves what the rule holds, with that day's prices, and judges it a week later with prices that came afterwards. Unlike the backtest it cannot be fitted to the past, and coins that are later delisted keep their last price.</p></div><span class="chip" id="rRecChip">—</span></div>
+  <div class="book-meta" id="rRecStats"></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Week of</th><th>BTC regime</th><th>Alt season</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRec"></tbody></table></div>
+  <div class="changes" id="rChanges"></div>
  </section>
  <section class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Backtest</h2><p id="rBtNote">Each week the rules decide using only what was known that day.</p></div><span class="chip" id="rBtChip">—</span></div>
   <div class="chart" id="rChart"></div><div class="legend" id="rLegend"></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Strategy</th><th>Total</th><th>Per year</th><th>Worst drop</th><th>Sharpe</th><th>Weeks beating BTC</th><th>Time in cash</th><th>Switches</th></tr></thead><tbody id="rStrats"></tbody></table></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Strategy</th><th>Total</th><th>Per year</th><th>Worst drop</th><th>Sharpe</th><th>Weeks beating BTC</th><th>Time in cash</th><th>Switches</th><th>Older half</th><th>Newer half</th></tr></thead><tbody id="rStrats"></tbody></table></div>
  </section>
  <section class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Every narrative in every BTC regime</h2><p>Average return vs BTC over the following week · hit rate below. Faded cells have low confidence. The highlighted column is the regime BTC is in now.</p></div></div>
   <div class="table-wrap"><table class="table heat"><thead id="rHeatHead"></thead><tbody id="rHeat"></tbody></table></div>
  </section>
  <section class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>Recent decisions</h2><p>What the ranking held each week and how it did vs BTC</p></div></div>
+  <div class="section-head"><div><h2>Recent backtest decisions</h2><p>What the ranking held each week in the replay and how it did vs BTC</p></div></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Week of</th><th>BTC regime</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRecent"></tbody></table></div>
  </section>
  <div class="foot">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
@@ -806,19 +823,24 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#rAsOf").textContent=`· daily close ${r.asOf}`;
   $("#rRegime").textContent=now?now.label:"Not enough history";
   $("#rRegimeDesc").textContent=now?now.desc+(now.riskOff?" The rules hold cash in this regime.":""):"";
+  const rs=r.regimeStats||{},later=Object.entries(rs[`in${r.holdDays}Days`]||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  $("#rRegimeAge").innerHTML=now&&rs.now===now.key?`Day <b>${rs.ageDays}</b> of this regime · it usually lasts <b>${rs.medianDays[now.key]??"?"} days</b>${later.length?` · ${r.holdDays} days later, in past days like this: ${later.map(([k,v])=>`${esc(rName(RG,k))} <b>${v}%</b>`).join(" · ")}`:""}`:"";
   $("#rStrip").innerHTML=Object.keys(RG).map(k=>`<span class="${now&&k===now.key?"on"+(RG[k].riskOff?" off":""):""}" title="${r.heatmap.regimeWeeks[k]} weeks of history">${esc(rName(RG,k))}</span>`).join("");
   const stat=(l,v,k="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong></div>`;
   $("#rBtcStats").innerHTML=stat("BTC now",price(r.btcNow||b.close))+stat("7 days",pct1(b.ret7),col(b.ret7))+stat("30 days",pct1(b.ret30),col(b.ret30))
    +stat("vs 20-day avg",pct1(b.vsSma20),col(b.vsSma20))+stat("vs 50-day avg",pct1(b.vsSma50),col(b.vsSma50))+stat("Volatility 14d / 60d",b.vol14==null?"—":b.vol14.toFixed(1)+"% / "+b.vol60.toFixed(1)+"%");
   $("#rHoldDays").textContent=r.holdDays;
-  const h=r.holdingsNow||{};
-  $("#rHold").innerHTML=`<div><div class="big">${esc((h.combined||[]).join(" + "))}</div><small>Narrative rule: the top 2 ranked narratives that are in an uptrend, equal weight.</small></div><div><div class="big">${esc((h.tokens||[]).join(", "))}</div><small>Token rule: up to 5 coins scoring 65+ inside those narratives, equal weight.</small></div>`;
+  drawWeek(r);drawAlt(r);
+  $("#rRegStats").innerHTML=Object.keys(RG).map(k=>{const nx=Object.entries((rs.transitions||{})[k]||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);const md=(rs.medianDays||{})[k];
+   return `<tr><td>${esc(rName(RG,k))}${now&&k===now.key?' <span class="badge strong">now</span>':""}</td><td class="mono">${md==null?"—":md+(md===1?" day":" days")}</td><td>${nx.length?nx.map(([to,v])=>`${esc(rName(RG,to))} <span class="mono">${v}%</span>`).join(" · "):'<span class="muted">—</span>'}</td></tr>`;}).join("");
   $("#rBest").innerHTML=Object.keys(RG).map(k=>{const x=r.heatmap.bestByRegime[k];return `<tr><td>${esc(rName(RG,k))}${now&&k===now.key?' <span class="badge strong">now</span>':""}</td><td><b>${x?esc(x.name):'<span class="muted">not enough data</span>'}</b></td><td class="mono ${x?col(x.avgPct):""}">${x?pct(x.avgPct):"—"}</td><td class="mono">${x?x.hitPct+"%":"—"}</td><td class="mono">${x?x.weeks:"—"}</td><td>${x?conf(x.confidence):"—"}</td></tr>`;}).join("");
   $("#rRankCount").textContent=r.ranking.length+" narratives";
   $("#rRank").innerHTML=r.ranking.map(x=>{const s=x.regimeStat;return `<tr><td class="mono">${x.rank}</td><td><b>${esc(x.name)}</b><span class="sub">${x.members} coins · ${esc(x.category||"")}</span></td>
    <td class="mono"><span class="score">${x.score}<span class="scorebar"><i style="width:${x.score}%"></i></span></span></td>
    <td class="mono ${s?col(s.avgPct):""}">${s?pct(s.avgPct)+" / week":"—"}<span class="sub">${s?`beat BTC ${s.hitPct}% · ${s.weeks} weeks · ${s.confidence} confidence`:"no history in this regime"}</span></td>
-   <td class="mono ${col(x.mom14)}">${pct1(x.mom14)}</td><td class="mono ${col(x.ret30)}">${pct1(x.ret30)}</td><td class="mono">${x.breadthPct}%</td>
+   <td class="mono ${col(x.mom14)}">${pct1(x.mom14)}</td><td class="mono ${col(x.ret30)}">${pct1(x.ret30)}</td><td class="mono">${x.breadthPct}%<span class="sub">a week ago ${x.breadthPrevPct??"—"}%</span></td>
+   <td class="mono">${x.volShare7Pct==null?"—":x.volShare7Pct+"%"}<span class="sub ${x.flow>=1.1?"green":x.flow<=0.9?"red":""}">${x.flow==null?"":(x.flow>=1.1?"↑ rising ":x.flow<=0.9?"↓ falling ":"→ steady ")+x.flow.toFixed(2)+"× vs 30d"}</span></td>
+   <td><span class="stage ${x.stage||""}" title="${x.atHighsPct??"—"}% of its coins within 3% of their 30-day high">${esc((r.stages||{})[x.stage]||x.stage||"—")}</span></td>
    <td class="${x.trend?"green":"red"}">${x.trend?"Up":"Down"}</td><td>${x.held?'<span class="badge strong">Held</span>':""}</td></tr>`;}).join("");
   $("#rPickCount").textContent=r.picks.length+" coins";
   $("#rPicks").innerHTML=r.picks.length?r.picks.map(t=>`<tr><td><b>${esc(t.base)}</b></td><td>${esc(t.narratives.join(", "))}</td>
@@ -827,13 +849,52 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <td class="mono ${t.volTrend>=1.15?"green":""}">${t.volTrend==null?"—":t.volTrend.toFixed(2)+"×"}</td>
    <td>${t.aboveSma20?"above 20d":"below 20d"} · ${t.aboveSma50?"above 50d":"below 50d"}</td><td>${t.inStrategy?'<span class="badge strong">Bought</span>':""}</td></tr>`).join("")
    :'<tr><td colspan="9" class="empty">No coins with enough history in the top narratives.</td></tr>';
-  drawBacktest(r);drawHeat(r);
+  drawRecord(r);drawBacktest(r);drawHeat(r);
+ }
+ const holdTxt=a=>(a||[]).map(holdName).join(" + ")||"—";
+ function drawWeek(r){
+  const h=r.holdingsNow||{},rec=r.record||{},sm=rec.summary||{},a=r.altSeason,stat=(l,v,sub="")=>`<div class="book-stat"><span>${esc(l)}</span><strong>${v}</strong>${sub?`<small>${sub}</small>`:""}</div>`;
+  const same=holdTxt(h.combinedAlt)===holdTxt(h.combined);
+  $("#rWeek").innerHTML=`<div><div class="big">${esc(holdTxt(h.combined))}</div><small>Narrative rule: the top 2 ranked narratives that are in an uptrend, equal weight.</small></div>
+   <div><div class="big" style="font-size:17px">${esc((h.tokens||[]).map(holdName).join(", ")||"—")}</div><small>Token rule: up to 5 coins scoring 65+ inside those narratives, equal weight.</small></div>
+   ${h.combinedAlt?`<div class="variant">Variant that holds BTC while the alt season meter says <b>BTC leading</b>: ${same?"same holdings this week":`would hold <b>${esc(holdTxt(h.combinedAlt))}</b>`}. In the backtest it did a little better than the rule in both halves of the history (see Older / Newer half below), but the gain in the newer half is small, so it is shown for comparison and not used.</div>`:""}
+   <div class="stats">${stat("Next decision",rec.nextDecision?esc(rec.nextDecision):"—",rec.nextDecision?"":(r.demo?"not recorded in demo mode":"after the first live load"))}
+   ${stat("Last change",rec.lastChange?esc(rec.lastChange.to):"—",rec.lastChange?`${esc(rec.lastChange.date)}, was ${esc(rec.lastChange.from)}`:"no change recorded yet")}
+   ${stat("Alt season",a?`<span class="${a.state==="altsLead"?"green":a.state==="btcLeads"?"red":"amber"}">${esc(a.label)}</span>`:"—")}
+   ${stat("Telegram on change",r.telegramOn?'<span class="green">On</span>':'<span class="muted">Off</span>',r.telegramOn?"regime or holdings change":"set ROTATION_TELEGRAM=1 in .env")}</div>`;
+ }
+ function drawAlt(r){
+  const a=r.altSeason;
+  if(!a){$("#rAlt").innerHTML='<div class="empty">Not enough history yet.</div>';return;}
+  const v=(n,up,dn)=>n==null?0:n>=up?1:n<=dn?-1:0,ic=x=>x>0?'<span class="v green">▲</span>':x<0?'<span class="v red">▼</span>':'<span class="v muted">•</span>';
+  const votes=[[a.ethTrend??0,"ETH/BTC",a.hasEth?`${pct1(a.ethBtc30)} in 30 days, trend ${a.ethTrend>0?"up":a.ethTrend<0?"down":"flat"} (vs its 50-day average and the 20-day slope)`:"ETH history missing"],
+   [v(a.altVsBtc30,2,-2),"Typical narrative vs BTC",`median narrative ${pct1(a.altVsBtc30)} vs BTC over 30 days (up from +2%, down from −2%)`],
+   [v(a.breadthPct,55,35),"Coins above their 20-day average",`${a.breadthPct??"—"}% of all narrative coins (up from 55%, down from 35%)`]];
+  const hist=a.history||[],first=hist.find(x=>x.state),last=hist[hist.length-1];
+  const cnt=k=>hist.filter(x=>x.state===k).length;
+  $("#rAlt").innerHTML=`<div><span class="altstate ${a.state}">${esc(a.label)}</span><small>${esc(a.desc)} Two or more votes the same way decide it.</small></div>
+   <div class="votes">${votes.map(([x,l,d])=>`<div class="vote">${ic(x)}<div><b>${esc(l)}</b><small>${esc(d)}</small></div></div>`).join("")}</div>
+   <div><div class="altbar" role="img" aria-label="Alt season meter, last ${hist.length} days">${hist.map(x=>`<i class="${x.state||""}" title="${esc(x.date)}: ${esc(x.state?(r.altStates||{})[x.state].label:"no data")}"></i>`).join("")}</div>
+   <div class="altbar-l"><span>${first?esc(first.date):""}</span><span>last ${hist.length} days: alts led ${cnt("altsLead")} · mixed ${cnt("mixed")} · BTC led ${cnt("btcLeads")}</span><span>${last?esc(last.date):""}</span></div></div>`;
+ }
+ function drawRecord(r){
+  const rec=r.record||{},sm=rec.summary||{},decs=rec.decisions||[],stat=(l,v,k="",sub="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong>${sub?`<small class="muted">${sub}</small>`:""}</div>`;
+  $("#rRecChip").textContent=rec.since?`since ${rec.since} · ${sm.weeks} judged`:(r.demo?"off in demo mode":"starts today");
+  $("#rRecStats").innerHTML=stat("Weeks judged",sm.weeks??0)+stat("Rotation rule",sm.weeks?pct1(sm.combinedPct):"—",col(sm.combinedPct))+stat("Token picks",sm.weeks?pct1(sm.tokensPct):"—",col(sm.tokensPct))+stat("Hold BTC",sm.weeks?pct1(sm.btcPct):"—",col(sm.btcPct))
+   +stat("Weeks beating BTC",sm.beatBtcPct==null?"—":sm.beatBtcPct+"%")+stat("Coin-list snapshots",rec.snapshots??0,"",rec.firstSnapshot?"daily since "+esc(rec.firstSnapshot):"")
+   +stat("Next decision",rec.nextDecision?esc(rec.nextDecision):"—")+stat("Narrative list changes",(rec.changes||[]).length);
+  const RG=r.regimes||{},AS=r.altStates||{};
+  $("#rRec").innerHTML=decs.length?decs.map(d=>{const x=d.result;return `<tr><td class="mono">${esc(d.date)}<span class="sub">${x?"judged "+esc(d.exitDate):"open until "+esc(d.exitDate)}</span></td><td>${esc((RG[d.regime]||{}).label||d.regime||"—")}</td><td>${esc((AS[d.altState]||{}).label||"—")}</td>
+   <td>${esc(holdTxt(d.hold))}</td><td class="mono ${x?col(x.combinedPct):""}">${x?pct1(x.combinedPct):'<span class="muted">open</span>'}</td><td>${esc(d.tokens.join(", ")||"—")}</td><td class="mono ${x?col(x.tokensPct):""}">${x?pct1(x.tokensPct):'<span class="muted">open</span>'}</td><td class="mono ${x?col(x.btcPct):""}">${x?pct1(x.btcPct):'<span class="muted">open</span>'}</td></tr>`;}).join("")
+   :`<tr><td colspan="8" class="empty">${r.demo?"The forward record is kept only with live data (not in demo mode).":"The first decision is saved after the first full history load; its result appears a week later."}</td></tr>`;
+  const ch=rec.changes||[];
+  $("#rChanges").innerHTML=ch.length?"<b>Narrative list changes</b> (Binance tags, from the daily snapshots): "+ch.slice(0,8).map(c=>`${esc(c.date)} ${esc(c.narrative)}${c.added.length?` <span class="green">+${esc(c.added.join(", "))}</span>`:""}${c.removed.length?` <span class="red">−${esc(c.removed.join(", "))}</span>`:""}`).join(" · "):"";
  }
  function drawBacktest(r){
   const bt=r.backtest;
   if(!bt){$("#rBtChip").textContent="not enough history";$("#rChart").innerHTML='<div class="empty">The backtest needs about 300 days of narrative history.</div>';$("#rStrats").innerHTML="";$("#rLegend").innerHTML="";$("#rRecent").innerHTML="";return;}
   $("#rBtChip").textContent=`${bt.from} to ${bt.to} · ${bt.weeks} decisions`;
-  $("#rBtNote").textContent=`Every ${r.holdDays} days each rule decides using only what was known that day, pays ${r.feePct}% per round trip and holds until the next decision. Log scale.`;
+  $("#rBtNote").textContent=`Every ${r.holdDays} days each rule decides using only what was known that day, pays ${r.feePct}% per round trip and holds until the next decision. Log scale. Older / Newer half: the same rule on each half of the weeks; a change is only worth making if it wins in both.`;
   const show=["combined","tokens","equal","btc"],S=Object.fromEntries(bt.strategies.map(s=>[s.key,s])),n=bt.weeks+1;
   const W=900,H=270,P={l:52,r:12,t:12,b:28};
   const all=show.flatMap(k=>S[k]?S[k].curve:[]).filter(v=>v>0);
@@ -847,7 +908,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   for(const k of [...show].reverse()){const s=S[k];if(!s)continue;svg+=`<polyline fill="none" stroke="${COLORS[k]}" stroke-width="${k==="combined"?2.6:1.5}" stroke-linejoin="round" points="${s.curve.map((v,i)=>x(i).toFixed(1)+","+y(v).toFixed(1)).join(" ")}"/>`;}
   $("#rChart").innerHTML=svg+"</svg>";
   $("#rLegend").innerHTML=show.filter(k=>S[k]).map(k=>`<span><i style="background:${COLORS[k]}"></i>${SHORT[k]} <b class="mono ${col(S[k].totalPct)}">${pct1(S[k].totalPct)}</b></span>`).join("");
-  $("#rStrats").innerHTML=bt.strategies.map(s=>`<tr><td><b>${esc(s.label)}</b></td><td class="mono ${col(s.totalPct)}">${pct1(s.totalPct)}</td><td class="mono ${col(s.cagrPct)}">${pct1(s.cagrPct)}</td><td class="mono red">${pct1(s.maxDdPct)}</td><td class="mono">${s.sharpe??"—"}</td><td class="mono">${s.key==="btc"?"—":s.beatBtcPct+"%"}</td><td class="mono">${s.cashPct}%</td><td class="mono">${s.switches}</td></tr>`).join("");
+  $("#rStrats").innerHTML=bt.strategies.map(s=>`<tr><td><b>${esc(s.label)}</b></td><td class="mono ${col(s.totalPct)}">${pct1(s.totalPct)}</td><td class="mono ${col(s.cagrPct)}">${pct1(s.cagrPct)}</td><td class="mono red">${pct1(s.maxDdPct)}</td><td class="mono">${s.sharpe??"—"}</td><td class="mono">${s.key==="btc"?"—":s.beatBtcPct+"%"}</td><td class="mono">${s.cashPct}%</td><td class="mono">${s.switches}</td><td class="mono ${col(s.olderPct)}">${pct1(s.olderPct)}</td><td class="mono ${col(s.newerPct)}">${pct1(s.newerPct)}</td></tr>`).join("");
   $("#rRecent").innerHTML=(bt.recent||[]).map(w=>`<tr><td class="mono">${w.date}</td><td>${esc(((r.regimes||{})[w.regime]||{}).label||w.regime||"—")}</td><td>${esc(w.hold.map(holdName).join(" + ")||"—")}</td><td class="mono ${col(w.combinedPct)}">${pct1(w.combinedPct)}</td><td>${esc(w.tokens.map(holdName).join(", "))}</td><td class="mono ${col(w.tokensPct)}">${pct1(w.tokensPct)}</td><td class="mono ${col(w.btcPct)}">${pct1(w.btcPct)}</td></tr>`).join("");
  }
  function drawHeat(r){

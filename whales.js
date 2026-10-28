@@ -36,7 +36,7 @@ const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEMO = env.DEMO === "1";
-const RPCS = (env.WHALES_RPC || "https://ethereum-rpc.publicnode.com,https://eth.drpc.org,https://eth-mainnet.public.blastapi.io,https://rpc.mevblocker.io").split(",").map((s) => s.trim()).filter(Boolean);
+const RPCS = (env.WHALES_RPC || "https://eth-mainnet.public.blastapi.io,https://rpc.mevblocker.io,https://eth.drpc.org,https://ethereum-rpc.publicnode.com").split(",").map((s) => s.trim()).filter(Boolean);
 const MIN_USD = num("WHALES_MIN_USD", 100_000);                    // transfers below this are not kept (watched wallets excepted)
 const ALERT_USD = num("WHALES_ALERT_USD", 1_000_000);                 // non-stablecoin transfers
 const STABLE_ALERT_USD = num("WHALES_STABLE_ALERT_USD", 25_000_000);  // stablecoins move in size all day; alert only on very large ones
@@ -46,6 +46,8 @@ const EXCHANGE_ALERT_USD = num("WHALES_EXCHANGE_ALERT_USD", 500_000);
 const MINT_ALERT_USD = num("WHALES_MINT_ALERT_USD", 10_000_000);
 const MIN_LIQUIDITY = num("WHALES_MIN_LIQUIDITY_USD", 250_000);
 const BACKFILL_BLOCKS = num("WHALES_BACKFILL_BLOCKS", 300);         // ~1 hour of history at start
+const SWAP_MIN_USD = num("FLOWS_MIN_TRADE_USD", 2000);               // DEX swaps rebuilt from the blocks (DEX section)
+const SWAP_MIN_LIQUIDITY = num("WHALES_SWAP_MIN_LIQUIDITY_USD", 50_000); // a token needs this much DEX liquidity to be valued in a swap
 const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
 const DEXSCREENER = "https://api.dexscreener.com/tokens/v1/ethereum/";
@@ -79,19 +81,131 @@ const tokens = new Map();  // address -> { symbol, decimals, price, liquidity, f
 const lastAlertAt = new Map();
 let labels = {};           // address -> [name, category]
 const isContract = new Map(); // address -> true (contract) | false (wallet), checked once with eth_getCode
-const rpcStats = RPCS.map((url) => ({ url, ok: 0, fail: 0, lastError: null }));
+const isSafe = new Set();     // Safe multisig wallets (contracts that act as a wallet: funds, teams, DAOs)
+const swapSeen = new Map();   // swap id -> time
+const swapListeners = [];
+let swapTimes = [];           // swaps found in the last hour (health)
+const rpcStats = RPCS.map((url) => ({ url, ok: 0, fail: 0, lastError: null, maxBatch: 40, noWideLogs: false }));
 let rpcIndex = 0, rpcCalls = [];
 
 // ───────────────────────────── labels ─────────────────────────────
 const CATEGORY_NAMES = { exchange: "Exchange", fund: "Fund / market maker", issuer: "Stablecoin issuer", bridge: "Bridge", dex: "DEX", defi: "DeFi",
-  mev: "MEV bot", mixer: "Mixer", flagged: "Flagged", watched: "Your label" };
+  mev: "MEV bot", mixer: "Mixer", flagged: "Flagged", watched: "Your label", safe: "Multisig / smart wallet", ens: "ENS name", token: "Token contract" };
 const watchedWallet = (a) => state.watches.find((w) => w.kind === "wallet" && w.address === a);
+// Who an address is: your label, the public label list, a learned exchange address, then a Blockscout name.
 export function labelOf(a) {
   const w = watchedWallet(a);
   if (w && w.name) return { name: w.name, category: "watched", entity: w.name };
   const l = labels[a];
-  if (!l) return null;
-  return { name: l[0], category: l[1], entity: entityOf(l[0], l[1]) };
+  if (l) return { name: l[0], category: l[1], entity: entityOf(l[0], l[1]) };
+  const d = learned.get(a);
+  if (d) return { name: `${d.entity} address (learned)`, category: "exchange", entity: d.entity, learned: true };
+  const n = names.get(a);
+  if (n?.name) return { name: n.name, category: n.cat, entity: n.cat === "ens" || n.cat === "safe" ? null : n.name, looked: true };
+  if (isSafe.has(a)) return { name: "Safe multisig", category: "safe", entity: null };
+  return null;
+}
+
+// ───────────────────────────── names the label list does not have ─────────────────────────────
+// The public label list is a 2023 snapshot, so newer protocols, routers, vaults and wallets are missing. Two fixes:
+//  - Blockscout's free API (no key) names any address once: verified contract names (Uniswap pools and routers, lending
+//    markets, vaults, bridges), Safe multisigs and the ENS names of wallets. Kept in whales_names.json; the biggest
+//    movers are looked up first, about one address a second.
+//  - Exchange addresses are learned from the transfers: an unlabelled address that hands its tokens to one exchange's
+//    labelled wallet is that exchange's (deposit) address, the way Arkham and Nansen find them. Later deposits into it
+//    then count as exchange deposits at once, before the exchange sweeps them. An address that also sends to another
+//    exchange or to an ordinary wallet is dropped (a trader, not an exchange address).
+const NAMES_FILE = path.join(here, DEMO ? "whales_names.demo.json" : "whales_names.json");
+const BLOCKSCOUT = (env.WHALES_BLOCKSCOUT || "https://eth.blockscout.com").replace(/\/$/, "");
+const names = new Map();     // address -> { name, cat, at }  cat: dex | defi | bridge | token | safe | ens | contract | wallet
+const learned = new Map();   // address -> { entity, at, n }
+const notExchange = new Set();
+const nameQueue = new Map(); // address -> priority (USD moved)
+const nameStats = { looked: 0, named: 0, failed: 0, lastError: null, pausedUntil: 0 };
+const prettyName = (n) => String(n).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([0-9])([A-Z][a-z])/g, "$1 $2").replace(/_/g, " ").slice(0, 40);
+const SMART_WALLET = /safe|gnosis|msca|smart ?account|smart ?wallet|light ?account|kernel|biconomy|ambire|argent|coinbase ?smart|simple ?account|account ?proxy|modular ?account/i;
+export function nameFromBlockscout(j) {
+  const ens = j?.ens_domain_name || null;
+  if (!j?.is_contract) return { name: ens, cat: ens ? "ens" : "wallet" };
+  const impl = (j.implementations || []).map((i) => i.name).filter(Boolean);
+  const name = (j.name && !/proxy$/i.test(j.name) ? j.name : impl[0] || j.name) || null, token = j.token;
+  const all = [j.name, ...impl].filter(Boolean).join(" ");
+  if (/safe|gnosis/i.test(all)) return { name: ens || "Safe multisig", cat: "safe" };
+  if (SMART_WALLET.test(all)) return { name: ens || `Smart wallet (${prettyName(name || all)})`, cat: "safe" }; // a person's or fund's wallet
+  if (!name && !token?.name) return { name: null, cat: "contract" };
+  const n = name || token.name;
+  if (/pool|pair|swap|router|uniswap|sushi|curve|balancer|1inch|aggregat|settlement|paraswap|augustus|kyber|odos|cow|pancake|maverick|zeroex|metamask|ekubo|bebop|hashflow/i.test(n)) return { name: prettyName(n), cat: "dex" };
+  if (/bridge|portal|gateway|inbox|messenger|wormhole|stargate|layerzero|hyperlane|tokenmessenger|spokepool|cctp/i.test(n)) return { name: prettyName(n), cat: "bridge" };
+  return { name: prettyName(n), cat: token && !name ? "token" : "defi" };
+}
+function queueName(a, usd) {
+  if (DEMO || !a || a === ZERO || a === DEAD || labels[a] || learned.has(a) || names.has(a)) return;
+  if (nameQueue.size >= 5000 && !nameQueue.has(a) && usd < 1e6) return;
+  nameQueue.set(a, Math.max(nameQueue.get(a) || 0, usd));
+}
+let namesTimer = null;
+function saveNames() {
+  if (namesTimer) return;
+  namesTimer = setTimeout(() => {
+    namesTimer = null;
+    if (names.size > 100_000) for (const k of [...names.keys()].slice(0, 20_000)) names.delete(k);
+    const data = JSON.stringify({ version: 1, names: Object.fromEntries([...names].map(([a, n]) => [a, [n.name, n.cat, n.at]])),
+      learned: Object.fromEntries([...learned].map(([a, d]) => [a, [d.entity, d.at, d.n]])), notExchange: [...notExchange].slice(-20_000) });
+    writeFile(NAMES_FILE + ".tmp", data).then(() => rename(NAMES_FILE + ".tmp", NAMES_FILE)).catch(() => {});
+  }, 20_000);
+  namesTimer.unref?.();
+}
+async function loadNames() {
+  try {
+    const j = JSON.parse(await readFile(NAMES_FILE, "utf8"));
+    for (const [a, [name, cat, at]] of Object.entries(j.names || {})) { names.set(a, { name, cat, at }); if (cat === "safe") isSafe.add(a); }
+    for (const [a, [entity, at, n]] of Object.entries(j.learned || {})) learned.set(a, { entity, at, n });
+    for (const a of j.notExchange || []) notExchange.add(a);
+  } catch { /* first run */ }
+}
+async function nameLoop() {
+  for (;;) {
+    await sleep(1300);
+    if (!nameQueue.size || Date.now() < nameStats.pausedUntil) continue;
+    let a = null, best = -1;
+    for (const [k, p] of nameQueue) if (p > best) { a = k; best = p; }
+    nameQueue.delete(a);
+    if (labels[a] || learned.has(a) || names.has(a)) continue;
+    try {
+      const res = await fetch(`${BLOCKSCOUT}/api/v2/addresses/${a}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
+      if (res.status === 429) { nameStats.pausedUntil = Date.now() + 60_000; nameQueue.set(a, best); continue; }
+      if (res.status === 404) { names.set(a, { name: null, cat: isContract.get(a) ? "contract" : "wallet", at: Date.now() }); continue; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const n = nameFromBlockscout(await res.json());
+      names.set(a, { ...n, at: Date.now() });
+      nameStats.looked++; if (n.name) nameStats.named++; nameStats.lastError = null;
+      if (n.cat === "safe") isSafe.add(a);
+      saveNames();
+    } catch (e) { nameStats.failed++; nameStats.lastError = e.name === "TimeoutError" ? "timeout" : e.message; nameStats.pausedUntil = Date.now() + 30_000; }
+  }
+}
+// Learns exchange addresses from new transfers (see above).
+const PERSONAL = new Set(["safe", "ens"]);
+function learnExchanges(list) {
+  for (const tr of list) {
+    const from = tr.from;
+    if (from === ZERO || labels[from] || watchedWallet(from)) continue;
+    const known = learned.get(from), to = labelOf(tr.to), toEntity = to?.category === "exchange" ? to.entity : null;
+    if (known) {
+      if (toEntity === known.entity) known.n++;                                       // another sweep
+      else { learned.delete(from); notExchange.add(from); saveNames(); }               // sent elsewhere: a trader, not an exchange address
+      continue;
+    }
+    const pub = labels[tr.to];
+    if (!pub || pub[1] !== "exchange" || /deposit\)$/i.test(pub[0]) || notExchange.has(from)) continue;
+    const n = names.get(from);
+    if (isSafe.has(from) || (n && n.cat !== "wallet" && n.cat !== "contract")) continue; // a named protocol, Safe or ENS wallet
+    // First sweep seen: if the deposit into this address was already kept, that one counts; else this sweep does.
+    if (!transfers.some((x) => x.to === from && x.t <= tr.t && x !== tr)) tr.forceKind = "deposit";
+    learned.set(from, { entity: entityOf(pub[0], "exchange"), at: Date.now(), n: 1 });
+    nameQueue.delete(from);
+    saveNames();
+  }
 }
 // "Binance 14" -> Binance, "Crypto.com: MultiSig 7" -> Crypto.com, "Wintermute (Binance deposit)" -> Binance.
 export function entityOf(name, category) {
@@ -100,33 +214,58 @@ export function entityOf(name, category) {
   return name.replace(/:.*$/, "").replace(/\s+(\d+|Old Address.*|Hot Wallet.*|Cold Wallet.*)$/i, "").trim();
 }
 const catOf = (a) => labelOf(a)?.category || null;
+const refreshKind = (tr) => { tr.kind = tr.forceKind || kindOf(tr.from, tr.to); return tr; }; // labels can arrive later
 
 // ───────────────────────────── RPC (with fallback) ─────────────────────────────
+// Free nodes differ: some cap a batch at a few requests (drpc: 3), some refuse a log query without a token address
+// (publicnode). Both are learned from the node's own error, then batches are split or the node is skipped for that call.
+async function rpcSend(st, calls) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20_000);
+  try {
+    rpcCalls.push(Date.now());
+    const res = await fetch(st.url, { method: "POST", signal: ctrl.signal, headers: { "content-type": "application/json" },
+      body: JSON.stringify(calls.map((c, i) => ({ jsonrpc: "2.0", id: i, method: c[0], params: c[1] }))) });
+    const out = await res.json().catch(() => null);
+    if (!Array.isArray(out)) throw new Error(out?.error?.message || (res.ok ? "unexpected reply" : `HTTP ${res.status}`));
+    const byId = new Map(out.map((r) => [r.id, r]));
+    return calls.map((_, i) => {
+      const r = byId.get(i);
+      if (!r || r.error) throw new Error(r?.error?.message || "missing result");
+      return r.result;
+    });
+  } finally { clearTimeout(timer); }
+}
+// Node order for one call: nodes that failed in the last minute go last; a big batch goes first to a node that takes
+// it whole; otherwise the node that worked last time.
+function nodeOrder(n, wideLogs) {
+  const now = Date.now(), rested = (st) => (now - (st.lastFailAt || 0) < 60_000 ? 1 : 0);
+  const turn = (i) => (i - rpcIndex + RPCS.length) % RPCS.length;
+  return rpcStats.map((st, i) => ({ st, i })).filter((x) => !(wideLogs && x.st.noWideLogs))
+    .sort((a, b) => rested(a.st) - rested(b.st) || (n > 3 ? (b.st.maxBatch >= n) - (a.st.maxBatch >= n) : 0) || turn(a.i) - turn(b.i));
+}
 async function rpcBatch(calls) {
+  const wideLogs = calls.some((c) => c[0] === "eth_getLogs" && !c[1]?.[0]?.address);
   let lastErr;
-  for (let attempt = 0; attempt < RPCS.length * 2; attempt++) {
-    const st = rpcStats[rpcIndex % RPCS.length];
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20_000);
-    try {
-      rpcCalls.push(Date.now());
-      const res = await fetch(st.url, { method: "POST", signal: ctrl.signal, headers: { "content-type": "application/json" },
-        body: JSON.stringify(calls.map((c, i) => ({ jsonrpc: "2.0", id: i, method: c[0], params: c[1] }))) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const out = await res.json();
-      if (!Array.isArray(out)) throw new Error(out?.error?.message || "unexpected reply");
-      const byId = new Map(out.map((r) => [r.id, r]));
-      const results = calls.map((_, i) => {
-        const r = byId.get(i);
-        if (!r || r.error) throw new Error(r?.error?.message || "missing result");
-        return r.result;
-      });
-      st.ok++; st.lastError = null;
-      return results;
-    } catch (e) {
-      lastErr = e; st.fail++; st.lastError = e.name === "AbortError" ? "timeout" : e.message;
-      rpcIndex++; // try the next node
-      await sleep(400);
-    } finally { clearTimeout(timer); }
+  for (let round = 0; round < 2; round++) {
+    for (const { st, i } of nodeOrder(calls.length, wideLogs)) {
+      if (wideLogs && st.noWideLogs) continue;
+      for (let retry = 0; retry < 3; retry++) {
+        try {
+          const results = [];
+          for (let k = 0; k < calls.length; k += st.maxBatch) results.push(...await rpcSend(st, calls.slice(k, k + st.maxBatch)));
+          st.ok++; st.lastError = null; rpcIndex = i;
+          return results;
+        } catch (e) {
+          lastErr = e;
+          const cap = String(e.message).match(/batch of more than (\d+)/i);
+          if (cap && Number(cap[1]) >= 1 && Number(cap[1]) < st.maxBatch) { st.maxBatch = Number(cap[1]); continue; } // same node, smaller batches
+          if (wideLogs && /specify an address|address is required/i.test(e.message)) st.noWideLogs = true;
+          st.fail++; st.lastFailAt = Date.now(); st.lastError = e.name === "AbortError" ? "timeout" : e.message.slice(0, 120);
+          break; // next node
+        }
+      }
+    }
+    await sleep(1000);
   }
   throw new Error(`All RPC nodes failed (${lastErr?.message})`);
 }
@@ -137,7 +276,7 @@ const hex = (n) => "0x" + n.toString(16);
 let dexCalls = [];
 async function ensureTokens(addrs) {
   const now = Date.now();
-  const need = [...new Set(addrs)].filter((a) => { const t = tokens.get(a); return !t || now - t.at > (t.ok ? 5 * MIN : 6 * HOUR); });
+  const need = [...new Set(addrs)].filter((a) => { const t = tokens.get(a); return !t || now - t.at > (t.tradable ? 5 * MIN : 6 * HOUR); });
   for (let i = 0; i < need.length; i += 30) {
     const chunk = need.slice(i, i + 30);
     let pairs = [];
@@ -161,16 +300,17 @@ async function ensureTokens(addrs) {
       const verified = (STABLES[a] && STABLES[a].toUpperCase() === symbol.toUpperCase()) ? "stable"
         : (BLUECHIPS[a] && BLUECHIPS[a].toUpperCase() === symbol.toUpperCase()) ? "bluechip" : "token";
       const price = verified === "stable" ? 1 : Number(b?.p.priceUsd) || 0;
-      const ok = !!b && price > 0 && (verified !== "token" || b.liq >= MIN_LIQUIDITY);
-      tokens.set(a, { symbol, price, liquidity: b?.liq || 0, fdv: Number(b?.p.fdv || b?.p.marketCap) || 0, ok, at: now, kind: verified,
+      const ok = !!b && price > 0 && (verified !== "token" || b.liq >= MIN_LIQUIDITY);         // whale transfers
+      const tradable = !!b && price > 0 && (verified !== "token" || b.liq >= SWAP_MIN_LIQUIDITY); // DEX swaps
+      tokens.set(a, { symbol, price, liquidity: b?.liq || 0, fdv: Number(b?.p.fdv || b?.p.marketCap) || 0, ok, tradable, at: now, kind: verified,
         decimals: prev?.decimals ?? null, url: b?.p.url || null });
-      if (ok && prev?.decimals == null) fresh.push(a);
+      if (tradable && prev?.decimals == null) fresh.push(a);
     }
     // decimals straight from each contract (one batched call)
     if (fresh.length) {
       try {
         const res = await rpcBatch(fresh.map((a) => ["eth_call", [{ to: a, data: "0x313ce567" }, "latest"]]));
-        res.forEach((r, i) => { const d = parseInt(r, 16); const t = tokens.get(fresh[i]); if (Number.isFinite(d) && d <= 36) t.decimals = d; else t.ok = false; });
+        res.forEach((r, i) => { const d = parseInt(r, 16); const t = tokens.get(fresh[i]); if (Number.isFinite(d) && d <= 36) t.decimals = d; else t.ok = t.tradable = false; });
       } catch { for (const a of fresh) tokens.get(a).at = 0; } // retry next time
     }
   }
@@ -178,22 +318,86 @@ async function ensureTokens(addrs) {
 // Largest believable value for one transfer: verified tokens are uncapped; others can't exceed their liquidity by much.
 const capOf = (t) => (t.kind !== "token" ? Infinity : t.liquidity < 5e6 ? 50 * t.liquidity : Math.max(50 * t.liquidity, 0.1 * t.fdv));
 
-// Wallet or contract, for every address in new transfers (batched, cached). EIP-7702 wallets carry a 0xef0100 stub.
-async function ensureCode(list) {
-  const need = [...new Set(list.flatMap((tr) => [tr.from, tr.to]))].filter((a) => !isContract.has(a) && a !== ZERO && a !== DEAD);
-  for (let i = 0; i < need.length; i += 80) {
-    const chunk = need.slice(i, i + 80);
+// Wallet or contract, for every address in new transfers (batched, cached). EIP-7702 wallets carry a 0xef0100 stub; a
+// Safe multisig is a small proxy whose code answers masterCopy() (selector a619486e).
+async function ensureCodeFor(addrs) {
+  const need = [...new Set(addrs)].filter((a) => !isContract.has(a) && a !== ZERO && a !== DEAD);
+  for (let i = 0; i < need.length; i += 40) {
+    const chunk = need.slice(i, i + 40);
     try {
       const codes = await rpcBatch(chunk.map((a) => ["eth_getCode", [a, "latest"]]));
-      codes.forEach((c, j) => isContract.set(chunk[j], typeof c === "string" && c.length > 2 && !c.startsWith("0xef0100")));
+      codes.forEach((c, j) => {
+        const code = typeof c === "string" ? c : "0x";
+        isContract.set(chunk[j], code.length > 2 && !code.startsWith("0xef0100"));
+        if (code.length < 1200 && code.includes("a619486e")) isSafe.add(chunk[j]);
+      });
     } catch { /* unknown for now; retried with the next transfers */ }
   }
+  if (isContract.size > 300_000) for (const k of [...isContract.keys()].slice(0, 100_000)) isContract.delete(k); // memory cap
 }
-// Both sides unlabelled contracts: vault / router plumbing rather than a holder moving funds.
-const plumbing = (tr) => !labelOf(tr.from) && !labelOf(tr.to) && isContract.get(tr.from) === true && isContract.get(tr.to) === true;
+const ensureCode = (list) => ensureCodeFor(list.flatMap((tr) => [tr.from, tr.to]));
+// Both sides contracts with no business label (vaults, routers, pools): DeFi plumbing rather than a holder moving funds.
+const KEEP_CATS = new Set(["exchange", "fund", "issuer", "bridge", "watched", "flagged", "mixer"]);
+const plumbing = (tr) => [tr.from, tr.to].every((a) => isContract.get(a) === true && !isSafe.has(a) && !KEEP_CATS.has(catOf(a)));
+
+// ───────────────────────────── DEX swaps from the same logs ─────────────────────────────
+// Every DEX trade moves tokens with Transfer events, so swaps can be rebuilt from the logs already read for whale
+// transfers: every DEX and aggregator on Ethereum at once, with no extra request. In one transaction, a wallet that gave
+// token A and got token B swapped A -> B (several wallets in one batch, e.g. CoW, each count). ETH legs leave no Transfer
+// event, so: ETH sent with the transaction is ETH given; a wallet that only gave tokens while a contract was left holding
+// WETH (unwrapped and sent back as ETH) got that ETH; a wallet that only got tokens while a contract sent WETH it never
+// received (wrapped from ETH) paid that ETH. Mints and burns (vault deposits, staking) are not trades and are left out.
+// legs: [{ token, from, to, amount }] with WETH as token "eth"; valueOf(token, amount) = USD or null for unknown tokens.
+export function swapsFromLegs(legs, { isWallet, valueOf, isMajor = (tok) => tok === "eth", txFrom = null, txValueEth = 0 }) {
+  const net = new Map();
+  const add = (a, tok, v) => { let m = net.get(a); if (!m) net.set(a, (m = new Map())); m.set(tok, (m.get(tok) || 0) + v); };
+  for (const l of legs) {
+    if (l.from === ZERO || l.to === ZERO || l.to === DEAD || l.from === l.to || !(l.amount > 0)) continue;
+    add(l.from, l.token, -l.amount); add(l.to, l.token, l.amount);
+  }
+  if (txFrom && txValueEth > 0) add(txFrom, "eth", -txValueEth);
+  let wethLeft = 0, wethMade = 0;
+  const sides = [];
+  for (const [a, m] of net) {
+    if (a !== txFrom && isWallet(a) !== true) { const w = m.get("eth") || 0; if (w > 0) wethLeft += w; else wethMade -= w; continue; }
+    const neg = [], pos = [];
+    for (const [tok, v] of m) {
+      if (Math.abs(v) < 1e-12) continue;
+      (v < 0 ? neg : pos).push({ tok, amount: Math.abs(v), usd: valueOf(tok, Math.abs(v)) });
+    }
+    if (neg.length || pos.length) sides.push({ a, neg, pos });
+  }
+  // The trader behind ETH that only shows as WETH: the transaction sender if it qualifies, else a clear largest wallet.
+  // The ETH must be worth about what the wallet gave or got (so a fee wallet in the same transaction is never matched).
+  const worth = (s) => [...s.neg, ...s.pos].reduce((x, y) => x + (y.usd || 0), 0);
+  const pick = (cands) => {
+    if (txFrom) { const t = cands.find((s) => s.a === txFrom); if (t) return t; }
+    const sorted = [...cands].sort((x, y) => worth(y) - worth(x));
+    return sorted.length === 1 || (sorted.length > 1 && worth(sorted[0]) >= 3 * worth(sorted[1])) ? sorted[0] : null;
+  };
+  const addEth = (s, side, amount) => {
+    const usd = valueOf("eth", amount), other = worth(s);
+    if (usd != null && other > 0 && usd >= other / 2 && usd <= other * 2) s[side].push({ tok: "eth", amount, usd });
+  };
+  const noEth = (list) => !list.some((x) => x.tok === "eth");
+  const seller = wethLeft > 0 ? pick(sides.filter((s) => s.neg.length && !s.pos.length && noEth(s.neg))) : null;
+  if (seller) addEth(seller, "pos", wethLeft);
+  const buyer = wethMade > 0 ? pick(sides.filter((s) => s.pos.length && !s.neg.length && noEth(s.pos))) : null;
+  if (buyer) addEth(buyer, "neg", wethMade);
+  const out = [];
+  for (const s of sides) {
+    if (!s.neg.length || !s.pos.length || [...s.neg, ...s.pos].some((x) => x.usd == null)) continue; // an unknown token: not valued
+    const top = (list) => list.reduce((b, x) => (x.usd > b.usd ? x : b));
+    const from = top(s.neg), to = top(s.pos);
+    // Value: the ETH / stablecoin side when there is one (its price is reliable), else the smaller side.
+    const usd = isMajor(from.tok) && isMajor(to.tok) ? Math.min(from.usd, to.usd) : isMajor(from.tok) ? from.usd : isMajor(to.tok) ? to.usd : Math.min(from.usd, to.usd);
+    out.push({ wallet: s.a, from: from.tok, fromAmt: from.amount, to: to.tok, toAmt: to.amount, usd });
+  }
+  return out;
+}
 
 // ───────────────────────────── transfers ─────────────────────────────
-export function kindOf(from, to, cat = catOf, entity = (a) => labelOf(a)?.entity) {
+export function kindOf(from, to, cat = catOf, entity = (a) => labelOf(a)?.entity, contractOf = (a) => isContract.get(a) === true && !isSafe.has(a)) {
   if (from === ZERO) return "mint";
   if (to === ZERO || to === DEAD) return "burn";
   const fc = cat(from), tc = cat(to);
@@ -203,7 +407,8 @@ export function kindOf(from, to, cat = catOf, entity = (a) => labelOf(a)?.entity
   if (fc === "issuer" || tc === "issuer") return "issuer";
   if (fc === "dex" || tc === "dex") return "dex";
   if (fc === "bridge" || tc === "bridge") return "bridge";
-  if (fc === "defi" || tc === "defi") return "defi";
+  if (fc === "defi" || tc === "defi" || fc === "token" || tc === "token") return "defi";
+  if (contractOf(from) || contractOf(to)) return "contract"; // an unnamed contract (vault, router, game...): not a holder's move
   return "transfer";
 }
 
@@ -252,8 +457,61 @@ async function processBlocks(fromBlock, toBlock, withNative) {
     }
   }
   if (fresh.length) transfers.sort((a, b) => a.t - b.t);
+  if (swapListeners.length) {
+    const swaps = await findSwaps(erc20, blocks.filter(Boolean));
+    if (swaps.length || withNative) for (const fn of swapListeners) { try { fn(swaps); } catch (e) { console.error("whales: swap listener", e); } } // live blocks also say "still running"
+  }
   return fresh;
 }
+
+// DEX swaps in these blocks (see swapsFromLegs), for the DEX section (flows.js).
+async function findSwaps(erc20, blocks) {
+  const txInfo = new Map();
+  for (const b of blocks) for (const x of b.transactions || []) txInfo.set(x.hash, { from: x.from.toLowerCase(), to: x.to ? x.to.toLowerCase() : null, value: Number(BigInt(x.value || "0x0")) / 1e18 });
+  const byTx = new Map();
+  for (const l of erc20) {
+    const a = l.address.toLowerCase(), t = tokens.get(a), raw = Number(BigInt(l.data));
+    let e = byTx.get(l.transactionHash);
+    if (!e) byTx.set(l.transactionHash, (e = { legs: [], t: l.blockTimestamp ? parseInt(l.blockTimestamp, 16) * 1000 : Date.now(), block: parseInt(l.blockNumber, 16) }));
+    e.legs.push({ token: a === WETH ? "eth" : a, from: "0x" + l.topics[1].slice(26).toLowerCase(), to: "0x" + l.topics[2].slice(26).toLowerCase(),
+      amount: t?.decimals != null ? raw / 10 ** t.decimals : raw }); // unknown token: raw amount, only its sign is used
+  }
+  const ethPrice = tokens.get(WETH)?.price || 0;
+  const known = (tok) => tok === "eth" || (!!tokens.get(tok)?.tradable && tokens.get(tok).decimals != null);
+  const valueOf = (tok, amt) => (tok === "eth" ? (ethPrice ? amt * ethPrice : null) : known(tok) ? amt * tokens.get(tok).price : null);
+  const isMajor = (tok) => tok === "eth" || (tokens.get(tok)?.kind || "token") !== "token";
+  // Check wallet-or-contract first, only for addresses that moved enough to make a swap worth showing.
+  const need = new Set();
+  for (const [h, e] of byTx) {
+    const f = txInfo.get(h)?.from;
+    for (const l of e.legs) {
+      if ((valueOf(l.token, l.amount) || 0) < SWAP_MIN_USD) continue;
+      for (const a of [l.from, l.to]) if (a !== f && !isContract.has(a)) need.add(a);
+    }
+  }
+  if (need.size) await ensureCodeFor([...need]);
+  const BUSINESS = new Set(["exchange", "issuer", "bridge", "dex", "defi", "mev"]); // their moves are not their own trades
+  const isWallet = (a) => (isSafe.has(a) || isContract.get(a) === false) && !BUSINESS.has(catOf(a));
+  const out = [], now = Date.now();
+  for (const [h, e] of byTx) {
+    const x = txInfo.get(h);
+    for (const sw of swapsFromLegs(e.legs, { isWallet, valueOf, isMajor, txFrom: x && !BUSINESS.has(catOf(x.from)) ? x.from : null, txValueEth: x?.value || 0 })) {
+      const id = `${h}:${sw.wallet}`;
+      if (sw.usd < SWAP_MIN_USD || swapSeen.has(id)) continue;
+      swapSeen.set(id, e.t);
+      const tok = (k) => (k === "eth" ? { address: WETH, symbol: "ETH" } : { address: k, symbol: tokens.get(k).symbol });
+      const via = x?.to ? labelOf(x.to) : null;
+      if (x?.to && !via) queueName(x.to, sw.usd * 5); // routers repeat: naming one names many swaps
+      queueName(sw.wallet, sw.usd);
+      out.push({ id, tx: h, t: e.t, block: e.block, wallet: sw.wallet, safe: isSafe.has(sw.wallet), from: tok(sw.from), to: tok(sw.to),
+        fromAmt: sw.fromAmt, toAmt: sw.toAmt, usd: sw.usd, dex: via?.name || "DEX", router: x?.to || null });
+      if (now - e.t < HOUR) swapTimes.push(e.t);
+    }
+  }
+  return out;
+}
+// The DEX section subscribes to the swaps found in each new block.
+export const onWhaleSwaps = (fn) => { swapListeners.push(fn); };
 
 function prune() {
   const now = Date.now();
@@ -262,6 +520,8 @@ function prune() {
   if (cut) transfers.splice(0, cut);
   for (const [k, t] of lastAlertAt) if (now - t > DAY) lastAlertAt.delete(k);
   rpcCalls = rpcCalls.filter((t) => now - t < MIN); dexCalls = dexCalls.filter((t) => now - t < MIN); telegramSent = telegramSent.filter((t) => now - t < HOUR);
+  swapTimes = swapTimes.filter((t) => now - t < HOUR);
+  for (const [k, t] of swapSeen) if (now - t > DAY) swapSeen.delete(k);
 }
 
 // ───────────────────────────── alerts ─────────────────────────────
@@ -298,6 +558,7 @@ function fire(key, type, tr, title, extra = []) {
 function checkAlerts(fresh) {
   const now = Date.now(), byTx = new Map();
   for (const tr of fresh) {
+    refreshKind(tr);
     if (now - tr.t > FRESH_MS || tr.t < state.startedAt - FRESH_MS) continue;
     // watched wallets and tokens: any size above the watch minimum
     for (const w of state.watches) {
@@ -321,7 +582,7 @@ function checkAlerts(fresh) {
         [tr.kind === "deposit" ? "Deposits are often made to sell" : "Withdrawals often mean holding off-exchange"]);
       continue;
     }
-    if (tr.usd >= (stable ? STABLE_ALERT_USD : ALERT_USD) && !["mint", "burn", "dex"].includes(tr.kind)) {
+    if (tr.usd >= (stable ? STABLE_ALERT_USD : ALERT_USD) && !["mint", "burn", "dex", "defi", "contract"].includes(tr.kind)) { // holders' moves, not DeFi plumbing
       const best = byTx.get(tr.tx);
       if (!best || tr.usd > best.usd) byTx.set(tr.tx, tr); // one whale alert per transaction (a swap has two legs)
     }
@@ -367,6 +628,7 @@ function persist() {
   }, 500);
 }
 async function loadState() {
+  await loadNames();
   try { labels = JSON.parse(await readFile(path.join(here, "data", "eth-labels.json"), "utf8")).labels || {}; }
   catch (e) { state.errors.Labels = `data/eth-labels.json missing (${e.message}); run node scripts/build-labels.js`; }
   try {
@@ -399,6 +661,12 @@ function demoTick() {
   return fresh;
 }
 
+// New transfers: learn exchange addresses, and queue unknown addresses for a name lookup (biggest first).
+function afterTransfers(list) {
+  learnExchanges(list);
+  for (const tr of list) for (const a of [tr.from, tr.to]) if (!labelOf(a)) queueName(a, tr.usd);
+}
+
 // ───────────────────────────── main loop ─────────────────────────────
 async function step() {
   if (DEMO) { checkAlerts(demoTick()); state.status = "demo"; state.lastUpdated = Date.now(); prune(); return sleep(3000); }
@@ -413,12 +681,15 @@ async function step() {
     const to = Math.min(head, state.lastBlock + 3);
     const fresh = await processBlocks(state.lastBlock + 1, to, true);
     await ensureCode(fresh);
+    afterTransfers(fresh);
     state.lastBlock = to;
     state.lastBlockTime = fresh.length ? Math.max(...fresh.map((x) => x.t)) : state.lastBlockTime || Date.now();
     checkAlerts(fresh);
   } else if (!state.backfill.done) {
     const b = state.backfill, end = Math.min(b.to, b.next + 9); // history: token transfers only, 10 blocks per request
-    await ensureCode(await processBlocks(b.next, end, false));
+    const old = await processBlocks(b.next, end, false);
+    await ensureCode(old);
+    afterTransfers(old);
     b.next = end + 1;
     if (b.next > b.to) b.done = true;
   } else await sleep(3000);
@@ -436,7 +707,8 @@ async function loop() {
 
 // ───────────────────────────── API ─────────────────────────────
 const party = (a) => { const l = labelOf(a); return { address: a, name: l?.name || null, category: l?.category || null, entity: l?.entity || null,
-  contract: isContract.has(a) ? isContract.get(a) : null, special: a === ZERO ? "mint/burn" : a === DEAD ? "burn" : null }; };
+  learned: !!l?.learned, looked: !!l?.looked, contract: isContract.has(a) ? isContract.get(a) : null, safe: isSafe.has(a),
+  special: a === ZERO ? "mint/burn" : a === DEAD ? "burn" : null }; };
 function transferOut(tr) {
   return { id: tr.id, t: tr.t, block: tr.block, tx: tr.tx, txUrl: `https://etherscan.io/tx/${tr.tx}`, token: tr.token, symbol: tr.symbol, amount: tr.amount,
     usd: tr.usd, kind: tr.kind, stable: isStable(tr), plumbing: plumbing(tr), from: party(tr.from), to: party(tr.to) };
@@ -444,7 +716,7 @@ function transferOut(tr) {
 
 function snapshot(windowKey) {
   const win = windowKey === "24h" ? DAY : HOUR, now = Date.now();
-  const list = transfers.filter((tr) => now - tr.t <= win);
+  const list = transfers.filter((tr) => now - tr.t <= win).map(refreshKind);
   const big = list.filter((tr) => tr.usd >= MIN_USD);
   const tokenFlow = new Map(), exchangeFlow = new Map(), entities = new Map(), wallets = new Map();
   const add = (map, key, init) => { if (!map.has(key)) map.set(key, init()); return map.get(key); };
@@ -460,13 +732,14 @@ function snapshot(windowKey) {
     }
     if (plumbing(tr)) continue;
     for (const [a, dir] of [[tr.from, -1], [tr.to, 1]]) {
-      const l = labelOf(a);
-      if (a === ZERO || a === DEAD || (l && ["dex", "mev"].includes(l.category)) || (!l && isContract.get(a) !== false)) continue; // wallets only
-      const target = l ? add(entities, l.entity, () => ({ name: l.entity, category: l.category, inUsd: 0, outUsd: 0, n: 0, addresses: new Set() }))
-        : add(wallets, a, () => ({ address: a, inUsd: 0, outUsd: 0, n: 0, tokens: new Map() }));
+      const l = labelOf(a), personal = !l || PERSONAL.has(l.category); // a wallet with no label, an ENS name or a Safe
+      if (a === ZERO || a === DEAD || (l && ["dex", "mev", "token"].includes(l.category)) || (l?.looked && l.category === "defi")) continue; // protocols named by Blockscout: too many to list
+      if (personal && isContract.get(a) !== false && !isSafe.has(a)) continue; // wallets only
+      const target = !personal ? add(entities, l.entity, () => ({ name: l.entity, category: l.category, inUsd: 0, outUsd: 0, n: 0, addresses: new Set() }))
+        : add(wallets, a, () => ({ address: a, name: l?.name || null, category: l?.category || null, inUsd: 0, outUsd: 0, n: 0, tokens: new Map() }));
       if (dir > 0) target.inUsd += tr.usd; else target.outUsd += tr.usd;
       target.n++;
-      if (l) target.addresses.add(a); else target.tokens.set(tr.symbol, (target.tokens.get(tr.symbol) || 0) + tr.usd);
+      if (!personal) target.addresses.add(a); else target.tokens.set(tr.symbol, (target.tokens.get(tr.symbol) || 0) + tr.usd);
     }
   }
   const nonStable = big.filter((tr) => !isStable(tr));
@@ -477,10 +750,12 @@ function snapshot(windowKey) {
     window: windowKey === "24h" ? "24h" : "1h",
     chain: { name: "Ethereum", head: state.head, lastBlock: state.lastBlock, lagSec: headLag, backfill: state.backfill },
     config: { minUsd: MIN_USD, alertUsd: ALERT_USD, stableAlertUsd: STABLE_ALERT_USD, telegramPerHour: TELEGRAM_PER_HOUR, exchangeAlertUsd: EXCHANGE_ALERT_USD, mintAlertUsd: MINT_ALERT_USD, minLiquidity: MIN_LIQUIDITY,
-      labels: Object.keys(labels).length, labelsAsOf: "June 2023", categories: CATEGORY_NAMES },
+      labels: Object.keys(labels).length, labelsAsOf: "June 2023", categories: CATEGORY_NAMES, swapMinUsd: SWAP_MIN_USD },
     health: { rpcCallsLastMin: rpcCalls.filter((t) => now - (t || 0) < MIN).length, dexCallsLastMin: dexCalls.filter((t) => now - t < MIN).length,
       rpc: rpcStats.map((s) => ({ url: s.url.replace(/^https?:\/\//, ""), ok: s.ok, fail: s.fail, lastError: s.lastError })),
-      tokensPriced: [...tokens.values()].filter((t) => t.ok).length, transfers24h: transfers.length, addressesChecked: isContract.size },
+      tokensPriced: [...tokens.values()].filter((t) => t.ok).length, transfers24h: transfers.length, addressesChecked: isContract.size,
+      swaps1h: swapTimes.length, names: { ...nameStats, cached: names.size, queue: nameQueue.size, learned: learned.size, safes: isSafe.size, source: BLOCKSCOUT.replace(/^https?:\/\//, "") } },
+    kinds: list.filter((x) => x.usd >= MIN_USD).reduce((m, x) => ((m[x.kind] = (m[x.kind] || 0) + 1), m), {}),
     totals: { transfers: big.length, usd: sum(big), deposits: sum(nonStable.filter((x) => x.kind === "deposit")),
       withdrawals: sum(nonStable.filter((x) => x.kind === "withdrawal")),
       stableMinted: sum(big.filter((x) => x.kind === "mint" && isStable(x))), stableBurned: sum(big.filter((x) => x.kind === "burn" && isStable(x))) },
@@ -491,7 +766,7 @@ function snapshot(windowKey) {
     exchangeFlows: [...exchangeFlow.values()].map((f) => ({ ...f, net: f.deposits - f.withdrawals })).sort((a, b) => (b.deposits + b.withdrawals) - (a.deposits + a.withdrawals)).slice(0, 20),
     entities: [...entities.values()].map((e) => ({ name: e.name, category: e.category, inUsd: e.inUsd, outUsd: e.outUsd, net: e.inUsd - e.outUsd, n: e.n, addresses: e.addresses.size }))
       .sort((a, b) => (b.inUsd + b.outUsd) - (a.inUsd + a.outUsd)).slice(0, 25),
-    whales: [...wallets.values()].map((w) => ({ address: w.address, inUsd: w.inUsd, outUsd: w.outUsd, net: w.inUsd - w.outUsd, n: w.n,
+    whales: [...wallets.values()].map((w) => ({ address: w.address, name: w.name, category: w.category, inUsd: w.inUsd, outUsd: w.outUsd, net: w.inUsd - w.outUsd, n: w.n,
       topToken: [...w.tokens.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null })).sort((a, b) => (b.inUsd + b.outUsd) - (a.inUsd + a.outUsd)).slice(0, 25),
     events: state.events.slice(0, 60),
     watches: state.watches,
@@ -501,7 +776,7 @@ function snapshot(windowKey) {
 function addressView(a) {
   const address = String(a || "").toLowerCase();
   if (!isAddress(address)) throw Object.assign(new Error("Not an Ethereum address"), { status: 400 });
-  const list = transfers.filter((tr) => tr.from === address || tr.to === address);
+  const list = transfers.filter((tr) => tr.from === address || tr.to === address).map(refreshKind);
   const counter = new Map();
   let inUsd = 0, outUsd = 0;
   for (const tr of list) {
@@ -535,7 +810,7 @@ const allowedWrite = (req) => String(req.headers["content-type"] || "").includes
 export function tokenWhaleSummary(symbol) {
   const sym = String(symbol || "").toUpperCase(), now = Date.now();
   if (!started) return { tracked: false, reason: "whale tracker is off" };
-  const list = transfers.filter((tr) => String(tr.symbol).toUpperCase() === sym && now - tr.t <= DAY && tr.kind !== "internal" && !plumbing(tr));
+  const list = transfers.filter((tr) => String(tr.symbol).toUpperCase() === sym && now - tr.t <= DAY).map(refreshKind).filter((tr) => tr.kind !== "internal" && !plumbing(tr));
   const sum = (k) => list.filter((x) => x.kind === k).reduce((s, x) => s + x.usd, 0);
   const deposits = sum("deposit"), withdrawals = sum("withdrawal");
   return {
@@ -552,7 +827,7 @@ export function startWhales() {
   if (started) return;
   started = true;
   console.log(`Whale tracker: Ethereum transfers >= ${fmtUsd(MIN_USD)}, alerts >= ${fmtUsd(ALERT_USD)} | RPC: ${RPCS.map((u) => u.replace(/^https?:\/\//, "")).join(", ")} | no API key`);
-  loadState().finally(loop);
+  loadState().finally(() => { loop(); if (!DEMO) nameLoop(); });
 }
 
 // GET /api/whales (?window=1h|24h, ?only=events), GET /api/whales/address?a=0x…, POST /api/whales/watch | unwatch.

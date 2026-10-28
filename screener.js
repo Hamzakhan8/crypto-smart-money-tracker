@@ -67,8 +67,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRotation } from "./rotation.js";
-import { startFlows, handleFlowsRequest } from "./flows.js";
-import { startWhales, handleWhalesRequest } from "./whales.js";
+import { startFlows, handleFlowsRequest, ingestOnchain, useOnchain, followToken } from "./flows.js";
+import { startWhales, handleWhalesRequest, onWhaleSwaps } from "./whales.js";
 import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 import { createAlpha } from "./alpha.js";
 import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
@@ -1596,7 +1596,13 @@ export function startScreener(baseUrl = "") {
   else console.log("Telegram: off in demo mode");
   loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); if (!DEMO) atCandleClose(); });
   rotation.start();
-  if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
+  if (env.SCREENER_WHALES !== "0") {
+    // Ethereum DEX swaps come from the blocks the whale tracker reads (every DEX); other networks from GeckoTerminal.
+    if (!DEMO) { useOnchain("eth"); onWhaleSwaps((list) => ingestOnchain("eth", list)); }
+    // A new Alpha alert: follow that token's DEX pools for a few hours, so its buyers and sellers show on the Whales tab.
+    alphaHooks.push((a) => { if (a.token?.contract) followToken({ chain: a.token.chain, address: a.token.contract, symbol: a.token.symbol, reason: `Alpha ${a.tier} alert` }); });
+    startWhales(); startFlows();
+  }
   else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");
   if (env.EARLY2X !== "0") startEarly2x();
   else console.log("Early 2x Movers: off (EARLY2X=0)");

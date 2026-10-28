@@ -38,7 +38,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers) |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
-| **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers, exchange inflows and outflows, DEX rotations, your own watchlist |
+| **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
 | **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
@@ -253,18 +253,43 @@ Looks for low- and mid-cap Binance coins (verified market cap $10M-$1B, $1M+ dai
 - **Token unlocks and catalysts** come only from `data/early2x-events.json`, which you keep (only entries with an https source count).
 - **Tracking:** every listed coin is saved as a snapshot and measured at 1h, 6h, 12h, 24h, 3d, 7d, 14d, 21d and 42d (did it reach +25%, +50%, +100%, and how far did it fall first). Nothing is called profitable until 30+ signals have played out for 14 days and the result is positive in both halves.
 
-### 6.5 Whale tracker and DEX rotations
+### 6.5 Whale tracker and DEX flows
 
-**Open:** http://localhost:3000/screener#whales (no API key needed)
+**Open:** http://localhost:3000/screener#whales (no API key needed). Use the tags at the top to jump to a part.
 
-- **Live whale transfers:** every Ethereum transfer above $100k, read from the blockchain, with sender and receiver labelled where known (~10,000 exchanges, funds, issuers, bridges, DeFi protocols, MEV bots, mixers).
-- **Transfer types:** exchange deposit (often before selling), exchange withdrawal, exchange to exchange, mint / burn, bridge, DeFi, wallet to wallet.
-- **Exchange flows:** how much of each token moved onto and off exchanges.
-- **Most active entities and wallets** in the last hour or day. Click any address for its profile, with links to Arkham, Etherscan and DeBank.
+**Whale transfers (Ethereum)**
+
+- **Live whale transfers:** every Ethereum transfer above $100k, read from the blockchain, with who sent it and who received it.
+- **Who is who.** Four sources:
+  - about 10,000 public labels (exchanges, funds, issuers, bridges, MEV bots, mixers);
+  - Blockscout names for newer contracts (Uniswap pools and routers, lending markets, vaults, bridges), Safe multisigs, smart wallets and ENS names;
+  - exchange addresses the tracker **learns by itself**;
+  - your own labels.
+- **Learned exchange addresses.** An unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address (the way Arkham finds them). It shows as "Binance address (learned)". Later deposits into it count as exchange deposits at once, before the exchange collects them. Learned addresses are kept in `whales_names.json`, so the tracker gets better the longer it runs.
+- **Transfer types:**
+  - exchange deposit (often before selling) or withdrawal;
+  - exchange to exchange, or an internal exchange move;
+  - mint / burn, bridge, DeFi, DEX;
+  - wallet ↔ contract (into or out of an unnamed contract);
+  - wallet to wallet.
+
+  DeFi plumbing (contract to contract) is hidden by default and never alerts.
+- **Exchange flows:** how much of each token moved onto and off exchanges, per token and per exchange.
+- **Most active entities and wallets.** Click any address for its profile, with links to Arkham, Etherscan and DeBank.
 - **Watchlist:** paste a wallet (give it your own label) or a token, and get an alert on every move above your minimum.
-- **DEX rotations:** swaps on Ethereum, Base and Solana (for example ETH → PEPE). Watch a pair to be alerted on every swap above your size.
 
-Data: public Ethereum nodes, DexScreener, GeckoTerminal, and an open Etherscan label snapshot (June 2023), so newer exchange wallets can show as unlabelled.
+**DEX flows: which token went where**
+
+- **Where the money went:** a map of money swapped from one token (left) into another (right). Green bands are buying a token, red bands are selling a token for ETH / SOL / BNB / stablecoins, purple bands are token into token. Hover a band for the swaps and wallets behind it.
+- **Tokens bought and sold:** per token, how much was bought and sold, by how many wallets, what it was bought with and sold for, and the biggest buy. Click a token to filter everything to it.
+- **Top rotations, wallet rotations, live swaps** (with the DEX or router used), and **pair watches** (e.g. ETH-PEPE) that alert on every swap above your size.
+- **Coverage:**
+  - Ethereum: **every DEX and aggregator**, rebuilt from the blocks the whale tracker already reads (any token with $50k+ of DEX liquidity).
+  - Base, Solana and BNB Chain: the most active pools from GeckoTerminal's free API. Pools are picked by the number of different wallets trading, so pools with fake volume and tokenized stocks are skipped.
+  - For 6 hours after a Binance Alpha alert: that token's own pools, so you can see who is buying it.
+- **Bots are left out:** wallets that trade in and out within minutes or 40+ times an hour. Token ↔ token loops that go both ways (typical of wash trading) are faded or left off the map.
+
+Data: public Ethereum nodes, DexScreener prices, Blockscout names, GeckoTerminal for other networks, and an open Etherscan label snapshot (June 2023). It shows what wallets did, not why. Not financial advice.
 
 ### 6.6 BTC rotation
 
@@ -467,8 +492,13 @@ Every other threshold is listed at the top of `early2x.js`.
 | `WHALES_EXCHANGE_ALERT_USD` / `WHALES_MINT_ALERT_USD` | `500000` / `10000000` | Exchange flow and mint / burn alerts |
 | `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram by default |
 | `WHALES_TELEGRAM_PER_HOUR` | `30` | Telegram cap |
-| `WHALES_RPC` | public nodes | Your own Ethereum node URL(s) |
-| `FLOWS_NETWORKS` | `eth,base,solana` | DEX networks |
+| `WHALES_RPC` | public nodes | Your own Ethereum node URL(s), comma-separated (a free Alchemy or Infura key is faster and steadier) |
+| `WHALES_BLOCKSCOUT` | `https://eth.blockscout.com` | Where unknown addresses are named |
+| `FLOWS_NETWORKS` | `eth,base,solana,bsc` | DEX networks (Ethereum comes from the blocks, the others from GeckoTerminal) |
+| `FLOWS_MIN_TRADE_USD` | `2000` | Smallest DEX swap recorded |
+| `WHALES_SWAP_MIN_LIQUIDITY_USD` | `50000` | DEX liquidity a token needs for its Ethereum swaps to count |
+| `FLOWS_POOLS_PER_NETWORK` / `FLOWS_MIN_TRADERS_1H` | `6` / `20` | Pools followed per GeckoTerminal network, and the wallets trading in the last hour a pool needs |
+| `FLOWS_FOLLOW_HOURS` | `6` | How long the pools of a token with a new Alpha alert are followed |
 </details>
 
 <details>
@@ -567,7 +597,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `exits.js` | Alternative exit rules, alert speed, condition groups and AI checks on live alerts |
 | `journal.js` | Your trade journal ("I took it") |
 | `early2x.js` | Early 2x movers |
-| `whales.js`, `flows.js` | Whale tracker and DEX rotations |
+| `whales.js`, `flows.js` | Whale tracker (transfers, names, learned exchange addresses, Ethereum DEX swaps) and DEX flows |
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
@@ -575,7 +605,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`) are kept out of git.
 
 ---
 

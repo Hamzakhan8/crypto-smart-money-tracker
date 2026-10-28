@@ -9,7 +9,7 @@
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top left,#142538 0,transparent 42%),var(--bg);color:var(--ink);font-size:14px}.wrap{max-width:1400px;margin:auto;padding:20px 22px 60px}
 header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}.eyebrow{color:var(--green);font-size:11px;font-weight:800;letter-spacing:.17em;text-transform:uppercase}h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.05em;margin:8px 0}.lede{color:var(--muted);max-width:700px;line-height:1.7;margin:0}.header-right{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.chip,.btn,select,input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.chip{font-size:12px;color:var(--muted)}.dot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px}.dot.bad{background:var(--red)}.btn{cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}.btn:hover{border-color:#58718d}.btn.on{border-color:#236a53;color:var(--green)}.notice{margin:22px 0 16px;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}.kpi,.panel{background:linear-gradient(145deg,rgba(20,30,43,.96),rgba(15,23,33,.96));border:1px solid var(--line);border-radius:var(--radius)}.kpi{padding:17px}.kpi .label{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em}.kpi .value{font-size:27px;font-weight:800;letter-spacing:-.04em;margin:7px 0 3px}.kpi .hint{font-size:11px;color:var(--muted)}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}.muted{color:var(--muted)}
-.section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:18px 18px 13px}.section-head h2{margin:0;font-size:16px;letter-spacing:-.02em}.section-head p{margin:5px 0 0;color:var(--muted);font-size:12px}.filters{display:flex;gap:8px;flex-wrap:wrap}.filters input{min-width:150px}.filters select{padding:9px}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:18px 18px 13px}.section-head h2{margin:0;font-size:16px;letter-spacing:-.02em}.section-head p{margin:5px 0 0;color:var(--muted);font-size:12px}.filters{display:flex;gap:8px;flex-wrap:wrap}.filters input:not([type=checkbox]){min-width:150px}.filters select{padding:9px}
 .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;white-space:nowrap}.table th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:12px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.table td{padding:13px 16px;border-bottom:1px solid rgba(37,50,67,.72);font-size:12px}.table tr:last-child td{border-bottom:0}.table tbody tr:hover{background:#172332}.sym{font-weight:800;font-size:13px}.sub{display:block;color:var(--muted);font-size:10px;margin-top:4px}.mono{font-family:"DM Mono",monospace;font-variant-numeric:tabular-nums}
 .score{display:inline-flex;align-items:center;gap:7px;font-weight:800}.scorebar{height:5px;width:54px;background:#263443;border-radius:8px;overflow:hidden;display:inline-block}.scorebar i{display:block;height:100%;background:var(--green);border-radius:8px}
 .badge{display:inline-block;border:1px solid var(--line);padding:5px 8px;border-radius:7px;font-size:10px;font-weight:800}.badge.strong{color:var(--green);border-color:#236a53;background:#102a25}.badge.watch{color:var(--amber);border-color:#6d5621;background:#2b2414}.badge.risk{color:var(--red);border-color:#6e2c3a;background:#2d1720}.badge.old{color:var(--muted);font-weight:700;margin-left:6px}
@@ -73,14 +73,20 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 /* whale moves view */
 .lower>*{min-width:0}  /* let side-by-side panels shrink on phones; wide tables scroll inside their panel */
 .cat{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:6px;padding:2px 5px;margin-left:5px;color:var(--muted);vertical-align:1px}
-.cat.exchange{color:var(--amber);border-color:#6d5621}.cat.fund,.cat.watched{color:#c4b5fd;border-color:#4b3a7a}.cat.issuer{color:var(--green);border-color:#236a53}.cat.bridge,.cat.defi{color:var(--blue);border-color:#2c4a77}.cat.mixer,.cat.flagged{color:var(--red);border-color:#6e2c3a}
+.cat.exchange{color:var(--amber);border-color:#6d5621}.cat.fund,.cat.watched{color:#c4b5fd;border-color:#4b3a7a}.cat.issuer{color:var(--green);border-color:#236a53}.cat.bridge,.cat.defi,.cat.dex,.cat.token{color:var(--blue);border-color:#2c4a77}.cat.safe,.cat.ens{color:#c4b5fd;border-color:#4b3a7a}.cat.mixer,.cat.flagged{color:var(--red);border-color:#6e2c3a}
 .addr{cursor:pointer;background:none;border:0;padding:0;font:inherit;color:var(--ink);text-align:left}.addr:hover .nm{color:var(--blue)}.addr .nm{font-weight:700}.addr.unk .nm{font-family:"DM Mono",monospace;font-weight:500;color:var(--muted)}
-.kind{display:inline-block;font-size:10px;font-weight:800;border-radius:7px;padding:4px 7px;border:1px solid var(--line);color:var(--muted)}.kind.deposit,.kind.burn{color:var(--red);border-color:#6e2c3a;background:#2d1720}.kind.withdrawal,.kind.mint,.kind.issuer{color:var(--green);border-color:#236a53;background:#102a25}.kind.exchange_to_exchange{color:var(--amber);border-color:#6d5621}.kind.bridge,.kind.defi{color:var(--blue);border-color:#2c4a77}
+.kind{display:inline-block;font-size:10px;font-weight:800;border-radius:7px;padding:4px 7px;border:1px solid var(--line);color:var(--muted)}.kind.deposit,.kind.burn{color:var(--red);border-color:#6e2c3a;background:#2d1720}.kind.withdrawal,.kind.mint,.kind.issuer{color:var(--green);border-color:#236a53;background:#102a25}.kind.exchange_to_exchange{color:var(--amber);border-color:#6d5621}.kind.bridge,.kind.defi{color:var(--blue);border-color:#2c4a77}.kind.contract{color:#a78bfa;border-color:#4b3a7a}
 .badge.deposit,.badge.burn{color:var(--red);border-color:#6e2c3a;background:#2d1720}.badge.withdrawal,.badge.mint,.badge.issuer{color:var(--green);border-color:#236a53;background:#102a25}.badge.wallet,.badge.token{color:#c4b5fd;border-color:#4b3a7a;background:#1b1530}
 .toast.deposit,.toast.burn{border-left-color:var(--red)}.toast.withdrawal,.toast.mint,.toast.issuer{border-left-color:var(--green)}.toast.wallet,.toast.token{border-left-color:#a78bfa}.toast.deposit .tag{color:var(--red)}.toast.wallet .tag,.toast.token .tag{color:#c4b5fd}
 .subhead{margin:30px 0 4px;font-size:20px;letter-spacing:-.03em}.subhead+p{margin:0 0 6px;color:var(--muted);font-size:12px;line-height:1.6}
 .watchrow{display:grid;grid-template-columns:1.3fr .7fr;gap:14px}@media(max-width:900px){.watchrow{grid-template-columns:1fr}}
 .wmodal .modal{width:min(820px,100%)}.wstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:14px 20px}
+.wmap{padding:4px 18px 16px}.wmap svg{display:block;width:100%;height:auto}.wmap .band{opacity:.38;transition:opacity .15s}.wmap .band:hover{opacity:.75}
+.wmap .band.buy{fill:var(--green)}.wmap .band.sell{fill:var(--red)}.wmap .band.swap{fill:#a78bfa}.wmap .band.major{fill:var(--muted)}.wmap .node{fill:#3a4a5e}.wmap text{fill:var(--ink);font:700 12px Manrope,system-ui,sans-serif}.wmap .v{fill:var(--muted);font:500 11px "DM Mono",monospace}
+.wlegend{display:flex;gap:14px;flex-wrap:wrap;padding:0 18px 12px;font-size:12px;color:var(--muted)}.wlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.netchips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.netchip{border:1px solid var(--line);background:#151f2b;border-radius:10px;padding:8px 11px;font-size:12px;line-height:1.45}.netchip b{display:block;font-size:12.5px}.netchip.onchain{border-color:#236a53;background:#102a25}
+.dexbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+tr.faded td{opacity:.5}.wsub{display:block;font-size:11px;color:var(--muted);margin-top:2px}
 .wroute{font-weight:800}.wroute .arrow{color:var(--blue);margin:0 6px}.wtok.major{color:var(--muted);font-weight:700}.badge.net{color:var(--muted);font-weight:700;margin-left:6px}
 .badge.whale{color:var(--blue);border-color:#2c4a77;background:#111d30}.badge.watch{color:#c4b5fd;border-color:#4b3a7a;background:#1b1530}.badge.surge{color:var(--green);border-color:#236a53;background:#102a25}.badge.rotation{color:var(--amber);border-color:#6d5621;background:#2b2414}
 .wbar{height:5px;width:56px;background:#263443;border-radius:8px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:6px}.wbar i{display:block;height:100%;background:var(--blue)}
@@ -254,7 +260,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <div class="foot" data-sec="">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
- <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it where the address is known (~10,000 labelled exchanges, funds, issuers, bridges and protocols from a public June 2023 Etherscan snapshot, plus your own labels).</summary><div>Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
+ <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it. Names come from ~10,000 public labels (exchanges, funds, issuers, bridges; a June 2023 snapshot), from Blockscout for newer contracts, Safe multisigs and ENS names, from exchange addresses the tracker learns by itself, and from your own labels.</summary><div>Exchange addresses are learned the way Arkham does it: an unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address, so later deposits into it count at once (shown as "address (learned)"). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
  <div class="error" id="wErrors"></div>
  <div class="watchrow">
   <section data-sec="watch" class="panel">
@@ -284,7 +290,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <div><h2>Live whale transfers</h2><p>Newest first. Click any sender or receiver for its profile.</p></div>
    <div class="filters">
     <select id="whWin" aria-label="Time window"><option value="1h" selected>Last hour</option><option value="24h">Last 24 hours</option></select>
-    <select id="whKind" aria-label="Transfer type"><option value="">All types</option><option value="deposit">Exchange deposits</option><option value="withdrawal">Exchange withdrawals</option><option value="exchange_to_exchange">Exchange to exchange</option><option value="mint,burn,issuer">Mint, burn, issuer</option><option value="transfer">Wallet to wallet</option><option value="defi,bridge">DeFi and bridges</option><option value="dex">DEX</option></select>
+    <select id="whKind" aria-label="Transfer type"><option value="">All types</option><option value="deposit">Exchange deposits</option><option value="withdrawal">Exchange withdrawals</option><option value="exchange_to_exchange">Exchange to exchange</option><option value="mint,burn,issuer">Mint, burn, issuer</option><option value="transfer">Wallet to wallet</option><option value="defi,bridge">DeFi and bridges</option><option value="contract">Wallet ↔ contract</option><option value="dex">DEX</option></select>
     <select id="whMin" aria-label="Minimum value"><option value="0">Any size</option><option value="500000">$500k+</option><option value="1000000" selected>$1M+</option><option value="10000000">$10M+</option></select>
     <input id="whQ" placeholder="Token or name, e.g. PEPE, Binance" aria-label="Filter by token or name">
     <label class="wcheck"><input type="checkbox" id="whStable" checked> stablecoins</label>
@@ -303,8 +309,25 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <section data-sec="entities" class="panel"><div class="section-head"><div><h2>Biggest unlabelled wallets</h2><p>Addresses with no public label, by value moved. Open them on Arkham.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Wallet</th><th>Received</th><th>Sent</th><th>Net</th><th>Main token</th></tr></thead><tbody id="whWal"></tbody></table></div></section>
  </div>
 
- <h2 class="subhead" data-sec="dex">DEX rotations</h2>
- <p data-sec="dex">Swaps on decentralized exchanges (Ethereum, Base, Solana) from GeckoTerminal's free API: which token wallets sold for which (e.g. ETH → PEPE). The free API allows only a few requests a minute, so each pool refreshes every few minutes.</p>
+ <h2 class="subhead" data-sec="map dex">DEX flows: which token went where</h2>
+ <p data-sec="map dex">Every swap on every Ethereum DEX and aggregator, rebuilt from the blocks the whale tracker already reads (any token with $50k+ of DEX liquidity), plus the most active pools on Base, Solana and BNB Chain from GeckoTerminal's free API, and for 6 hours the pools of every token with a new Binance Alpha alert. Swaps from $2,000. Bot-like wallets are left out of the totals.</p>
+ <div class="netchips" id="wNets" data-sec="map dex"></div>
+ <div class="dexbar" data-sec="map dex">
+  <select id="wWin" aria-label="Time window"><option value="15m">Last 15 min</option><option value="1h" selected>Last hour</option><option value="24h">Last 24 hours</option></select>
+  <select id="wNetFilter" aria-label="Network filter"><option value="">All networks</option></select>
+  <input id="wQ" placeholder="Filter: PEPE or ETH-PEPE" aria-label="Filter by token or pair">
+  <label class="wcheck"><input type="checkbox" id="wMajors"> ETH/BTC/SOL ↔ stablecoins</label>
+ </div>
+ <section data-sec="map" class="panel" style="margin-bottom:14px">
+  <div class="section-head"><div><h2>Where the money went</h2><p>Each band is money swapped from a token on the left into a token on the right, in the window above. Width = USD. Hover a band for the details.</p></div><span class="chip" id="wMapChip">—</span></div>
+  <div class="wlegend"><span><i style="background:var(--green)"></i>into a token (buying)</span><span><i style="background:var(--red)"></i>out of a token into ETH / SOL / BNB / stablecoins (selling)</span><span><i style="background:#a78bfa"></i>token into token</span><span><i style="background:var(--muted)"></i>between ETH / BTC / stablecoins</span></div>
+  <div class="wmap" id="wMap"><div class="empty">Loading…</div></div>
+ </section>
+ <section data-sec="map" class="panel" style="margin-bottom:14px">
+  <div class="section-head"><div><h2>Tokens bought and sold on DEXes</h2><p>Per token: how much was bought and sold, by how many wallets, and what it was bought with or sold for. Ranked by money from or to ETH / SOL / BNB / stablecoins; tokens only swapped into other small tokens (often wash trading) are faded at the bottom.</p></div>
+   <div class="filters"><select id="tSort" aria-label="Sort tokens"><option value="">Most traded</option><option value="net">Most net buying</option><option value="sell">Most net selling</option><option value="buyers">Most buyers</option></select></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Bought</th><th>Sold</th><th>Net</th><th>Buyers / sellers</th><th>Bought with</th><th>Sold for</th><th>Biggest buy</th></tr></thead><tbody id="wTok"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
  <section data-sec="dex" class="panel" style="margin-bottom:14px">
   <div class="section-head"><div><h2>Watch a pair</h2><p>Popup on every swap from one token into another, e.g. ETH-PEPE, SOL-BONK, USDC-ETH.</p></div><span class="chip" id="wkLine">—</span></div>
   <form class="watchbar" id="wForm">
@@ -320,25 +343,19 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <section data-sec="dex" class="panel">
   <div class="section-head">
    <div><h2>Top rotations</h2><p>Money moving FROM one token TO another. One-way = share of the pair's two-way flow going this direction. vs normal = compared with this route's usual level today.</p></div>
-   <div class="filters">
-    <select id="wWin" aria-label="Time window"><option value="15m">Last 15 min</option><option value="1h" selected>Last hour</option><option value="24h">Last 24 hours</option></select>
-    <select id="wNetFilter" aria-label="Network filter"><option value="">All networks</option></select>
-    <input id="wQ" placeholder="Filter: PEPE or ETH-PEPE" aria-label="Filter by token or pair">
-    <label class="wcheck"><input type="checkbox" id="wMajors"> ETH/BTC/SOL ↔ stablecoins</label>
-   </div>
   </div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Route</th><th>Value</th><th>Swaps</th><th>Wallets</th><th>One-way</th><th>vs normal</th><th>Largest swap</th></tr></thead><tbody id="wEdges"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
  </section>
  <div class="lower">
   <section data-sec="dex" class="panel"><div class="section-head"><div><h2>Wallet rotations</h2><p id="wRotHint">Wallets that sold one token and bought another soon after (last 24 hours).</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Wallet</th><th>Rotation</th><th>Value</th><th>Gap</th></tr></thead><tbody id="wRot"></tbody></table></div></section>
-  <section data-sec="dex" class="panel"><div class="section-head"><div><h2>Live swaps</h2><p>Newest first. Faded rows are bot-like wallets.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Swap</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="wFeed"></tbody></table></div></section>
+  <section data-sec="dex" class="panel"><div class="section-head"><div><h2>Live swaps</h2><p>Newest first, with the DEX or router used. Faded rows are bot-like wallets.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Time</th><th>Swap</th><th>Value</th><th>Wallet</th><th>Tx</th></tr></thead><tbody id="wFeed"></tbody></table></div></section>
  </div>
 
  <div class="lower">
   <section data-sec="alerts" class="panel"><div class="section-head"><div><h2>Alert history</h2><p>Whale and DEX alerts that popped up.</p></div></div><div class="events" id="wEvents"><div class="empty">No alerts yet.</div></div></section>
   <section data-sec="health" class="panel"><div class="section-head"><div><h2>Data health</h2><p>Where the data comes from right now.</p></div></div><div class="source-list" id="wHealth"></div></section>
  </div>
- <div class="foot" data-sec="">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
+ <div class="foot" data-sec="">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list, Blockscout names and learned exchange addresses; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default), into or out of an unnamed contract "wallet ↔ contract". Deposits into a learned exchange address count at once; into an unknown one they show when the exchange sweeps them to its hot wallet. DEX swaps on Ethereum are rebuilt from the same blocks: in one transaction, a wallet that gave token A and got token B swapped A → B. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
 </div>
 <div id="view-alpha" role="tabpanel" aria-labelledby="tabAlpha" hidden>
  <details class="notice"><summary><b>Read this first:</b> Binance Alpha tokens are early on-chain tokens with thin pools; most volume ignitions fade.</summary><div>Data comes from the public endpoints Binance's own Alpha pages use (not documented, so they can change) and from DexScreener for buys vs sells, because Alpha trades carry no buyer/seller side. Pool liquidity is often a few hundred thousand dollars, so a market order moves the price; tokens can be delisted from Alpha. Every alert is tracked (+40% target before -10% stop within 7 days, after costs) so you can judge it, and the replay below shows how the same rule did in the past. Not financial advice.</div></details>
@@ -815,7 +832,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  syncNotify();
 
  // ---------- tabs ----------
- const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
@@ -828,7 +845,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
-  whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
+  whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
   journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
  };
@@ -867,8 +884,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // ---------- whale tracker ----------
  let wd={},fd={},wSeen=null,fSeen=null,wNetsFilled=false;
  const WTYPES={whale:"WHALE TRANSFER",deposit:"EXCHANGE DEPOSIT",withdrawal:"EXCHANGE WITHDRAWAL",mint:"STABLECOIN MINT",burn:"STABLECOIN BURN",issuer:"ISSUER MOVE",wallet:"WATCHED WALLET",token:"WATCHED TOKEN",watch:"PAIR WATCH",surge:"ROTATION SURGE",rotation:"WALLET ROTATION"};
- const KINDS={deposit:"Exchange deposit",withdrawal:"Exchange withdrawal",exchange_to_exchange:"Exchange → exchange",internal:"Internal exchange",mint:"Mint",burn:"Burn",issuer:"Issuer",dex:"DEX",bridge:"Bridge",defi:"DeFi",transfer:"Wallet → wallet"};
- const CATS={exchange:"Exchange",fund:"Fund",issuer:"Issuer",bridge:"Bridge",dex:"DEX",defi:"DeFi",mev:"MEV bot",mixer:"Mixer",flagged:"Flagged",watched:"Your label"};
+ const KINDS={deposit:"Exchange deposit",withdrawal:"Exchange withdrawal",exchange_to_exchange:"Exchange → exchange",internal:"Internal exchange",mint:"Mint",burn:"Burn",issuer:"Issuer",dex:"DEX",bridge:"Bridge",defi:"DeFi",contract:"Wallet ↔ contract",transfer:"Wallet → wallet"};
+ const CATS={exchange:"Exchange",fund:"Fund",issuer:"Issuer",bridge:"Bridge",dex:"DEX",defi:"DeFi",mev:"MEV bot",mixer:"Mixer",flagged:"Flagged",watched:"Your label",safe:"Multisig / smart wallet",ens:"ENS",token:"Token"};
  const wusd=v=>v==null||!Number.isFinite(v)?"—":Math.abs(v)>=1e9?"$"+(v/1e9).toFixed(2)+"B":Math.abs(v)>=1e6?"$"+(v/1e6).toFixed(2)+"M":Math.abs(v)>=1e3?"$"+(v/1e3).toFixed(1)+"k":"$"+Math.round(v);
  const snet=v=>(v>0?"+":v<0?"−":"")+wusd(Math.abs(v));
  const wamt=v=>!Number.isFinite(v)?"":v>=1e9?(v/1e9).toFixed(2)+"B":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"k":v>=1?v.toFixed(2):v.toPrecision(3);
@@ -877,7 +894,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const wshort=a=>a&&a.length>12?a.slice(0,6)+"…"+a.slice(-4):a||"?";
  const wlink=(url,text)=>url&&/^https:\/\//.test(url)?`<a class="wlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`:esc(text);
  const catTag=c=>c?`<span class="cat ${esc(c)}">${esc(CATS[c]||c)}</span>`:"";
- const party=p=>p.special?`<span class="muted">${esc(p.special==="burn"?"Burn address":"Mint / burn (0x0)")}</span>`:`<button type="button" class="addr ${p.name?"":"unk"}" data-addr="${esc(p.address)}" title="${esc(p.address)}"><span class="nm">${esc(p.name||wshort(p.address))}</span>${p.category?catTag(p.category):p.contract?'<span class="cat">contract</span>':""}</button>`;
+ const party=p=>p.special?`<span class="muted">${esc(p.special==="burn"?"Burn address":"Mint / burn (0x0)")}</span>`:`<button type="button" class="addr ${p.name?"":"unk"}" data-addr="${esc(p.address)}" title="${esc(p.address)}"><span class="nm">${esc(p.name||wshort(p.address))}</span>${p.learned?'<span class="cat exchange" title="Learned from its transfers: it hands its tokens to this exchange">Exchange · learned</span>':p.category?catTag(p.category):p.contract?'<span class="cat">contract</span>':""}</button>`;
  const wtok=t=>`<span class="wtok ${t.cls!=="token"?"major":""}">${esc(t.symbol)}</span>`;
  const wroute=(f,t)=>`<span class="wroute">${wtok(f)}<span class="arrow">→</span>${wtok(t)}</span>`;
  const wnet=id=>id==="eth"&&!(fd.networks||[]).length?"Ethereum":((fd.networks||[]).find(n=>n.id===id)||{}).name||id||"";
@@ -908,9 +925,11 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    ["History loaded",ch.backfill?(ch.backfill.done?"last "+(ch.backfill.to-ch.backfill.from+1)+" blocks":"loading… block "+(ch.backfill.next||"—")):"—"],
    ["Tokens priced (DexScreener)",`${h.tokensPriced??0} · ${h.dexCallsLastMin??0} requests/min`],
    ["Address labels",`${(c.labels||0).toLocaleString()} (public snapshot, ${esc(c.labelsAsOf||"")})`],
+   ["Names (Blockscout) and learned addresses",(()=>{const n=h.names||{};return `${(n.cached||0).toLocaleString()} looked up · ${(n.named||0).toLocaleString()} named · ${n.queue??0} waiting · ${(n.learned||0).toLocaleString()} exchange addresses learned · ${(n.safes||0).toLocaleString()} multisigs / smart wallets${n.lastError?` · <span class="amber">${esc(n.lastError)}</span>`:""}`;})()],
+   ["DEX swaps on Ethereum (from the blocks)",`${h.swaps1h??0} in the last hour, from ${wusd(c.swapMinUsd)}`],
    ["Whale alerts",`transfers ${wusd(c.alertUsd)} (stablecoins ${wusd(c.stableAlertUsd)}) · exchange moves ${wusd(c.exchangeAlertUsd)} · mints ${wusd(c.mintAlertUsd)}`],
    ["Telegram",wd.telegramOn||fd.telegramOn?(wd.telegramConfigured?`<span class="green">on</span> · ${[wd.telegramOn?`whales (max ${c.telegramPerHour}/hour)`:null,fd.telegramOn?"DEX":null].filter(Boolean).join(" · ")}`:'<span class="amber">not set (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)</span>'):'off · on screen only (switch on "Whale transfers" / "DEX rotations" in Ignition › Telegram)'],
-   ["DEX data (GeckoTerminal)",`${fh.callsLastMin??0}/min of ${fc.callsPerMin??"—"}${fh.pausedUntil?' · <span class="amber">rate limited, slowing down</span>':""} · ${(fd.pools||[]).length} pools`],
+   ["DEX data, other networks (GeckoTerminal)",`${fh.callsLastMin??0}/min of ${fc.callsPerMin??"—"}${fh.pausedUntil?' · <span class="amber">rate limited, slowing down</span>':""} · ${(fd.pools||[]).length} pools${(fd.followMisses||[]).length?` · <span class="muted">not followed: ${esc(fd.followMisses.join("; "))}</span>`:""}`],
   ].map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
  }
  function drawWh(){
@@ -927,14 +946,18 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#whTok").innerHTML=(d.tokenFlows||[]).length?d.tokenFlows.filter(f=>stable||!f.stable).slice(0,12).map(f=>`<tr><td><b>${esc(f.symbol)}</b>${f.stable?'<span class="cat">stable</span>':""}</td><td class="mono">${wusd(f.deposits)}</td><td class="mono">${wusd(f.withdrawals)}</td><td class="mono ${f.net>0?"red":f.net<0?"green":""}"><b>${snet(f.net)}</b></td><td class="mono">${f.n}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No exchange flows yet.</td></tr>';
   $("#whEx").innerHTML=(d.exchangeFlows||[]).length?d.exchangeFlows.slice(0,12).map(f=>`<tr><td><b>${esc(f.exchange)}</b></td><td class="mono">${wusd(f.deposits)}<span class="sub">stables ${wusd(f.stableIn)}</span></td><td class="mono">${wusd(f.withdrawals)}<span class="sub">stables ${wusd(f.stableOut)}</span></td><td class="mono ${f.net>0?"red":f.net<0?"green":""}"><b>${snet(f.net)}</b></td><td class="mono">${f.n}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No exchange flows yet.</td></tr>';
   $("#whEnt").innerHTML=(d.entities||[]).length?d.entities.slice(0,12).map(e=>`<tr><td><b>${esc(e.name)}</b>${catTag(e.category)}<span class="sub">${e.addresses} address${e.addresses===1?"":"es"}</span></td><td class="mono">${wusd(e.inUsd)}</td><td class="mono">${wusd(e.outUsd)}</td><td class="mono ${e.net>0?"green":e.net<0?"red":""}">${snet(e.net)}</td><td class="mono">${e.n}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Nothing yet.</td></tr>';
-  $("#whWal").innerHTML=(d.whales||[]).length?d.whales.slice(0,12).map(w=>`<tr><td>${party({address:w.address})}</td><td class="mono">${wusd(w.inUsd)}</td><td class="mono">${wusd(w.outUsd)}</td><td class="mono ${w.net>0?"green":w.net<0?"red":""}">${snet(w.net)}</td><td>${esc(w.topToken||"—")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Nothing yet.</td></tr>';
+  $("#whWal").innerHTML=(d.whales||[]).length?d.whales.slice(0,12).map(w=>`<tr><td>${party({address:w.address,name:w.name,category:w.category})}</td><td class="mono">${wusd(w.inUsd)}</td><td class="mono">${wusd(w.outUsd)}</td><td class="mono ${w.net>0?"green":w.net<0?"red":""}">${snet(w.net)}</td><td>${esc(w.topToken||"—")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Nothing yet.</td></tr>';
  }
  function drawDex(){
   const d=fd,q=$("#wQ").value.trim(),nf=$("#wNetFilter").value,majors=$("#wMajors").checked;
   if(d.disabled)return;
   if(!wNetsFilled&&d.networks){wNetsFilled=true;for(const n of d.networks)for(const sel of ["#wNet","#wNetFilter"]){const o=document.createElement("option");o.value=n.id;o.textContent=n.name;$(sel).appendChild(o);}}
   const t=d.totals||{};
-  $("#wkLine").textContent=`${t.swaps1h??0} swaps · ${wusd(t.usd1h)} last hour · ${t.pools??0} pools`;
+  $("#wkLine").textContent=`${t.swaps1h??0} swaps · ${wusd(t.usd1h)} last hour`;
+  $("#wNets").innerHTML=(d.networks||[]).map(n=>`<div class="netchip ${n.source==="onchain"?"onchain":""}"><b>${esc(n.name)}</b>${n.source==="onchain"?"every DEX, from the blocks":`${n.pools??0} pools · GeckoTerminal`} · ${n.swaps1h} swaps last hour${(n.followed||[]).length?`<span class="wsub">following ${esc(n.followed.join(", "))} (Alpha alert)</span>`:""}</div>`).join("");
+  // token <-> token routes going both ways about equally are left off the map (typical of wash trading rings)
+  drawMap((d.edges||[]).filter(e=>(majors||!e.majors)&&(!nf||e.net===nf)&&wMatch(q,S(e.from.symbol),S(e.to.symbol))&&(q||!(e.from.cls==="token"&&e.to.cls==="token"&&e.oneWay<0.7))));
+  drawTokens();
   $("#wWatches").innerHTML=(d.watches||[]).length?d.watches.map(w=>`<span class="wchip">${esc(w.from)} ${w.both?"⇄":"→"} ${esc(w.to)} <small>${w.net==="*"?"any network":esc(wnet(w.net))} · from ${wusd(w.minUsd)} · ${esc(w.status||"")}</small><button type="button" title="Stop watching" data-unwatch="${esc(w.id)}">×</button></span>`).join(""):'<span class="muted" style="font-size:12px">No pairs watched.</span>';
   const edges=(d.edges||[]).filter(e=>(majors||!e.majors)&&(!nf||e.net===nf)&&wMatch(q,S(e.from.symbol),S(e.to.symbol))).slice(0,30);
   $("#wEdges").innerHTML=edges.length?edges.map(e=>{
@@ -946,8 +969,48 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const rots=(d.rotations||[]).filter(r=>(!nf||r.net===nf)&&wMatch(q,S(r.from.symbol),S(r.to.symbol)));
   $("#wRot").innerHTML=rots.length?rots.slice(0,15).map(r=>`<tr><td class="mono">${wclock(r.t)}<span class="sub">${esc(wago(r.t))}</span></td><td class="mono">${wlink(r.walletUrl,wshort(r.wallet))}<span class="sub">${esc(r.chain)}</span></td><td>${wroute(r.from,r.to)}<span class="sub">via ${esc(r.via.symbol)}</span></td><td class="mono"><b>${wusd(r.usd)}</b></td><td class="mono">${r.gapMin} min</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No wallet rotations seen yet.</td></tr>';
   const feed=(d.feed||[]).filter(r=>(!nf||r.net===nf)&&wMatch(q,S(r.from.symbol),S(r.to.symbol)));
-  $("#wFeed").innerHTML=feed.length?feed.slice(0,30).map(r=>`<tr class="${r.bot?"bot":""}"><td class="mono">${wclock(r.t)}<span class="sub">${esc(r.chain)}</span></td><td>${wroute(r.from,r.to)}<span class="sub mono">${esc(wamt(r.from.amount))} → ${esc(wamt(r.to.amount))}${r.hops>1?" · "+r.hops+" hops":""}</span></td><td class="mono"><b>${wusd(r.usd)}</b></td><td class="mono">${wlink(r.walletUrl,wshort(r.wallet))}${r.bot?'<span class="sub">bot-like</span>':""}</td><td class="mono">${wlink(r.txUrl,"view")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No swaps yet.</td></tr>';
+  $("#wFeed").innerHTML=feed.length?feed.slice(0,30).map(r=>`<tr class="${r.bot?"bot":""}"><td class="mono">${wclock(r.t)}<span class="sub">${esc(r.chain)}${r.dex?" · "+esc(r.dex):""}</span></td><td>${wroute(r.from,r.to)}<span class="sub mono">${esc(wamt(r.from.amount))} → ${esc(wamt(r.to.amount))}${r.hops>1?" · "+r.hops+" hops":""}</span></td><td class="mono"><b>${wusd(r.usd)}</b></td><td class="mono">${wlink(r.walletUrl,wshort(r.wallet))}${r.bot?'<span class="sub">bot-like</span>':r.safe?'<span class="sub">multisig / smart wallet</span>':""}</td><td class="mono">${wlink(r.txUrl,"view")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No swaps yet.</td></tr>';
  }
+ // ---- where the money went: bands from the token sold (left) to the token bought (right), width = USD ----
+ function drawMap(list){
+  const box=$("#wMap"),top=list.slice(0,16),total=top.reduce((a,e)=>a+e.usd,0);
+  $("#wMapChip").textContent=list.length?`${wusd(list.reduce((a,e)=>a+e.usd,0))} · ${list.length} routes`:"—";
+  if(!top.length||!(total>0)){box.innerHTML=`<div class="empty">${(fd.edges||[]).length?"Nothing matches the filters.":"No swaps in this window yet."}</div>`;return;}
+  const multi=new Set(top.map(e=>e.net)).size>1,key=(t,e)=>t.symbol+"|"+e.net,L=new Map(),R=new Map();
+  for(const e of top){for(const [m,t] of [[L,e.from],[R,e.to]]){const k=key(t,e),x=m.get(k)||{k,t,chain:e.chain,usd:0,off:0};x.usd+=e.usd;m.set(k,x);}}
+  const ln=[...L.values()].sort((a,b)=>b.usd-a.usd),rn=[...R.values()].sort((a,b)=>b.usd-a.usd);
+  const W=Math.max(320,Math.round(box.clientWidth-36||900)),narrow=W<600,lab=narrow?92:170,nw=10,gap=10,n=Math.max(ln.length,rn.length);
+  const sc=Math.max(140,n*22)/total,pitch=h=>Math.max(h,18)+gap;
+  const place=nodes=>{let y=8;for(const x of nodes){x.h=Math.max(2,x.usd*sc);x.y=y+(pitch(x.h)-gap-x.h)/2;y+=pitch(x.h);}return y;};
+  const H=Math.max(place(ln),place(rn))+4,x0=lab,x1=W-lab-nw,mid=(x0+nw+x1)/2;
+  const li=new Map(ln.map((x,i)=>[x.k,i])),ri=new Map(rn.map((x,i)=>[x.k,i]));
+  const bh=e=>Math.max(1,e.usd*sc),yR=new Map();
+  for(const e of [...top].sort((a,b)=>ri.get(key(a.to,a))-ri.get(key(b.to,b))||li.get(key(a.from,a))-li.get(key(b.from,b)))){const r=R.get(key(e.to,e));yR.set(e,r.y+r.off);r.off+=bh(e);}
+  const cls=e=>e.majors?"major":e.to.cls==="token"?(e.from.cls==="token"?"swap":"buy"):e.from.cls==="token"?"sell":"major";
+  let svg="";
+  for(const e of [...top].sort((a,b)=>li.get(key(a.from,a))-li.get(key(b.from,b))||ri.get(key(a.to,a))-ri.get(key(b.to,b)))){
+   const l=L.get(key(e.from,e)),h=bh(e),a=l.y+l.off,b=yR.get(e);l.off+=h;
+   svg+=`<path class="band ${cls(e)}" d="M${x0+nw},${a.toFixed(1)} C${mid},${a.toFixed(1)} ${mid},${b.toFixed(1)} ${x1},${b.toFixed(1)} L${x1},${(b+h).toFixed(1)} C${mid},${(b+h).toFixed(1)} ${mid},${(a+h).toFixed(1)} ${x0+nw},${(a+h).toFixed(1)} Z"><title>${esc(`${wusd(e.usd)}: ${e.from.symbol} → ${e.to.symbol} on ${e.chain} · ${e.n} swaps by ${e.wallets} wallet${e.wallets===1?"":"s"} · ${Math.round(e.oneWay*100)}% one-way`)}</title></path>`;
+  }
+  const label=(x,side)=>{const cy=(x.y+x.h/2+4).toFixed(1),sym=esc(x.t.symbol.length>14?x.t.symbol.slice(0,13)+"…":x.t.symbol)+(multi&&!narrow?` <tspan class="v">${esc(x.chain)}</tspan>`:"");
+   return side==="l"?`<rect class="node" x="${x0}" y="${x.y.toFixed(1)}" width="${nw}" height="${x.h.toFixed(1)}" rx="2"/><text x="${x0-6}" y="${cy}" text-anchor="end">${sym} <tspan class="v">${wusd(x.usd)}</tspan></text>`
+    :`<rect class="node" x="${x1}" y="${x.y.toFixed(1)}" width="${nw}" height="${x.h.toFixed(1)}" rx="2"/><text x="${x1+nw+6}" y="${cy}">${sym} <tspan class="v">${wusd(x.usd)}</tspan></text>`;};
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${Math.ceil(H)}" role="img" aria-label="Money flow between tokens on DEXes">${svg}${ln.map(x=>label(x,"l")).join("")}${rn.map(x=>label(x,"r")).join("")}</svg>${list.length>top.length?`<div class="muted" style="font-size:12px;margin-top:6px">Biggest ${top.length} of ${list.length} routes. Use the filter above for one token or network.</div>`:""}`;
+ }
+ // ---- tokens bought and sold ----
+ function drawTokens(){
+  const d=fd,q=$("#wQ").value.trim().toUpperCase(),nf=$("#wNetFilter").value,so=$("#tSort").value;
+  const parts=q.replace(/\s/g,"").split(/->|>|-|\/|→/).filter(Boolean);
+  let rows=(d.tokenFlows||[]).filter(f=>(!nf||f.net===nf)&&(!parts.length||parts.some(x=>S(f.token.symbol).includes(x))));
+  if(so==="net")rows=[...rows].sort((a,b)=>b.netUsd-a.netUsd);else if(so==="sell")rows=[...rows].sort((a,b)=>a.netUsd-b.netUsd);else if(so==="buyers")rows=[...rows].sort((a,b)=>b.buyers-a.buyers);
+  const lst=a=>a.length?a.map(x=>`${esc(x.symbol)} <span class="muted mono">${wusd(x.usd)}</span>`).join("<br>"):'<span class="muted">—</span>';
+  const nSym={};for(const f of d.tokenFlows||[])nSym[f.token.symbol]=(nSym[f.token.symbol]||0)+1; // same symbol, different contracts (copycats): show the address
+  $("#wTok").innerHTML=rows.length?rows.slice(0,30).map(f=>`<tr class="${f.tokenOnly?"faded":""}"><td><button type="button" class="coin-link" data-wtok="${esc(f.token.symbol)}"><b>${esc(f.token.symbol)}</b></button><span class="badge net">${esc(f.chain)}</span>${nSym[f.token.symbol]>1&&f.token.address?`<span class="wsub mono">${esc(wshort(f.token.address))}</span>`:""}${f.tokenOnly?'<span class="wsub">token ↔ token only</span>':""}</td><td class="mono green">${wusd(f.inUsd)}<span class="sub">${f.buys} buy${f.buys===1?"":"s"}</span></td><td class="mono red">${wusd(f.outUsd)}<span class="sub">${f.sells} sell${f.sells===1?"":"s"}</span></td><td class="mono ${f.netUsd>0?"green":f.netUsd<0?"red":""}"><b>${snet(f.netUsd)}</b></td><td class="mono">${f.buyers} / ${f.sellers}</td><td>${lst(f.boughtWith)}</td><td>${lst(f.soldFor)}</td><td class="mono">${f.biggestBuy?wusd(f.biggestBuy):"—"}</td></tr>`).join("")
+   :`<tr><td colspan="8" class="empty">${(d.tokenFlows||[]).length?"Nothing matches the filters.":"No token swaps in this window yet."}</td></tr>`;
+ }
+ $("#wTok").addEventListener("click",e=>{const b=e.target.closest("[data-wtok]");if(!b)return;$("#wQ").value=b.dataset.wtok;drawDex();});
+ $("#tSort").onchange=drawTokens;
+ let mapResize=null;window.addEventListener("resize",()=>{clearTimeout(mapResize);mapResize=setTimeout(()=>{if(tab==="whales")drawDex();},200);});
  // ---- address profile ----
  async function openAddr(a){
   $("#whMTitle").textContent=wshort(a);$("#whMSub").textContent=a;$("#whMEyebrow").textContent="Address";$("#whMStats").innerHTML="";$("#whMCp").innerHTML="";$("#whMTx").innerHTML='<tr><td class="empty">Loading…</td></tr>';$("#whMLinks").innerHTML="";

@@ -28,4 +28,7 @@ alpha_state.json
 journal.json
 telegram_state.json
 telegram_state.demo.json
+whales_names.json
+whales_names.demo.json
+whales_names.json.tmp
 journal.demo.json

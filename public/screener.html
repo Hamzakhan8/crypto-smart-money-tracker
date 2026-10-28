@@ -102,12 +102,12 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
 <header>
- <div><div class="eyebrow">Binance spot · no API key</div><h1 id="pageTitle">Early ignition</h1><p class="lede" id="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
+ <div><div class="eyebrow" id="eyebrow">Binance spot · no API key</div><h1 id="pageTitle">Early ignition</h1><p class="lede" id="lede">Catches tokens when volume ignites <b>before</b> price runs: 15-minute volume surging, buyers in control, a rising trend, price barely moved. Tokens that already ran are flagged so you do not chase them. New alerts appear here as popups.</p></div>
  <div class="header-right">
   <button class="btn sm" id="soundBtn" title="Play a short tone when a new alert arrives">Sound: off</button>
   <button class="btn sm" id="notifyBtn" title="Show desktop notifications for new alerts">Desktop alerts</button>
@@ -298,6 +298,29 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </div>
  <div class="foot">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
 </div>
+<div id="view-alpha" role="tabpanel" aria-labelledby="tabAlpha" hidden>
+ <details class="notice"><summary><b>Read this first:</b> Binance Alpha tokens are early on-chain tokens with thin pools; most volume ignitions fade.</summary><div>Data comes from the public endpoints Binance's own Alpha pages use (not documented, so they can change) and from DexScreener for buys vs sells, because Alpha trades carry no buyer/seller side. Pool liquidity is often a few hundred thousand dollars, so a market order moves the price; tokens can be delisted from Alpha. Every alert is tracked (+40% target before -10% stop within 7 days, after costs) so you can judge it, and the replay below shows how the same rule did in the past. Not financial advice.</div></details>
+ <div class="error" id="aErrors"></div>
+ <div class="kpis">
+  <div class="kpi"><div class="label">Tokens scanned</div><div class="value" id="aScanned">—</div><div class="hint" id="aScannedHint">Binance Alpha, not on spot</div></div>
+  <div class="kpi"><div class="label">Ignited now</div><div class="value green" id="aIgnited">—</div><div class="hint" id="aIgnitedHint">early · confirmed</div></div>
+  <div class="kpi"><div class="label">Heating up</div><div class="value amber" id="aHeating">—</div><div class="hint">Volume rising, not confirmed yet</div></div>
+  <div class="kpi"><div class="label">Confirmed alerts, tracked</div><div class="value" id="aResults">—</div><div class="hint" id="aResultsHint">hit +40% first · average after costs</div></div>
+ </div>
+ <section class="panel">
+  <div class="section-head"><div><h2>Ignition candidates</h2><p id="aRule">Early ignition: two finished 5-minute candles in a row, each at 5× the token's normal 5-minute volume (median of the last 24 hours) and $1,000+ with 10+ trades, price up over those 10 minutes (but not more than 20%), and not already up 30% in 24 hours. Confirmed: the same with $1M+ traded in the last 24 hours.</p></div>
+   <select id="aFilter" aria-label="Show"><option value="active">Ignited, heating, moved</option><option value="all">All scanned tokens</option></select></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Last two 5m candles</th><th>Price</th><th>DEX buys (5m · 1h)</th><th>Liquidity · holders</th><th>Market cap · FDV</th></tr></thead><tbody id="aBody"><tr><td colspan="7" class="empty">Waiting for the first scan (about 15 seconds after start, then every 5 minutes)…</td></tr></tbody></table></div>
+ </section>
+ <div class="lower">
+  <section class="panel"><div class="section-head"><div><h2>Alerts and results</h2><p id="aAlertsNote">Every alert, tracked from its price: +40% target before -10% stop within 7 days, after costs.</p></div><span class="chip" id="aAlertsChip">—</span></div>
+   <div class="table-wrap"><table class="table cards"><thead><tr><th>Alert</th><th>Token</th><th>Tier</th><th>Entry</th><th>Volume</th><th>DEX buys</th><th>Result</th></tr></thead><tbody id="aAlerts"></tbody></table></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Replay</h2><p>The same rule on past Alpha candles, delisted tokens included, from <span class="mono">node alpha-backtest.js</span>.</p></div><span class="chip" id="aReplayChip">—</span></div><div class="hold" id="aReplay"></div></section>
+ </div>
+ <section class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Sources, scan time and why tokens were left out.</p></div></div><div class="book-meta" id="aHealth"></div><div class="changes" id="aExcluded"></div></section>
+ <details class="foot"><summary>How it works</summary>every 5 minutes, about 25 seconds after the candle closes, the scanner reads Binance's Alpha token list, keeps tokens that still trade, are not on Binance spot (the Ignition tab covers those), have $50k+ of pool liquidity and 1,000+ holders, and reads their 5-minute candles. "Normal" is the median 5-minute volume of the previous 24 hours (at least $100). <b>Early ignition</b> = the rule passed on the last two finished candles; <b>confirmed</b> = the same with $1M+ traded in the last 24 hours (in the replay the early tier did no better than buying at a random time and fired about 50 times a day; the confirmed tier did better than a random entry on the same kind of tokens, but it would have missed EVAA's Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%); <b>heating up</b> = the last candle at 3× normal with price up, or the last hour at 3× normal; <b>already moved</b> = up more than 30% in 24 hours, do not chase. One alert per token and tier per 24 hours. Buys vs sells come from DexScreener (counts of DEX trades in the token's biggest pool). Telegram only with ALPHA_TELEGRAM=1 (confirmed alerts) or ALPHA_TELEGRAM=all (early too). Settings: ALPHA_VOL_MULT, ALPHA_MIN_5M_USD, ALPHA_MIN_24H_USD, ALPHA_MIN_LIQUIDITY, ALPHA_MIN_HOLDERS, ALPHA_TARGET_PCT, ALPHA_STOP_PCT, ALPHA_OUTCOME_DAYS, ALPHA_COST_PCT.</details>
+</div>
+
 <div id="view-early2x" role="tabpanel" aria-labelledby="tabEarly2x" hidden>
  <details class="notice"><summary><b>Research screen, not a prediction:</b> +100% is a research target.</summary><div>Coins are listed only when their data passes the rules, and every listed coin is saved as an unchangeable snapshot whose real returns are measured afterwards. Most early signals fail. The score is not a probability of doubling. Futures data is context only, and token unlocks and catalysts count only when you have verified them (data/early2x-events.json). Nothing is traded. Not financial advice.</div></details>
  <div class="error" id="xErrors"></div>
@@ -622,17 +645,19 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // ---------- tabs ----------
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
- let tab="ignition",rot=null,rotTimer=null;
- const TABS=[["ignition","#tabIgnition"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"]];
- const TITLES={ignition:"Early ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation"};
+ LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"]];
+ const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation"};
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
-  clearInterval(rotTimer);clearInterval(xTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);
+  if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
   if(t==="whales")loadW();
   if(t==="early2x"){loadX();xTimer=setInterval(loadX,30000);}
@@ -795,6 +820,60 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const igTest=$("#testBtn").onclick;   // on this tab the test button previews a whale popup instead
  $("#testBtn").onclick=()=>tab==="whales"?wPopup({type:"deposit",net:"eth",title:"$4.20M PEPE deposited to Binance",lines:["0x47b9…658b → Binance 14","980.00B PEPE · deposit to an exchange","Deposits are often made to sell"],links:[]},true):igTest();
  pollW();setInterval(pollW,6000);
+
+ // ---------- Binance Alpha ----------
+ let ad={};
+ async function loadA(){
+  try{const r=await fetch("/api/alpha",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);ad=await r.json();drawA();}
+  catch(e){$("#aErrors").style.display="block";$("#aErrors").textContent="Cannot load /api/alpha: "+e.message;}
+ }
+ const EXPL={BSC:"https://bscscan.com/token/",Base:"https://basescan.org/token/",Ethereum:"https://etherscan.io/token/",Arbitrum:"https://arbiscan.io/token/",Solana:"https://solscan.io/token/",Sui:"https://suiscan.xyz/mainnet/coin/"};
+ const aState={ignited:'<span class="badge strong">Ignited</span>',heating:'<span class="badge watch" style="color:var(--amber);border-color:#6d5621;background:#2b2414">Heating up</span>',ran:'<span class="badge risk">Already moved</span>',quiet:'<span class="badge">Quiet</span>'};
+ const aPx=v=>v==null?"—":v>=1?"$"+Number(v).toFixed(4):"$"+Number(v).toPrecision(4);
+ const aAgo=t=>{const m=Math.round((Date.now()-t)/60000);return m<60?m+" min ago":m<2880?Math.round(m/60)+" h ago":Math.round(m/1440)+" days ago";};
+ const aBuys=d=>d?`<b class="${d.buyShare5m>=55?"green":d.buyShare5m!=null&&d.buyShare5m<45?"red":""}">${d.m5.buys??"?"} / ${d.m5.sells??"?"}</b>${d.buyShare5m!=null?` (${d.buyShare5m}%)`:""}<span class="sub">last hour ${d.buyShare1h??"—"}% buys</span>`:'<span class="muted">no DEX pool found</span>';
+ function drawA(){
+  const d=ad||{},c=d.config||{},hm=t=>t?new Date(t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—";
+  const box=$("#aErrors");box.style.display=d.error?"block":"none";box.textContent=d.error?(d.status==="off"?d.error:"Last scan failed: "+d.error+(d.rows&&d.rows.length?" (showing the last good scan)":"")):"";
+  $("#aScanned").textContent=d.eligible??"—";$("#aScannedHint").textContent=d.listed?`of ${d.listed} Alpha tokens · next scan ${hm(d.nextScanAt)}`:"Binance Alpha, not on spot";
+  const n=d.counts||{},rws=d.rows||[];$("#aIgnited").textContent=n.ignited??"—";$("#aHeating").textContent=n.heating??"—";
+  $("#aIgnitedHint").textContent=`${rws.filter(r=>r.tier==="early").length} early · ${rws.filter(r=>r.tier==="confirmed").length} confirmed`;
+  const R=d.results||{},E=d.resultsEarly||{};$("#aResults").textContent=R.closed?`${R.winPct}% · ${pct1(R.avgNetPct)}`:(R.alerts?R.alerts+" open":"0");
+  $("#aResultsHint").textContent=(R.closed?`${R.closed} closed (${R.wins} hit +${c.targetPct}%, ${R.losses} stopped, ${R.flats} timed out) · ${R.open} open`:`hit +${c.targetPct??40}% first · average after costs`)+(E.alerts?` · early tier: ${E.closed?`${E.winPct}% · ${pct1(E.avgNetPct)} on ${E.closed} closed`:E.alerts+" open"}`:"");
+  if(c.volMult)$("#aRule").textContent=`Early ignition: two finished 5-minute candles in a row, each at ${c.volMult}× the token's normal 5-minute volume (median of the last 24 hours) and $${Number(c.minCandleUsd).toLocaleString()}+ with ${c.minTrades}+ trades, price up over those 10 minutes (but not more than ${c.maxMove10mPct}%), and not already up ${c.maxChg24Pct}% in 24 hours. Confirmed: the same with ${wusd(c.min24hUsd)}+ traded in the last 24 hours. Tokens need $${Math.round(c.minLiquidityUsd/1000)}k+ of pool liquidity and ${Number(c.minHolders).toLocaleString()}+ holders.`;
+  const all=d.rows||[],rows=$("#aFilter").value==="all"?all:all.filter(r=>r.state!=="quiet");
+  $("#aBody").innerHTML=rows.length?rows.map(r=>{const f=r.f||{},x=r.dex,ex=EXPL[r.chain];return `<tr><td><b class="sym">${esc(r.symbol)}</b><span class="sub">${esc(r.chain||"")} · ${esc(r.name||"")}${r.ageDays!=null?` · on Alpha ${r.ageDays}d`:""}</span><span class="sub">${x&&x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">DexScreener</a>`:""}${ex&&r.contract?`${x&&x.url?" · ":""}<a href="${ex}${esc(r.contract)}" target="_blank" rel="noopener">Contract</a>`:""}</span></td>
+   <td>${r.tier==="confirmed"?'<span class="badge strong">Confirmed</span>':r.tier==="early"?'<span class="badge strong" style="color:var(--blue);border-color:#2c4a77;background:#111d30">Early ignition</span>':aState[r.state]||esc(r.state)}${r.state!=="ignited"&&r.fails&&r.fails.length?`<span class="sub">${esc(r.fails.slice(0,2).join(" · "))}</span>`:""}</td>
+   <td class="mono">${f.r1!=null?`<b class="${f.r1>=c.volMult&&f.r2>=c.volMult?"green":""}">${f.r1}× / ${f.r2}×</b><span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)} · ${f.trades1} / ${f.trades2} trades</span>`:'<span class="muted">under 24h of history</span>'}</td>
+   <td class="mono">${aPx(f.close??r.price)}<span class="sub"><span class="${col(f.move10)}">${pct1(f.move10)} 10m</span> · <span class="${col(f.chg1h)}">${pct1(f.chg1h)} 1h</span> · <span class="${col(f.chg24)}">${pct1(f.chg24??r.chg24List)} 24h</span></span></td>
+   <td class="mono">${aBuys(x)}</td>
+   <td class="mono">${wusd(r.liquidity)}<span class="sub">${r.holders!=null?Number(r.holders).toLocaleString():"—"} holders</span></td>
+   <td class="mono">${wusd(r.mcap)}<span class="sub">FDV ${wusd(r.fdv)}${r.circPct!=null?` · ${r.circPct}% circulating`:""}</span></td></tr>`;}).join("")
+   :`<tr><td colspan="7" class="empty">${d.status==="starting"?"First scan in progress (it reads 5-minute candles for every token, about a minute)…":all.length?"Nothing ignited, heating up or moved right now. Choose \"All scanned tokens\" to see every token.":"No tokens yet."}</td></tr>`;
+  const al=d.alerts||[];
+  $("#aAlertsChip").textContent=al.length?al.length+" recent":"none yet";
+  $("#aAlertsNote").textContent=`Every alert, tracked from its price: +${c.targetPct??40}% target before -${c.stopPct??10}% stop within ${c.outcomeDays??7} days, after ${c.costPct??1}% costs.`;
+  $("#aAlerts").innerHTML=al.length?al.map(a=>{const tr=a.track||{},f=a.f||{},res=tr.status==="open"?`<span class="amber">open</span><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`
+   :`<b class="${tr.status==="win"?"green":tr.status==="loss"?"red":""}">${tr.status==="win"?"Target":tr.status==="loss"?"Stopped":"Timed out"} ${pct1(tr.resultPct)}</b><span class="sub">best ${pct1(tr.peakPct)} · worst ${pct1(tr.lowPct)}</span>`;
+   return `<tr><td class="mono">${new Date(a.t).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}<span class="sub">${aAgo(a.t)}</span></td><td><b>${esc(a.token.symbol)}</b><span class="sub">${esc(a.token.chain||"")}</span></td><td>${(a.tier||"confirmed")==="confirmed"?'<span class="badge strong">Confirmed</span>':'<span class="badge">Early</span>'}</td><td class="mono">${aPx(f.close)}</td><td class="mono">${f.r1}× / ${f.r2}×<span class="sub">${wusd(f.usd1)} / ${wusd(f.usd2)}</span></td><td class="mono">${aBuys(a.dex)}</td><td class="mono">${res}</td></tr>`;}).join("")
+   :'<tr><td colspan="7" class="empty">No alerts yet. In the replay the confirmed tier fired about 8 times a day across all Alpha tokens, the early tier about 50.</td></tr>';
+  const rp=d.replay;
+  $("#aReplayChip").textContent=rp?`${rp.from} to ${rp.to} · ${rp.days} days`:"not run yet";
+  const line=(l,x,sub="")=>x&&x.n?`<div><div class="big" style="font-size:17px">${esc(l)}: ${x.winPct.toFixed(1)}% hit +40% first · <span class="${col(x.net)}">${pct1(x.net)}</span> per trade</div><small>${x.n} trades on ${x.tokens} tokens, ${x.lossPct.toFixed(0)}% stopped first${sub}</small></div>`:"";
+  const halves=(a,b)=>a&&b&&a.n&&b.n?` · older two thirds ${pct1(a.net)}, newest third ${pct1(b.net)} per trade`:"";
+  const ev=rp&&rp.evaa,evl=(x,l)=>x?`${l}: ${x.n} alerts, ${x.win} hit +40%, ${x.loss} stopped, ${x.flat} timed out`:"";
+  $("#aReplay").innerHTML=rp&&rp.rule?line("Confirmed",rp.rule,`${halves(rp.ruleTune,rp.ruleTest)}${rp.perDay?` · about ${rp.perDay} a day`:""}`)
+   +line("Same tokens bought at a random time",rp.base,`${halves(rp.baseTune,rp.baseTest)} · tokens with $1M+ traded in 24 hours, once a day`)
+   +line("Early",rp.planned,`${rp.plannedPerDay?` · about ${rp.plannedPerDay} a day`:""}`)
+   +line("Any token bought at a random time",rp.baseAll," · every active token once a day")
+   +`<div><small>Costs ${rp.cost}% per trade. ${rp.universe?`${rp.universe.traded} tokens traded in the window, ${rp.universe.delistedTraded??"some"} of them delisted since; Binance no longer serves candles for most long-delisted tokens, so those are missing.`:""}${ev?` EVAA: ${evl(ev.early,"early tier")}; ${evl(ev.confirmed,"confirmed tier")}.`:""} The $1M rule was picked after looking at these results, so the confirmed tier's record may be flattered: judge it by the live results above.</small></div>`
+   :'<div class="empty" style="padding:18px">Run <span class="mono">node alpha-backtest.js</span> once (20-40 minutes the first time). This panel then shows how the same rule did on the last 60 days of Alpha candles.</div>';
+  const so=d.sources||{},stat=(l,v)=>`<div class="book-stat"><span>${esc(l)}</span><strong>${v}</strong></div>`;
+  $("#aHealth").innerHTML=stat("Binance Alpha (list, candles)",esc(so.alpha||"—"))+stat("DexScreener (buys / sells)",esc(so.dex||"—"))+stat("Last scan",d.updatedAt?hm(d.updatedAt)+(d.scanMs?` · ${Math.round(d.scanMs/1000)}s`:""):"—")+stat("Telegram",d.telegramOn?'<span class="green">On</span>':'<span class="muted">Off (ALPHA_TELEGRAM=1)</span>');
+  const exc=Object.entries(d.excluded||{}).sort((a,b)=>b[1]-a[1]);
+  $("#aExcluded").innerHTML=exc.length?"<b>Left out:</b> "+exc.map(([k,v])=>`${esc(k)} ${v}`).join(" · "):"";
+ }
+ $("#aFilter").onchange=drawA;
 
  // ---------- BTC rotation ----------
  async function loadRot(){

@@ -22,3 +22,6 @@ early2x_coingecko.json
 rotation_record.json
 rotation_record.demo.json
 rotation_report.json
+alpha_cache/
+alpha_report.json
+alpha_state.json

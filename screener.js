@@ -70,6 +70,7 @@ import { createRotation } from "./rotation.js";
 import { startFlows, handleFlowsRequest } from "./flows.js";
 import { startWhales, handleWhalesRequest } from "./whales.js";
 import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
+import { createAlpha } from "./alpha.js";
 import { sendTelegram as tgSend, telegramStatus, checkTelegram } from "./telegram.js";
 
 const env = process.env;
@@ -227,6 +228,11 @@ const rotation = LIBRARY_ONLY ? null : createRotation({
   recordFile: path.join(here, DEMO ? "rotation_record.demo.json" : "rotation_record.json"), // daily coin lists + live weekly picks
   sendTelegram: (t) => tgSend(t), telegramOn: env.ROTATION_TELEGRAM === "1",                // regime / holdings change message: off by default
 });
+// Binance Alpha tokens (Binance Wallet), which are not spot pairs: same ignition idea on their 5m candles
+const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
+  fetchJson, stateFile: path.join(here, "alpha_state.json"), reportFile: path.join(here, "alpha_report.json"),
+  sendTelegram: (t) => tgSend(t), telegramConfigured: () => telegramStatus().configured,
+});
 
 // ───────────────────────────── utilities ─────────────────────────────
 const n = (v) => {
@@ -248,7 +254,7 @@ class HttpError extends Error {
   constructor(message, status, retryAfterMs = null) { super(message); this.status = status; this.retryAfterMs = retryAfterMs; }
 }
 const RETRYABLE = [418, 429, 500, 502, 503, 504];
-const SOURCES = [["fapi.binance.com", "Binance Futures"], ["api.binance.com", "Binance Spot"], ["www.binance.com", "Binance asset info"], ["api.telegram.org", "Telegram"]];
+const SOURCES = [["fapi.binance.com", "Binance Futures"], ["api.binance.com", "Binance Spot"], ["/alpha-trade/", "Binance Alpha"], ["/cex/alpha/", "Binance Alpha"], ["www.binance.com", "Binance asset info"], ["api.telegram.org", "Telegram"]];
 const sourceOf = (url) => (SOURCES.find(([h]) => String(url).includes(h)) || [, "API"])[1];
 // After a 429/418 Binance tells us how long to back off (Retry-After). Until then no request is sent to that host,
 // because hammering a rate-limited Binance IP escalates to a temporary ban (418).
@@ -1450,6 +1456,7 @@ export async function handleScreenerRequest(req, res, url) {
     const r = await tgSend("Smart Money Tracker: test message. Telegram works: ignition alerts and AI verdicts (TAKE / WAIT / NO TRADE) will arrive here.");
     jsonResponse(res, 200, { ...r, telegram: telegramStatus() }); return true;
   }
+  if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;
   if (await handleFlowsRequest(req, res, url)) return true;
@@ -1480,6 +1487,8 @@ export function startScreener(baseUrl = "") {
   else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");
   if (env.EARLY2X !== "0") startEarly2x();
   else console.log("Early 2x Movers: off (EARLY2X=0)");
+  if (alpha && !DEMO) alpha.start();
+  else console.log(`Binance Alpha ignition: off (${DEMO ? "demo mode" : "ALPHA=0"})`);
 }
 
 // Standalone: `node screener.js` serves the screener on its own port.

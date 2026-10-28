@@ -19,6 +19,7 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
    | BTC rotation | http://localhost:3000/screener#rotation |
    | Whale tracker | http://localhost:3000/screener#whales |
    | Early 2x movers | http://localhost:3000/screener#early2x |
+   | Binance Alpha ignition | http://localhost:3000/screener#alpha |
    | AI trade desk | http://localhost:3000/ai |
 
 3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
@@ -27,7 +28,7 @@ Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition 
 
 Not receiving messages? When `node server.js` starts it prints a "Telegram:" line: "bot @yourbot, sending to chat ..." means the token works; anything else says what is wrong. The screener's Data health panel shows the status, the last message and the last error, and has a "Send test message" button. Common fixes: a wrong token (copy it again from @BotFather); "chat not found" (open your bot in Telegram and press Start, check TELEGRAM_CHAT_ID; a group id starts with -100 and the bot must be in the group); a blocked bot (press Start / Unblock). Restart the server after editing .env. Also remember that ignition alerts are rare (often one or two a day across all coins), AI follow-ups need GEMINI_API_KEY and arrive only after an ignition alert, and big-move alerts reach Telegram only with SCREENER_BIGMOVE_ALERTS=1.
 
-Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier, Early 2x scoring / tracking and BTC rotation logic (no internet or API key needed).
+Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier, Early 2x scoring / tracking, BTC rotation and Binance Alpha logic (no internet or API key needed).
 
 Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
    ```bash
@@ -177,6 +178,25 @@ Backtest (node rotation-backtest.js, or the Backtest panel): each strategy is al
 Narrative lists are today's, so these numbers are also flattered by survivorship; the forward record is the honest test.
 
 Settings (optional, in .env): ROTATION_TELEGRAM=1 sends a message when the BTC regime or the holdings change (off by default; ignition and AI stay the only default Telegram messages) · ROTATION_HOLD_DAYS=7 · ROTATION_DAYS=1000 (days of history) · ROTATION_NARRATIVES=AI,Meme (only these).
+
+11. Binance Alpha ignition (Binance Wallet tokens)
+Open http://localhost:3000/screener#alpha. Binance Alpha tokens (the early on-chain tokens in Binance Wallet, like EVAA) are not Binance spot pairs, so the Ignition tab never sees them. This tab scans them every 5 minutes, about 25 seconds after each candle closes, with the same idea: volume igniting on 5-minute candles before price runs.
+
+Tokens scanned: still trading on Alpha, not on Binance spot (the Ignition tab covers those), $50k+ of pool liquidity and 1,000+ holders (about 250 tokens). Data: the public endpoints Binance's own Alpha pages use (token list, 5-minute candles; no API key, not documented, so they can change), and DexScreener for buys vs sells, because Alpha trades carry no buyer/seller side.
+
+Two tiers, like the Ignition tab:
+- Early ignition: two finished 5-minute candles in a row, each at 5x the token's normal 5-minute volume (median of the last 24 hours) and $1,000+ with 10+ trades, price up over those 10 minutes (not more than 20%), and not already up 30% in 24 hours.
+- Confirmed: the same with $1M+ traded in the last 24 hours.
+Heating up (volume rising, not confirmed) and Already moved (up 30%+ in 24 hours, do not chase) are shown too. Every alert is tracked: +40% target before -10% stop within 7 days, after 1% costs.
+
+What the replay says (node alpha-backtest.js: 5-minute candles of every Alpha token not on spot, Aug 29 to Oct 28 2026, 325 tokens that traded, 47 of them delisted since; Binance no longer serves candles for most long-delisted tokens, so those are missing, which flatters everything a little):
+- Early tier: 2,839 alerts (about 50 a day), 11.2% hit +40% first, -1.2% per trade. Buying any active token at a random time: 9.7% and -1.3%. So no real edge: on tokens with tiny volume, "5x normal" happens all the time.
+- Confirmed tier: 468 alerts (about 8 a day), 16.7% hit +40% first, +0.6% per trade (older two thirds +1.1%, newest third -0.8%). The same kind of tokens bought at a random time: 13.8% and -1.2%. Better than random in both halves, but close to break-even, and the $1M rule was picked after seeing these results, so the record may be flattered. The live tracking on the tab is the honest test.
+- EVAA: the early tier caught its Oct 26-27 start (alert at $0.515, +40% reached the next day), but it also flagged EVAA 34 times in 60 days: 6 hit +40%, 23 were stopped, 5 timed out. The confirmed tier flagged EVAA 3 times (1 win, 2 stops) and missed the Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%.
+
+Telegram: off by default. ALPHA_TELEGRAM=1 sends confirmed alerts, ALPHA_TELEGRAM=all sends early ones too. Settings (optional, in .env): ALPHA_VOL_MULT=5 · ALPHA_MIN_5M_USD=1000 · ALPHA_MIN_TRADES=10 · ALPHA_MIN_24H_USD=1000000 · ALPHA_MIN_LIQUIDITY=50000 · ALPHA_MIN_HOLDERS=1000 · ALPHA_TARGET_PCT=40 · ALPHA_STOP_PCT=10 · ALPHA_OUTCOME_DAYS=7 · ALPHA_COST_PCT=1 · ALPHA=0 turns the tab off. Alerts live in alpha_state.json; run node alpha-backtest.js once to fill the tab's Replay panel (20-40 minutes the first time, cached in ./alpha_cache). All kept out of git.
+
+Before trading one: pools are often a few hundred thousand dollars, so a market order moves the price; tokens can be delisted from Alpha; and the AI desk does not analyse Alpha tokens (it needs Binance spot data).
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

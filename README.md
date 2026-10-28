@@ -1,205 +1,521 @@
-# Market Flow Radar
+# Smart Money Tracker
 
-A real-time dashboard that tracks crypto market momentum, buyer/seller imbalances, and smart money flow for Binance spot pairs.
+A free, self-hosted crypto research dashboard for Binance. It watches the whole market in real time, spots volume "ignitions" before price runs, follows whale wallets, ranks narratives by what Bitcoin is doing, and asks an AI to judge each setup. Then it tracks every alert so you can see what actually works.
 
-## Quick Start (How to run the app)
+- **One command** starts everything on one web address.
+- **No exchange account or API key needed** (only Gemini, if you want the AI).
+- **Alerts on screen and on Telegram.**
+- **Honest numbers:** every signal is tracked after costs, and each tool has a replay test.
 
-1. Install Node.js 18 or newer.
-2. Open a terminal in the project folder and run:
-   ```bash
-   npm install
-   node server.js
+> **Research tool, not financial advice.** It never places trades. Most early signals fail; the numbers below show how often.
+
+---
+
+## Contents
+
+1. [What is inside](#1-what-is-inside)
+2. [Quick start (5 minutes)](#2-quick-start-5-minutes)
+3. [Set up Telegram alerts](#3-set-up-telegram-alerts)
+4. [Set up the AI (Gemini)](#4-set-up-the-ai-gemini)
+5. [A simple daily routine](#5-a-simple-daily-routine)
+6. [The tools, one by one](#6-the-tools-one-by-one)
+7. [What the tests say](#7-what-the-tests-say)
+8. [Backtests and replays](#8-backtests-and-replays)
+9. [All settings](#9-all-settings)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Updating to a new version](#11-updating-to-a-new-version)
+12. [For developers](#12-for-developers)
+
+---
+
+## 1. What is inside
+
+| Tool | Address | What it does |
+|---|---|---|
+| **Market Flow Radar** | http://localhost:3000 | Live leaderboard of buying pressure on Binance spot coins, order books, smart-money wallet signals, AI market brief |
+| **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers) |
+| **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
+| **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
+| **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers, exchange inflows and outflows, DEX rotations, your own watchlist |
+| **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
+| **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
+
+---
+
+## 2. Quick start (5 minutes)
+
+### Step 1: Install Node.js
+
+Download and install **Node.js 18 or newer** from https://nodejs.org (choose "LTS").
+Check it in a terminal (Command Prompt / PowerShell on Windows, Terminal on Mac):
+
+```bash
+node -v
+```
+
+You should see `v18` or higher.
+
+### Step 2: Download the project
+
+```bash
+git clone https://github.com/Hamzakhan8/crypto-smart-money-tracker.git
+cd crypto-smart-money-tracker
+```
+
+No git? On GitHub click **Code → Download ZIP**, unzip it, and open a terminal in that folder.
+
+### Step 3: Install
+
+```bash
+npm install
+```
+
+### Step 4: Add your settings (optional)
+
+Copy the example settings file:
+
+| Windows | Mac / Linux |
+|---|---|
+| `copy .env.example .env` | `cp .env.example .env` |
+
+Open `.env` in any text editor. Everything is optional; the app works without it. The most useful lines:
+
+```ini
+GEMINI_API_KEY=your_key_here        # for the AI (step 4 below)
+TELEGRAM_BOT_TOKEN=123456:ABC...    # for Telegram alerts (step 3 below)
+TELEGRAM_CHAT_ID=123456789
+```
+
+### Step 5: Start
+
+```bash
+node server.js
+```
+
+(or `npm start`). Then open **http://localhost:3000** in your browser.
+
+### Step 6: Check the startup lines
+
+The terminal prints one line per tool. Look for:
+
+- `Telegram: bot @yourbot, sending to chat ...` means Telegram works (anything else says what is wrong).
+- `BTC rotation ... (history loads in the background)`: the first load takes a few minutes, then it is cached.
+- `Binance Alpha ignition: ... scan every 5 min`.
+
+Keep the terminal open while you use the app. Press `Ctrl + C` to stop it.
+
+> **Want to look around first?** Put `DEMO=1` in `.env` to see the pages with simulated data (no Telegram messages; the Alpha tab needs live data). Remove the line to go live.
+
+---
+
+## 3. Set up Telegram alerts
+
+1. **Create a bot.** In Telegram, open **@BotFather**, send `/newbot` and follow the steps. Copy the token it gives you (looks like `123456789:AAH...`).
+2. **Start your bot.** Open the new bot in Telegram and press **Start** (a bot cannot message you before this).
+3. **Find your chat id.** Send any message to your bot, then open this address in your browser (put your token in it):
+   `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates`
+   Find `"chat":{"id":123456789` in the text. That number is your chat id. (For a group: add the bot to the group; the id starts with `-100`.)
+4. **Save both** in `.env`:
+   ```ini
+   TELEGRAM_BOT_TOKEN=123456789:AAH...
+   TELEGRAM_CHAT_ID=123456789
    ```
-   (or `npm start`). Everything runs on one server, on one port:
+5. **Restart** the app (`Ctrl + C`, then `node server.js`).
+6. **Test it:** open http://localhost:3000/screener, scroll to **Data health**, and press **Send test message**.
 
-   | App | Address |
-   |---|---|
-   | Market Flow Radar | http://localhost:3000 |
-   | Early Setup Screener | http://localhost:3000/screener |
-   | BTC rotation | http://localhost:3000/screener#rotation |
-   | Whale tracker | http://localhost:3000/screener#whales |
-   | Early 2x movers | http://localhost:3000/screener#early2x |
-   | Binance Alpha ignition | http://localhost:3000/screener#alpha |
-   | AI trade desk | http://localhost:3000/ai |
+### What is sent to Telegram
 
-3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
+By default only the most useful messages are sent, so your phone stays quiet:
 
-Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition alerts (early and confirmed) and AI messages are sent: the AI's verdict on each new alert and results you send from the AI desk. Everything else stays on screen. To also send them: RADAR_TELEGRAM=1 (Market Flow Radar "Strong flow"), WHALES_TELEGRAM=1 (whale transfers), FLOWS_TELEGRAM=1 (DEX rotations). AI_REVIEW_TELEGRAM=0 stops the AI follow-ups.
+| Message | Default | How to change |
+|---|---|---|
+| Ignition alerts (early and confirmed) | **On** | `SCREENER_EARLY_ALERTS=0` keeps only confirmed |
+| AI verdict on each new ignition alert | **On** (needs Gemini) | `AI_REVIEW_TELEGRAM=0` turns it off |
+| AI desk results you choose to send | On request | tick "send to Telegram" on the AI desk |
+| Big-move ignition alerts | Off | `SCREENER_BIGMOVE_ALERTS=1` |
+| Binance Alpha alerts | Off | `ALPHA_TELEGRAM=1` (confirmed) or `ALPHA_TELEGRAM=all` (early too) |
+| Early 2x candidates | Off | `EARLY2X_ALERTS=1` |
+| BTC rotation: regime or holdings changed | Off | `ROTATION_TELEGRAM=1` |
+| Whale transfers / DEX rotations | Off | `WHALES_TELEGRAM=1` / `FLOWS_TELEGRAM=1` |
+| Market Flow Radar "Strong flow" | Off | `RADAR_TELEGRAM=1` |
 
-Not receiving messages? When `node server.js` starts it prints a "Telegram:" line: "bot @yourbot, sending to chat ..." means the token works; anything else says what is wrong. The screener's Data health panel shows the status, the last message and the last error, and has a "Send test message" button. Common fixes: a wrong token (copy it again from @BotFather); "chat not found" (open your bot in Telegram and press Start, check TELEGRAM_CHAT_ID; a group id starts with -100 and the bot must be in the group); a blocked bot (press Start / Unblock). Restart the server after editing .env. Also remember that ignition alerts are rare (often one or two a day across all coins), AI follow-ups need GEMINI_API_KEY and arrive only after an ignition alert, and big-move alerts reach Telegram only with SCREENER_BIGMOVE_ALERTS=1.
+Ignition alerts are rare (often one or two a day across all coins), so a quiet phone is normal. Not receiving anything? See [Troubleshooting](#10-troubleshooting).
 
-Tests: `npm test` checks the signal, outcome-tracking, AI safety, big-move tier, Early 2x scoring / tracking, BTC rotation and Binance Alpha logic (no internet or API key needed).
+---
 
-Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
-   ```bash
-   git rm -r --cached node_modules rotation_cache binance_meta.json coingecko_cache.json screener_state.json
-   git commit -m "Stop tracking packages, caches and live data files"
-   git push origin main
-   ```
-   `--cached` removes them from git only; your files stay where they are. Run `npm install` on any other computer after cloning.
+## 4. Set up the AI (Gemini)
 
-If you see "Port 3000 is already in use", another copy of the app is still running: close that terminal window, or pick another port in `.env`. You can still run the screener on its own with `node screener.js` (it then uses port 3001).
+1. Get a free API key at **https://aistudio.google.com/apikey**.
+2. Add it to `.env`: `GEMINI_API_KEY=your_key`
+3. Restart the app.
 
-📖 User Guide: How to use the app
-Once the dashboard is open, here is how you can use it to spot market trends:
+Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works, and every new ignition alert gets an automatic AI verdict. To control cost: `AI_REVIEWS_PER_HOUR=12` (the default) caps automatic reviews; `AI_AUTO_REVIEW=0` turns them off.
 
-1. The Market Flow Leaderboard
-This is the main table you see. It ranks coins based on real-time buying pressure.
+---
 
-Flow Score (0-100): A higher score (75+) means strong, aggressive buying activity right now. A lower score means selling pressure.
+## 5. A simple daily routine
 
-5m Taker Flow: Shows the exact percentage of market buys vs. market sells over the last 5 minutes.
+| When | Where | What to look at |
+|---|---|---|
+| Once a day | **BTC rotation** | Is BTC in a downtrend (the rules hold cash)? Is the alt season meter "Alts leading" or "BTC leading"? This tells you whether hunting altcoins makes sense today. |
+| When an alert arrives | **Ignition** → **AI desk** | Read the alert and the AI's TAKE / WAIT / NO TRADE. Check the chart yourself. Never chase coins marked "Already moved". |
+| A few times a day | **Market Flow Radar** | Which coins have aggressive buyers right now, and is the whole market buying or selling? |
+| For research | **Alpha**, **Early 2x**, **Whales** | Early on-chain tokens, possible 2x candidates, and where big money is moving. |
+| Once a week | Performance panels | How the alerts really did (hit target, stopped, after costs). Trust live results over replays. |
 
-Relative Volume: Shows if the current trading volume is unusually high compared to the recent average (e.g., "2.0x" means double the normal volume).
+---
 
-2. Inspecting the Order Book
-If you see a coin with a high score and want to look deeper:
+## 6. The tools, one by one
 
-Click directly on the Coin Symbol (e.g., SUI ↗) in the table.
+### 6.1 Market Flow Radar
 
-A popup will appear showing the live Order Book for that coin.
+**Open:** http://localhost:3000
 
-Here you can see the actual "Bids" (buyers waiting to buy) and "Asks" (sellers waiting to sell) to see where the support and resistance levels are.
+The main leaderboard ranks Binance spot coins by buying pressure right now.
 
-3. Filtering the Noise
-At the top of the table, use the drop-down filters to hide low-quality signals:
+- **Flow score (0-100):** 75+ means strong, aggressive buying; low scores mean selling pressure.
+- **5m taker flow:** the share of market buys vs market sells in the last 5 minutes.
+- **Relative volume:** volume now vs normal ("2.0x" = double).
+- **Click a coin** (for example `SUI ↗`) to see its live order book: bids (buyers waiting) and asks (sellers waiting).
+- **Filters** at the top: minimum score, minimum 24h volume, sort order, rows shown.
+- **Web3 signals tab:** recent smart-money wallet activity (buying or selling) from Binance Web3.
+- **✨ AI Analysis:** Gemini reads the top coins and wallet signals and writes a short market brief. Tick **risk review** for a second model to look for traps and fake-outs.
 
-Min Score: Set this to "Score 60+" to only see coins with active momentum.
+### 6.2 Ignition (the main screener)
 
-Min Volume: Set this to "$20M+ volume" to filter out low-liquidity coins that might be easily manipulated.
+**Open:** http://localhost:3000/screener
 
-4. Web3 Signals Tab
-Click the "Web3 signals" tab at the top of the table to switch views.
+Watches every liquid Binance USDT pair and alerts when volume ignites before price runs.
 
-This shows recent "Smart Money" wallet activity tracked on-chain.
+| Tier | Rule (short) | Use it as |
+|---|---|---|
+| **Early ignition** | The last two finished 5-minute candles each trade 3x+ the coin's normal volume for that hour, price rises, mostly aggressive buying, and the quality checks pass | A heads-up |
+| **Confirmed ignition** | The same, plus an ignition score of 65+ (volume that keeps running). Usually a few minutes later | The tier worth trading |
+| **Big-move** (research) | A 5m ignition on a smaller coin ($1M-$10M daily volume) whose daily volume is already 1.5x its 20-day average. Target +40% before -10% within 7 days | A watchlist, not a proven edge |
 
-It tells you if profitable wallets are entering (Buy) or exiting (Sell) specific tokens.
+**Quality checks** (all must pass): daily RSI 65 or lower, not an exhausted spike, not the top tick of the 2-hour range, rising 4-hour trend, BTC not falling over 1 and 4 hours, tight spread, no market-wide surge. Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list never alert. Coins that already ran are marked **Already moved — do not chase**.
 
-5. Using the AI Agent
-In the top right corner of the app, there is an "✨ AI Analysis" button.
+**Every alert is tracked as a trade:** take profit at +6%, stop at -3%, otherwise sell after 12 hours (big-move: +40% / -10% / 7 days), judged on 1-minute candles after 0.2% fees and 0.1% slippage. The **performance panel** shows the results per tier and per AI verdict.
 
-Click it to have the AI instantly read the current top coins and wallet signals, generating a simple summary of where the market is flowing.
+### 6.3 Alpha (Binance Wallet tokens)
 
-Recursive Mode: If you check the "Recursive Agent" box before clicking the button, a second "Risk Manager" AI will review the first report and point out potential fake-outs, low-volume risks, or traps.
+**Open:** http://localhost:3000/screener#alpha
 
-6. Whale Tracker tab (Arkham-style)
-Open http://localhost:3000/screener and click "Whale tracker" (or go straight to http://localhost:3000/screener#whales). It starts with `node server.js`. No API key needed.
+Binance Alpha tokens are the early on-chain tokens in Binance Wallet (for example EVAA). They are not spot pairs, so the Ignition tab cannot see them. This tab scans about 250 of them every 5 minutes (still trading, not on spot, $50k+ pool liquidity, 1,000+ holders).
 
-Live whale transfers: every Ethereum transfer of any token (or ETH) above $100k, read straight from the blockchain, with who sent it and who received it. About 10,000 addresses are labelled: exchanges (Binance, Coinbase, Kraken, OKX…), funds and market makers, stablecoin issuers (Tether, Circle), bridges, DeFi protocols, MEV bots, mixers and flagged hacker addresses. Each transfer gets a type: exchange deposit (often before selling), exchange withdrawal, exchange to exchange, mint / burn, DeFi, bridge or wallet to wallet.
+| State | Meaning |
+|---|---|
+| **Early ignition** | Two finished 5-minute candles in a row, each at 5x the token's normal volume, $1,000+ and 10+ trades, price up (not more than 20%), not already up 30% in 24 hours |
+| **Confirmed** | The same, with $1M+ traded in the last 24 hours |
+| **Heating up** | Volume rising, not confirmed yet |
+| **Already moved** | Up 30%+ in 24 hours: do not chase |
 
-Exchange flows: how much of each token went onto and off exchanges, and each exchange's inflows and outflows.
+Each row shows volume vs normal, price change, DEX buyers vs sellers (from DexScreener, because Binance's Alpha data has no buy/sell side), liquidity, holders, market cap and links. Every alert is tracked: +40% before -10% within 7 days, after 1% costs.
 
-Most active entities and biggest unlabelled wallets: who moved the most money in the last hour or day.
+> Alpha pools are thin (often a few hundred thousand dollars), so a market order moves the price, and tokens can be delisted. The AI desk does not analyse Alpha tokens.
 
-Click any address for its profile (label, transfers, top counterparties) with one-click links to Arkham, Etherscan and DeBank.
+### 6.4 Early 2x movers
 
-Watchlist: paste any wallet (give it your own label, it shows everywhere) or token (PEPE or its contract address) and get an alert on every move above your minimum.
+**Open:** http://localhost:3000/screener#early2x
 
-DEX rotations: swaps on Ethereum, Base and Solana DEXes, e.g. ETH → PEPE. Watch a pair to be alerted on every swap above your size.
+Looks for low- and mid-cap Binance coins (verified market cap $10M-$1B, $1M+ daily volume, tight spread) that show measurable signs of a possible large move **before** price expands. +100% is a research target, not a prediction; an empty list is a valid answer.
 
-Alerts pop up on every tab (Telegram only with WHALES_TELEGRAM=1 / FLOWS_TELEGRAM=1): transfers over $1M (stablecoins over $25M), non-stablecoin exchange deposits and withdrawals over $500k, stablecoin mints / burns and issuer moves over $10M, watched wallets / tokens / pairs, and DEX rotation surges.
+- **Model A, quiet accumulation:** volume 2x+ its 7-day baseline for hours while price stays in a tight band. *Pre-breakout* = the same while pressing a tested 7-day high.
+- **Model B, early ignition:** 3+ five-minute candles in a row at 2x+ normal volume, accelerating, with 55%+ aggressive buying.
+- **Score out of 100**, every point explained in the coin's detail view. High priority needs evidence from 3+ independent families (volume, buying, structure, order book, strength vs BTC) and passing supply and liquidity checks.
+- **Token unlocks and catalysts** come only from `data/early2x-events.json`, which you keep (only entries with an https source count).
+- **Tracking:** every listed coin is saved as a snapshot and measured at 1h, 6h, 12h, 24h, 3d, 7d, 14d, 21d and 42d (did it reach +25%, +50%, +100%, and how far did it fall first). Nothing is called profitable until 30+ signals have played out for 14 days and the result is positive in both halves.
 
-Data: public Ethereum RPC nodes (blocks and transfers), DexScreener (prices, liquidity), GeckoTerminal (DEX swaps) and an open Etherscan label snapshot from June 2023 (data/eth-labels.json, rebuilt with `node scripts/build-labels.js`). Newer exchange wallets can show as unlabelled. Settings (optional, in .env): WHALES_MIN_USD=100000 · WHALES_ALERT_USD=1000000 · WHALES_STABLE_ALERT_USD=25000000 · WHALES_EXCHANGE_ALERT_USD=500000 · WHALES_MINT_ALERT_USD=10000000 · WHALES_TELEGRAM_PER_HOUR=30 · WHALES_RPC=your own node URL(s) · FLOWS_NETWORKS=eth,base,solana · SCREENER_WHALES=0 to switch it all off. Run with DEMO=1 to preview with simulated data.
+### 6.5 Whale tracker and DEX rotations
 
-7. Early Setup Screener: ignition alerts (v6)
-The "Early ignition" tab on http://localhost:3000/screener watches every liquid Binance USDT pair for volume igniting before price runs.
+**Open:** http://localhost:3000/screener#whales (no API key needed)
 
-Early ignition alert: the last two finished 5-minute candles both traded at least 3x that token's normal volume for this hour of the day, price rose over those 10 minutes and most of the volume was aggressive buying. It also has to pass the quality checks: daily RSI 65 or lower, the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, a rising 4-hour trend, BTC not falling over 1 and 4 hours, and no market-wide surge.
+- **Live whale transfers:** every Ethereum transfer above $100k, read from the blockchain, with sender and receiver labelled where known (~10,000 exchanges, funds, issuers, bridges, DeFi protocols, MEV bots, mixers).
+- **Transfer types:** exchange deposit (often before selling), exchange withdrawal, exchange to exchange, mint / burn, bridge, DeFi, wallet to wallet.
+- **Exchange flows:** how much of each token moved onto and off exchanges.
+- **Most active entities and wallets** in the last hour or day. Click any address for its profile, with links to Arkham, Etherscan and DeBank.
+- **Watchlist:** paste a wallet (give it your own label) or a token, and get an alert on every move above your minimum.
+- **DEX rotations:** swaps on Ethereum, Base and Solana (for example ETH → PEPE). Watch a pair to be alerted on every swap above your size.
 
-Confirmed ignition alert: the same, plus an ignition score of 65+ (volume that keeps running). It usually comes a few minutes later and is the tier worth trading; treat early alerts as a heads-up.
+Data: public Ethereum nodes, DexScreener, GeckoTerminal, and an open Etherscan label snapshot (June 2023), so newer exchange wallets can show as unlabelled.
 
-Every alert is tracked as a trade: take profit at +6%, stop at -3%, otherwise sell after 12 hours, judged on 1-minute candles, after 0.2% fees and 0.1% slippage. The performance panel shows "hit target" and "closed in profit" for each tier, and splits results by the AI's verdict.
+### 6.6 BTC rotation
 
-In a 60-day replay of 47 crypto tokens to Oct 28 2026 (node screener-backtest.js), the confirmed tier hit the target 30% of the time, hit the stop 21% of the time (the rest ended flat) and averaged +0.93% per trade after costs; early alerts hit the target 25% of the time and averaged +0.55%. Past results do not guarantee future results. Settings (optional): SCREENER_TARGET_PCT=6 · SCREENER_STOP_PCT=3 · SCREENER_OUTCOME_HOURS=12 · SCREENER_SLIPPAGE_PCT=0.1 · SCREENER_EARLY_RVOL=3 · SCREENER_MAX_DAILY_RSI=65 · SCREENER_BTC_4H_MIN=-0.1 · SCREENER_EARLY_ALERTS=0 to keep only confirmed alerts · SCREENER_IGNITE_MIN_SCORE=65.
+**Open:** http://localhost:3000/screener#rotation
 
-Big-move tier (+40% before -10%): the same kind of 5-minute ignition (two finished 5m candles at 2× and 2.5× normal volume, price up, 52%+ aggressive buying), on a smaller coin ($1M-$10M of 24h volume) whose daily volume is already 1.5× or more its 20-day average. It has its own exit rule, +40% before -10% within 7 days, its own row in the performance panel and its own "Big-move watch" table: green = the 5m ignition fired (an alert), amber = waking up, waiting for the trigger. For this tier only, the screener also scans coins with $1M-$5M of daily volume; the quick tiers above never see them and work exactly as before.
+Every day BTC's daily chart is put into one of six **regimes**: breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard. Each **narrative** (AI, Meme, RWA, Gaming… from Binance's sector tags) is ranked by how it did against BTC in past weeks with the same regime, its 14-day strength now, and how many of its coins are above their 20-day average.
 
-What the data says (node bigmove-backtest.js: 90 days of 5m candles for every Binance USDT pair, a signal counted only if the coin had $1M+ of volume at that moment, 0.3% costs): about 1 in 10 of these ignitions reached +40% before -10% within a week. They made money in the August-September altcoin rally (+2.5% per trade on average, about 9.5% hit the target) and lost in October (-1.8% per trade, 7.9% hit), though less than 5m ignitions in general (-3.5%). No other filter tested held up in both periods: the quick tiers' gates did worse for moves this size, and market-trend filters flipped between months. So it is a research tier, not a proven edge, and its Telegram alerts are off until you set SCREENER_BIGMOVE_ALERTS=1. Re-run node bigmove-backtest.js every month (the first run downloads 500+ coins and takes 30-60 minutes; then it is cached): it shows each month separately, so you can see when the market starts paying this kind of move again.
+| Panel | What it tells you |
+|---|---|
+| **This week** | What the rule holds (top 2 narratives, or cash in a BTC downtrend), the coins, the next decision date and the last change |
+| **Alt season meter** | Is money moving from BTC into altcoins? Three votes: ETH/BTC trend, the typical narrative vs BTC, coins above their 20-day average. Result: Alts leading / Mixed / BTC leading |
+| **How BTC regimes behave** | How long each regime usually lasts and what usually comes next |
+| **Narrative ranking** | Score, history in this regime, money flow (share of altcoin volume) and stage (early, running, late, cooling, quiet) |
+| **Forward record** | Every week's real picks, saved with that day's prices and judged a week later. Cannot be fitted to the past |
+| **Backtest** | The same rules replayed week by week with fees, on the older and the newer half of the history |
 
-Settings (optional): SCREENER_BIGMOVE_ALERTS=1 (Telegram) · SCREENER_BIGMOVE_TARGET_PCT=40 · SCREENER_BIGMOVE_STOP_PCT=10 · SCREENER_BIGMOVE_OUTCOME_HOURS=168 · SCREENER_BIGMOVE_MIN_VOLUME=1000000 · SCREENER_BIGMOVE_MAX_VOLUME=10000000 · SCREENER_BIGMOVE_MIN_DAILY_RVOL=1.5 · SCREENER_BIGMOVE_COOLDOWN_HOURS=24 · SCREENER_BIGMOVE=0 to switch the tier off. The AI desk keeps reviewing the quick tiers only.
+The first load downloads daily candles for every narrative coin (a few minutes); after that it refreshes once a day.
 
-8. AI Trade Desk (Gemini)
-Open http://localhost:3000/ai (needs GEMINI_API_KEY in .env). It lists the coins the screener flags as igniting or heating up.
+### 6.7 AI trade desk
 
-Analyze: the desk gathers everything that matters about the coin and asks Gemini whether to take the trade: the screener's signal and what it still lacks, the 15-minute / 1-hour / 4-hour chart (trend, momentum, typical move, VWAP), support and resistance, the order book, futures positioning (funding, open interest, long/short ratio), the Market Flow Radar's live numbers for the coin (flow score, 5-minute buyers vs sellers, net flow, volume surge, and how many coins are seeing buyers right now), smart-money wallet signals, whale transfers and exchange flows, DEX buying and selling, BTC, and how often this kind of signal won in the past. The answer is TAKE, WAIT or SKIP with a plan: entry zone, stop loss, targets, reward:risk and how long to hold, plus the reasons for and against and what would invalidate it.
+**Open:** http://localhost:3000/ai (needs `GEMINI_API_KEY`)
 
-Analyze all: one request triages every igniting coin at once and ranks them; open "Full analysis" on any of them for a trade plan. "Data only" shows all the facts without calling Gemini (free). Tick "risk review" for a second, stronger model to double-check the call, and "send to Telegram" to get every coin's decision (TAKE / WAIT / NO TRADE) on your phone.
+Lists the coins the screener flags as igniting or heating up.
+
+- **Analyze:** Gemini gets everything that matters about the coin (the signal, 15m / 1h / 4h charts, support and resistance, order book, futures positioning, Market Flow Radar numbers, whale and DEX flows, BTC, and how often this kind of alert won before) and answers **TAKE, WAIT or NO TRADE** with entry, stop, targets, reward:risk and the reasons for and against.
+- **Analyze all:** ranks every igniting coin in one request. **Data only** shows the facts for free, without calling Gemini. **Risk review** adds a second model to double-check.
+- **Automatic review:** every new ignition alert gets one AI verdict, saved with the alert and sent to Telegram, so after a few weeks the performance panel shows whether the AI's calls really do better.
+
+**How the AI decides:** no trade is the default.
+1. **Hard stops** (any one means no trade): the coin already ran, BTC down more than 1% in 1 hour or 2% in 4 hours, aggressive selling now, a wide spread or a thin order book.
+2. **Checklist:** trigger, buying, trend, room to resistance, liquidity, futures and whales, market breadth, past results.
+3. **Chances** of hitting the target and the stop, starting from the real base rates and moved by at most 15 points.
+4. **Expected value** after costs. The code recomputes it: TAKE needs +0.5% or more per trade and reward:risk of 1.5+.
+
+Long only, no leverage, risk at most 1% of your account per trade.
+
+---
+
+## 7. What the tests say
+
+Every tool was replayed on past Binance data with costs included. Short version: **some tiers are slightly better than buying at random, none is a proven money machine.** Use the live performance panels as the real test.
+
+| Tool | Test | Result |
+|---|---|---|
+| **Ignition, confirmed** | 60 days, 47 coins, +6% / -3% / 12h, after costs | Hit target 30%, hit stop 21%, **+0.93% per trade** on average |
+| **Ignition, early** | same | Hit target 25%, **+0.55% per trade** |
+| **Big-move tier** | 90 days, every Binance USDT pair, +40% / -10% / 7 days | About 1 in 10 reached +40%. **+2.5% per trade** in the Aug-Sep alt rally, **-1.8%** in October |
+| **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
+| **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
+| **BTC rotation** | Oct 2024 to Oct 2026, 107 weekly decisions | Rotation ranking **+28%** (same as holding BTC, +28%); token picks +136%, but almost all of it from one meme-pump week (-9% without it) |
+
+Two real examples:
+- **EVAA (Alpha):** the early tier caught its Oct 26-27 start (+40% the next day), but it had flagged EVAA 34 times in 60 days: 6 winners, 23 stopped out. The confirmed tier missed that start.
+- **BTC rotation:** the variant "hold BTC while BTC leads the alts" did slightly better in both halves of the history (+37% vs +28%), but the gain is too small to trust, so it is shown next to the rule and not used.
+
+Past results do not guarantee future results.
+
+---
+
+## 8. Backtests and replays
+
+Run these in a second terminal (the app can keep running). Each one caches its downloads, so the second run is fast.
+
+| Command | What it tests | First run |
+|---|---|---|
+| `node screener-backtest.js` | Ignition tiers (early, confirmed) on 5-minute candles | a few minutes |
+| `node bigmove-backtest.js` | Big-move tier (+40% before -10%) on every Binance USDT pair, month by month | 30-60 minutes |
+| `node alpha-backtest.js` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
+| `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
+
+Useful options: `--days 45`, `--end 2026-10-28T08` (repeat an earlier window), `--cost 2` (alpha). Re-run them every month: a rule that only worked in one kind of market shows up as one good month and one bad one.
+
+---
+
+## 9. All settings
+
+All settings go in `.env` and are optional. Restart the app after a change.
+
+<details>
+<summary><b>General</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PORT` | `3000` | Web address port |
+| `DEMO` | off | `1` = simulated data, for a preview |
+| `BINANCE_SPOT_URL` | `https://api.binance.com` | Use `https://data-api.binance.vision` if Binance is blocked in your region |
+| `POLL_SECONDS` | `30` | Market Flow Radar refresh |
+| `MAX_SYMBOLS` | `40` | Coins on the Market Flow Radar |
+| `MIN_QUOTE_VOLUME` | `1000000` | Minimum 24h volume on the Market Flow Radar |
+</details>
+
+<details>
+<summary><b>Telegram and AI</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | — | See [Set up Telegram](#3-set-up-telegram-alerts) |
+| `GEMINI_API_KEY` | — | See [Set up the AI](#4-set-up-the-ai-gemini) |
+| `GEMINI_ANALYST_MODEL` | `gemini-3.5-flash` | Model for analyses |
+| `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the risk review |
+| `AI_AUTO_REVIEW` | on | `0` = no automatic verdict on new alerts |
+| `AI_REVIEWS_PER_HOUR` | `12` | Cost cap for automatic verdicts |
+| `AI_REVIEW_TELEGRAM` | on | `0` = do not send verdicts to Telegram |
+| `AI_MIN_EV_PCT` | `0.5` | Minimum expected value per trade for TAKE |
+| `RADAR_TELEGRAM` | off | `1` = Market Flow Radar "Strong flow" messages |
+</details>
+
+<details>
+<summary><b>Ignition screener</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SCREENER_TARGET_PCT` / `SCREENER_STOP_PCT` / `SCREENER_OUTCOME_HOURS` | `6` / `3` / `12` | How alerts are tracked |
+| `SCREENER_EARLY_RVOL` | `3` | Volume multiple for an early ignition |
+| `SCREENER_IGNITE_MIN_SCORE` | `65` | Score for a confirmed ignition |
+| `SCREENER_MAX_DAILY_RSI` | `65` | Skip coins above this daily RSI |
+| `SCREENER_EARLY_ALERTS` | on | `0` = only confirmed alerts |
+| `SCREENER_SETUP_ALERTS` | off | `1` = alerts for daily setups (watchlist) |
+| `SCREENER_REGIME_GATE` | off | `1` = hold ignition alerts while BTC is in a daily downtrend |
+| `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |
+| `SCREENER_FEE_PCT` / `SCREENER_SLIPPAGE_PCT` | `0.2` / `0.1` | Costs used in the results |
+| `SCREENER_BIGMOVE` | on | `0` = no big-move tier |
+| `SCREENER_BIGMOVE_ALERTS` | off | `1` = big-move alerts on Telegram |
+| `SCREENER_BIGMOVE_TARGET_PCT` / `_STOP_PCT` / `_OUTCOME_HOURS` | `40` / `10` / `168` | Big-move tracking |
+| `SCREENER_BIGMOVE_MIN_VOLUME` / `_MAX_VOLUME` | `1000000` / `10000000` | Daily volume range for big-move coins |
+</details>
+
+<details>
+<summary><b>Alpha (Binance Wallet tokens)</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ALPHA` | on | `0` = turn the Alpha tab off |
+| `ALPHA_TELEGRAM` | off | `1` = confirmed alerts, `all` = early too |
+| `ALPHA_VOL_MULT` | `5` | Volume multiple vs normal |
+| `ALPHA_MIN_5M_USD` / `ALPHA_MIN_TRADES` | `1000` / `10` | Minimum per 5-minute candle |
+| `ALPHA_MIN_24H_USD` | `1000000` | 24h volume for the confirmed tier |
+| `ALPHA_MIN_LIQUIDITY` / `ALPHA_MIN_HOLDERS` | `50000` / `1000` | Which tokens are scanned |
+| `ALPHA_TARGET_PCT` / `ALPHA_STOP_PCT` / `ALPHA_OUTCOME_DAYS` | `40` / `10` / `7` | How alerts are tracked |
+| `ALPHA_COST_PCT` | `1` | Costs per trade (fees + slippage) |
+</details>
+
+<details>
+<summary><b>Early 2x</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `EARLY2X` | on | `0` = turn the screen off |
+| `EARLY2X_ALERTS` | off | `1` = Telegram for new high-priority candidates |
+| `EARLY2X_MCAP_MIN` / `_PREFERRED_MAX` / `_MAX` | `10000000` / `500000000` / `1000000000` | Market cap range |
+| `EARLY2X_MIN_QUOTE_VOLUME` | `1000000` | Minimum 24h volume |
+| `EARLY2X_MAX_SPREAD_PCT` | `0.3` | Maximum spread |
+| `EARLY2X_MIN_CONFIRMATIONS` / `EARLY2X_HIGH_MIN_SCORE` | `3` / `50` | High priority needs |
+| `EARLY2X_SCAN_MINUTES` | `5` | Scan interval |
+| `COINGECKO_API_KEY` | — | Free CoinGecko demo key (faster supply data) |
+
+Every other threshold is listed at the top of `early2x.js`.
+</details>
 
-Automatic review: with a Gemini key set, every new ignition alert gets one AI analysis (TAKE / WAIT / NO TRADE) that is saved with the alert, shown in the alert history, sent to Telegram as a follow-up, and used by the performance panel ("AI said TAKE / WAIT / SKIP") so you can see after a few weeks whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off, AI_REVIEWS_PER_HOUR=12 caps the cost, AI_REVIEW_TELEGRAM=0 skips the Telegram follow-up.
+<details>
+<summary><b>Whales and DEX rotations</b></summary>
 
-How the AI decides: no trade is the default and TAKE has to be earned. Gemini works through fixed steps and shows them: (1) hard stops, any of which means no trade: the coin already ran, BTC down more than 1% in 1h or 2% in 4h, aggressive selling right now, a spread above 30 bps or under $20k of bids within 1%; (2) a checklist (trigger, executed buying, trend, room to resistance, liquidity, futures and whale positioning, market breadth, the live track record of this alert type and of its own past calls), each with the number that decides it; (3) the chance of hitting the target and the stop, starting from how often this kind of alert actually did (confirmed ignitions: 30% target / 21% stop in the replay; early: 25% / 29%; big-move: 8.5% / 39%; live results take over after 30 resolved alerts) and moved by at most 15 points with evidence; (4) the expected value per trade after costs. WAIT must name a price, a condition and a time limit.
-
-Rules the code enforces after Gemini answers: it recomputes the expected value and keeps the chances within 15 points of the base rate; TAKE needs no hard stop, +0.5% or more expected per trade (AI_MIN_EV_PCT) and reward:risk of at least 1.5, only for coins igniting right now and never for coins that already ran; plans must fit the real levels or the alert's own plan (+6% / -3%, or +40% / -10% for big-move alerts) is shown instead; confidence is lowered for early signals, demo data, weak markets and 4h downtrends. Long only, no leverage, risk at most 1% of your account. Each analysis is one Gemini request (two with risk review) and is reused for 3 minutes. It is an AI opinion on data, not financial advice.
-
-9. Early 2x Movers (research screen)
-Open http://localhost:3000/screener#early2x. It looks for low- and mid-cap Binance spot USDT tokens that show measurable signs of a possible large move up before price expands. +100% within 1-14 days is the research target, with a second 15-42 day horizon. A 2x move is a target to measure against, not a prediction, and an empty list is a valid answer.
-
-Universe: Binance USDT pairs with a verified market cap of $10M-$1B ($10M-$500M preferred, $500M-$1B extended), at least $1M of 24h volume and a spread of 0.30% or less. Market cap = Binance's own circulating supply × price, cross-checked with CoinGecko when it can be reached. A coin with no verified market cap is never listed; nothing is estimated. Stablecoins, wrapped and staked tokens, gold, tokenized stocks and leveraged tokens are left out, and coins with under 14 days of history are flagged.
-
-Two independent models, on finished candles only:
-- Model A, quiet accumulation: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout = the same, pressing a 7-day high that has been tested before (or with compressed volatility).
-- Model B, early ignition: the last 3+ five-minute candles each at 2×+ the normal volume for that hour of day, accelerating, with 55%+ aggressive buying and price rising.
-
-Evidence is grouped into five independent families: volume and trade activity, executed buying (buy share, CVD, large trades), price structure, order-book support, and strength vs BTC. Indicators that measure overlapping things count once. High priority needs 3+ families, a score of 50+ and passing liquidity, data-quality, extension, BTC and supply checks. A market cap where Binance and CoinGecko are more than 25% apart counts as not verified, and so does less than 40% of max supply circulating; either one blocks high priority. Coins stretched beyond limits that scale with their own volatility go to "Already moved — do not chase"; momentum alone is not rejected.
-
-Score out of 100, every point shown in the coin's detail view: spot volume anomaly and persistence 20, buying pressure and trade flow 20, price structure and breakout readiness 15, liquidity and execution 10, relative strength and market regime 10, volatility compression 10, tokenomics and verified catalysts 10, data reliability 5. Missing data earns no points. The score is not a probability of doubling.
-
-Futures (open interest over 1h / 24h / 48h, funding and its changes, crowded positioning) and on-chain flows (the whale and DEX trackers) are shown as context only. They never count as a confirmation or as proof of whale buying.
-
-Token unlocks and catalysts come only from data/early2x-events.json, which you keep, and only entries with an https source count. A verified unlock of 2%+ of circulating supply within 30 days is flagged and blocks high priority. A dated unlock check showing nothing major earns tokenomics points for 30 days. The file explains the format.
-
-Tracking: every listed coin is saved as an unchangeable snapshot before its move, then measured from the snapshot price at 1h, 6h, 12h, 24h, 3d, 7d, 14d, 21d and 42d. Each check records the return, the best and worst point, whether it reached +25%, +50% and +100%, how long that took, and how far it fell first. Price is read on 5-minute candles for the first day and hourly after that, with 1-minute candles to settle any candle that touched both a target and the -20% reference stop; if that cannot be settled, the stop counts first. Coins that stop trading keep their last price in the results instead of disappearing. The results panel shows sample sizes, fees (0.2%) and slippage (0.3%), false positives (never reached +25% in 14 days), and splits by state, priority, market-cap range and score. An older-vs-newer split shows whether results hold on later signals. "Already moved" coins are tracked too, as a control group. Nothing is called profitable until at least 30 signals have had 14 days to play out and the result is positive in both halves.
-
-Settings (optional, in .env): EARLY2X_MCAP_MIN=10000000 · EARLY2X_MCAP_PREFERRED_MAX=500000000 · EARLY2X_MCAP_MAX=1000000000 · EARLY2X_MIN_QUOTE_VOLUME=1000000 · EARLY2X_MAX_SPREAD_PCT=0.3 · EARLY2X_MIN_DEPTH_USD=10000 · EARLY2X_A_VOLUME_RATIO=2 · EARLY2X_B_RVOL_5M=2 · EARLY2X_B_CANDLES=3 · EARLY2X_MIN_CONFIRMATIONS=3 · EARLY2X_HIGH_MIN_SCORE=50 · EARLY2X_EXT_24H_MIN_PCT=15 · EARLY2X_EXT_24H_RANGE_MULT=2 · EARLY2X_MIN_CIRCULATING_PCT=40 · EARLY2X_MCAP_TOLERANCE_PCT=25 · EARLY2X_STOP_PCT=20 · EARLY2X_SLIPPAGE_PCT=0.3 · EARLY2X_COOLDOWN_HOURS=24 · EARLY2X_SCAN_MINUTES=5 · score weights EARLY2X_W_VOLUME=20 (also _FLOW, _STRUCTURE, _LIQUIDITY, _STRENGTH, _COMPRESSION, _TOKENOMICS, _DATA) · COINGECKO_API_KEY=your free demo key (optional, faster supply data) · EARLY2X_COINGECKO=0 to skip CoinGecko · EARLY2X=0 to switch the screen off. Every other threshold is listed at the top of early2x.js.
-
-Telegram: off until you set EARLY2X_ALERTS=1. Then only new high-priority candidates are sent, once per coin per 24 hours unless the state improves. No trades are ever placed.
-
-Data and storage: snapshots and tracking live in early2x_state.json (kept out of git). The file carries a version number and is upgraded automatically when the format changes, so there is no database or migration to run; delete the file to start the record again. GET /api/early2x/signals returns every snapshot with its tracking, for your own analysis. CoinGecko's free API is slow, so supply data arrives a few minutes after the first start (until then it earns no points).
-
-10. BTC rotation (narratives by BTC regime)
-Open http://localhost:3000/screener#rotation. Every day BTC's daily chart is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on), and is ranked by how it did against BTC in past weeks with the same regime (50%), its 14-day strength vs BTC now (30%) and the share of its coins above their 20-day average (20%). The rule holds the top 2 narratives in an uptrend (or up to 5 coins scoring 65+ inside them), re-decided every 7 days, and cash while BTC is in a downtrend.
-
-This week: what the rule holds, the coins, the next decision date, the last time the holdings changed, the BTC regime with how many days it has lasted, how long it usually lasts and where BTC was 7 days later in past days like this.
-
-Alt season meter: is money moving from BTC into altcoins? Three signals vote: the ETH/BTC trend (above its 50-day average with a rising 20-day average, or the opposite), the typical narrative's 30-day return vs BTC (up from +2%, down from -2%) and the share of all narrative coins above their 20-day average (up from 55%, down from 35%). Two votes the same way give "Alts leading" or "BTC leading", otherwise "Mixed". The last 120 days are shown as a strip.
-
-Money flow and stage: each narrative's share of all altcoin trading volume over 7 days, with an arrow comparing it to its 30-day share, and a life-cycle stage: early (more coins turning up, few at 30-day highs yet, volume following), running, late (most coins at 30-day highs, or money leaving a strong run), cooling, quiet. Both are shown for context; neither is part of the score (see below).
-
-How BTC regimes behave: how long each regime usually lasts (median days) and which regimes usually came right after it.
-
-Forward record: every 7 days the screener saves what the rule holds with that day's prices and judges it 7 days later with prices that came afterwards, after fees. Unlike the backtest it cannot be fitted to the past, and a coin that is later delisted keeps its last price instead of vanishing. It also saves the coins in each narrative every day, so later backtests can use the lists as they really were (today's lists leave out coins that died, which flatters every narrative). Both live in rotation_record.json (kept out of git); demo mode does not record.
-
-Backtest (node rotation-backtest.js, or the Backtest panel): each strategy is also shown on the older and the newer half of the weeks, because a change is only worth making if it wins in both. On real Binance data from Oct 2024 to Oct 2026 (107 weekly decisions, 11 narratives, 99 coins, 0.2% per round trip):
-- Rotation ranking (top 2 narratives): +28% (older half +45%, newer half -12%); Hold BTC: +28% (+83% / -30%); token picks: +136% (+50% / +57%).
-- Variant, hold BTC while the alt season meter says "BTC leading": +37% (+53% / -11%), better in both halves but by only 1 point in the newer half, so it is shown next to the rule ("Variant that holds BTC...") and not used.
-- Variant, money flow as a fifth of the score: +4% (+27% / -18%), worse in both halves, so money flow is shown but not scored.
-- Variant, token picks with the same BTC-leading filter: +113% (+36% / +57%), worse.
-- One week decides most of it: token picks made +159% in a single week of a meme pump in April 2026 (币安人生 2.5×, ORDI 1.9×) and are -9% without that week; the rotation ranking is -5% without its best week. So none of these is a proven edge.
-Narrative lists are today's, so these numbers are also flattered by survivorship; the forward record is the honest test.
-
-Settings (optional, in .env): ROTATION_TELEGRAM=1 sends a message when the BTC regime or the holdings change (off by default; ignition and AI stay the only default Telegram messages) · ROTATION_HOLD_DAYS=7 · ROTATION_DAYS=1000 (days of history) · ROTATION_NARRATIVES=AI,Meme (only these).
-
-11. Binance Alpha ignition (Binance Wallet tokens)
-Open http://localhost:3000/screener#alpha. Binance Alpha tokens (the early on-chain tokens in Binance Wallet, like EVAA) are not Binance spot pairs, so the Ignition tab never sees them. This tab scans them every 5 minutes, about 25 seconds after each candle closes, with the same idea: volume igniting on 5-minute candles before price runs.
-
-Tokens scanned: still trading on Alpha, not on Binance spot (the Ignition tab covers those), $50k+ of pool liquidity and 1,000+ holders (about 250 tokens). Data: the public endpoints Binance's own Alpha pages use (token list, 5-minute candles; no API key, not documented, so they can change), and DexScreener for buys vs sells, because Alpha trades carry no buyer/seller side.
-
-Two tiers, like the Ignition tab:
-- Early ignition: two finished 5-minute candles in a row, each at 5x the token's normal 5-minute volume (median of the last 24 hours) and $1,000+ with 10+ trades, price up over those 10 minutes (not more than 20%), and not already up 30% in 24 hours.
-- Confirmed: the same with $1M+ traded in the last 24 hours.
-Heating up (volume rising, not confirmed) and Already moved (up 30%+ in 24 hours, do not chase) are shown too. Every alert is tracked: +40% target before -10% stop within 7 days, after 1% costs.
-
-What the replay says (node alpha-backtest.js: 5-minute candles of every Alpha token not on spot, Aug 29 to Oct 28 2026, 325 tokens that traded, 47 of them delisted since; Binance no longer serves candles for most long-delisted tokens, so those are missing, which flatters everything a little):
-- Early tier: 2,839 alerts (about 50 a day), 11.2% hit +40% first, -1.2% per trade. Buying any active token at a random time: 9.7% and -1.3%. So no real edge: on tokens with tiny volume, "5x normal" happens all the time.
-- Confirmed tier: 468 alerts (about 8 a day), 16.7% hit +40% first, +0.6% per trade (older two thirds +1.1%, newest third -0.8%). The same kind of tokens bought at a random time: 13.8% and -1.2%. Better than random in both halves, but close to break-even, and the $1M rule was picked after seeing these results, so the record may be flattered. The live tracking on the tab is the honest test.
-- EVAA: the early tier caught its Oct 26-27 start (alert at $0.515, +40% reached the next day), but it also flagged EVAA 34 times in 60 days: 6 hit +40%, 23 were stopped, 5 timed out. The confirmed tier flagged EVAA 3 times (1 win, 2 stops) and missed the Oct 27 start, because by the time $1M had traded EVAA was already up more than 30%.
-
-Telegram: off by default. ALPHA_TELEGRAM=1 sends confirmed alerts, ALPHA_TELEGRAM=all sends early ones too. Settings (optional, in .env): ALPHA_VOL_MULT=5 · ALPHA_MIN_5M_USD=1000 · ALPHA_MIN_TRADES=10 · ALPHA_MIN_24H_USD=1000000 · ALPHA_MIN_LIQUIDITY=50000 · ALPHA_MIN_HOLDERS=1000 · ALPHA_TARGET_PCT=40 · ALPHA_STOP_PCT=10 · ALPHA_OUTCOME_DAYS=7 · ALPHA_COST_PCT=1 · ALPHA=0 turns the tab off. Alerts live in alpha_state.json; run node alpha-backtest.js once to fill the tab's Replay panel (20-40 minutes the first time, cached in ./alpha_cache). All kept out of git.
-
-Before trading one: pools are often a few hundred thousand dollars, so a market order moves the price; tokens can be delisted from Alpha; and the AI desk does not analyse Alpha tokens (it needs Binance spot data).
-
-⚠️ Disclaimer
-The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.
-
-
-<FollowUp> Does this user guide cover the dashboard features in a way that is easy for non-technical users to understand?</FollowUp>
+| Setting | Default | Meaning |
+|---|---|---|
+| `SCREENER_WHALES` | on | `0` = turn the whale tracker and DEX rotations off |
+| `WHALES_MIN_USD` | `100000` | Smallest transfer shown |
+| `WHALES_ALERT_USD` / `WHALES_STABLE_ALERT_USD` | `1000000` / `25000000` | Alert sizes (stablecoins separately) |
+| `WHALES_EXCHANGE_ALERT_USD` / `WHALES_MINT_ALERT_USD` | `500000` / `10000000` | Exchange flow and mint / burn alerts |
+| `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram |
+| `WHALES_TELEGRAM_PER_HOUR` | `30` | Telegram cap |
+| `WHALES_RPC` | public nodes | Your own Ethereum node URL(s) |
+| `FLOWS_NETWORKS` | `eth,base,solana` | DEX networks |
+</details>
+
+<details>
+<summary><b>BTC rotation</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ROTATION_TELEGRAM` | off | `1` = message when the regime or the holdings change |
+| `ROTATION_HOLD_DAYS` | `7` | Days between decisions |
+| `ROTATION_DAYS` | `1000` | Days of history |
+| `ROTATION_NARRATIVES` | all | For example `AI,Meme` to rank only these |
+</details>
+
+---
+
+## 10. Troubleshooting
+
+<details>
+<summary><b>"Port 3000 is already in use"</b></summary>
+
+Another copy of the app is still running. Close that terminal window, or set `PORT=3005` in `.env` and open http://localhost:3005.
+</details>
+
+<details>
+<summary><b>No Telegram messages</b></summary>
+
+1. Look at the `Telegram:` line when the app starts. "bot @yourbot, sending to chat …" means the token is right.
+2. Press **Send test message** on the screener's **Data health** panel. The panel shows the last error in plain words.
+3. Common fixes:
+   - **Wrong token:** copy it again from @BotFather.
+   - **"chat not found":** open your bot and press **Start**, and check `TELEGRAM_CHAT_ID` (a group id starts with `-100` and the bot must be in the group).
+   - **Blocked bot:** open it and press **Start** / **Unblock**.
+4. Restart the app after every change to `.env`.
+5. Remember: ignition alerts are rare, AI verdicts need `GEMINI_API_KEY`, and most other alert types are off until you turn them on ([table](#what-is-sent-to-telegram)).
+</details>
+
+<details>
+<summary><b>Binance errors (403 / 451, "blocked in this region")</b></summary>
+
+Add `BINANCE_SPOT_URL=https://data-api.binance.vision` to `.env` and restart. Futures data (shown as context only) may still be unavailable.
+</details>
+
+<details>
+<summary><b>A page says "Loading history…" for a long time</b></summary>
+
+The BTC rotation downloads daily candles for every narrative coin on the first start (a few minutes) and Early 2x waits for CoinGecko supply data. Later starts use the cache.
+</details>
+
+<details>
+<summary><b>The AI desk says the key is missing</b></summary>
+
+Check that `.env` is in the project folder (next to `server.js`), that the line is `GEMINI_API_KEY=...` with no spaces or quotes, and restart.
+</details>
+
+---
+
+## 11. Updating to a new version
+
+New versions are pushed to a work branch first. To bring them into your `main` branch and your PC:
+
+```bash
+git fetch origin
+git checkout main
+git merge --ff-only origin/claude/trusting-gauss-i4wkla
+git push origin main
+npm install
+```
+
+Then restart the app. Your settings (`.env`), alert history and caches are not in git, so an update never touches them.
+
+If git says *"Your local changes to the following files would be overwritten"*, those are usually files the app writes while it runs. They are ignored by git now; move or delete the files git lists and run the merge again.
+
+---
+
+## 12. For developers
+
+**Tests** (no internet or API key needed):
+
+```bash
+npm test
+```
+
+They cover the signal rules, outcome tracking, AI safety rules, the big-move tier, Early 2x scoring and tracking, BTC rotation and Binance Alpha logic.
+
+**Run the screener alone:** `node screener.js` (port 3001).
+
+**Project files:**
+
+| File | What it is |
+|---|---|
+| `server.js` | Starts everything; Market Flow Radar and the web pages |
+| `screener.js` | Ignition screener, big-move tier, BTC rotation wiring, shared helpers |
+| `alpha.js` | Binance Alpha ignition |
+| `early2x.js` | Early 2x movers |
+| `whales.js`, `flows.js` | Whale tracker and DEX rotations |
+| `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
+| `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
+| `telegram.js` | Telegram sender and diagnostics |
+| `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
+| `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
+| `data/` | Wallet labels and your token unlock / catalyst list |
+
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`) are kept out of git.
+
+---
+
+## Disclaimer
+
+The scores, alerts and AI analyses are tools for research, not financial advice. A high score means buyers are aggressive right now; it does not mean the price will keep rising. Always check the chart, size your position so a loss is small, and decide for yourself. This app never places trades.

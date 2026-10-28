@@ -58,6 +58,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .watchbar{padding:0 18px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.watchbar input[name=pair]{width:150px;text-transform:uppercase}.watchbar input[name=min]{width:120px}.wcheck{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}.wcheck input{padding:0}
 .watches{display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 16px}.wchip{display:inline-flex;align-items:center;gap:8px;border:1px solid #4b3a7a;background:#1b1530;border-radius:999px;padding:7px 8px 7px 12px;font-size:12px;font-weight:700}.wchip small{color:var(--muted);font-weight:600}.wchip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 4px}.wchip button:hover{color:var(--red)}
 .toast.whale{border-left-color:var(--blue)}.toast.watch{border-left-color:#a78bfa}.toast.surge{border-left-color:var(--green)}.toast.rotation{border-left-color:var(--amber)}.toast.whale .tag{color:var(--blue)}.toast.watch .tag{color:#c4b5fd}.toast.rotation .tag{color:var(--amber)}
+.seg{display:flex;gap:6px;flex-wrap:wrap;padding:0 18px 12px}.seg .btn{padding:8px 11px;font-size:12px}.seg .btn span{color:var(--muted);margin-left:4px}.seg .btn.on span{color:var(--green)}
 @keyframes slide{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.toast{animation:none}}
 @media(max-width:900px){.regime-hero{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}.wrap{padding:20px 12px}.table th,.table td{padding:11px 12px}.book-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:430px){.kpi .value{font-size:22px}.header-right{width:100%}.part{grid-template-columns:90px 1fr 50px}}
 </style></head>
@@ -77,6 +78,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  <button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Early ignition</button>
  <button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button>
  <button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whale tracker</button>
+ <button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x movers</button>
 </nav>
 <div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
 <div class="notice"><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it. Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div>
@@ -247,6 +249,39 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
  </div>
  <div class="foot">How it works: the tracker reads every new Ethereum block from public RPC nodes (no key) and keeps every token or ETH transfer worth at least the minimum, priced with DexScreener. Tokens without real DEX liquidity are ignored, so fake tokens cannot create fake whales. Senders and receivers are matched against the label list; a transfer into an exchange is a deposit, out of one a withdrawal, between two wallets of the same exchange an internal move (hidden by default). Exchange deposits usually arrive at a customer deposit address first and show here when the exchange sweeps them to its hot wallet. Alerts: large transfers, non-stablecoin exchange deposits and withdrawals, stablecoin mints, burns and issuer moves, and anything on your watchlist.</div>
 </div>
+<div id="view-early2x" role="tabpanel" aria-labelledby="tabEarly2x" hidden>
+ <div class="notice"><b>Research screen, not a prediction:</b> +100% is a research target. Coins are listed only when their data passes the rules, and every listed coin is saved as an unchangeable snapshot whose real returns are measured afterwards. Most early signals fail. The score is not a probability of doubling. Futures data is context only, and token unlocks and catalysts count only when you have verified them (data/early2x-events.json). Nothing is traded. Not financial advice.</div>
+ <div class="error" id="xErrors"></div>
+ <div class="kpis">
+  <div class="kpi"><div class="label">Coins evaluated</div><div class="value" id="xkUni">—</div><div class="hint" id="xkUniHint">$10M-$1B market cap, liquid</div></div>
+  <div class="kpi"><div class="label">High priority now</div><div class="value green" id="xkHigh">—</div><div class="hint" id="xkHighHint">3+ independent confirmations</div></div>
+  <div class="kpi"><div class="label">BTC (market regime)</div><div class="value" id="xkBtc">—</div><div class="hint" id="xkBtcHint">—</div></div>
+  <div class="kpi"><div class="label">Signals tracked</div><div class="value" id="xkSig">—</div><div class="hint" id="xkSigHint">snapshots with measured returns</div></div>
+ </div>
+ <section class="panel">
+  <div class="section-head"><div><h2 id="xTitle">Candidates</h2><p id="xHint">—</p></div><span class="chip" id="xChip">—</span></div>
+  <div class="seg" role="tablist" aria-label="Candidate states" id="xSeg">
+   <button class="btn" data-xs="quiet" role="tab">Quiet accumulation <span class="mono" id="xcQuiet">·</span></button>
+   <button class="btn" data-xs="prebreakout" role="tab">Pre-breakout <span class="mono" id="xcPre">·</span></button>
+   <button class="btn" data-xs="ignition" role="tab">Early ignition <span class="mono" id="xcIgn">·</span></button>
+   <button class="btn" data-xs="moved" role="tab">Already moved — do not chase <span class="mono" id="xcMoved">·</span></button>
+  </div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Token</th><th>Score · state</th><th>Market cap</th><th>Price · targets</th><th>Volume vs normal</th><th>Buying</th><th>Price · structure</th><th>Liquidity</th><th>Futures · on-chain</th><th>Supply · events</th><th>Still missing</th></tr></thead><tbody id="xBody"><tr><td colspan="11" class="empty">Waiting for the first scan (about 30 seconds after start)…</td></tr></tbody></table></div>
+ </section>
+ <section class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Measured results</h2><p id="xResRule">Every snapshot is tracked for 42 days.</p></div>
+   <div class="filters"><select id="xGroup" aria-label="Group results by"><option value="all">All candidates</option><option value="byState">By state</option><option value="byPriority">By priority</option><option value="byMcap">By market cap</option><option value="byScore">By score</option><option value="chronological">Older vs newer signals</option><option value="control">Control: already moved</option></select></div></div>
+  <p class="perf-note" id="xVerdict"></p>
+  <div class="table-wrap"><table class="table"><thead id="xHorHead"></thead><tbody id="xHor"></tbody></table></div>
+  <div class="section-head" style="padding-bottom:6px"><div><h2 style="font-size:13px">Targets</h2><p>Share of matured signals that reached each target, how long it took and how far price fell first. A row means little until it has 30+ signals.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Matured (14d)</th><th>+25% in 14d</th><th>+50% in 14d</th><th>+100% in 14d</th><th>+100% in 42d</th><th>Days to +100%</th><th>Fall before +25%</th><th>Hit before -<span id="xStopPct">20</span>% stop</th><th>False positives</th></tr></thead><tbody id="xTgt"></tbody></table></div>
+ </section>
+ <div class="lower">
+  <section class="panel"><div class="section-head"><div><h2>Recent snapshots</h2><p>Saved before the move, never changed afterwards. Returns are measured from the snapshot price.</p></div></div><div class="events" id="xRecent"><div class="empty">No snapshots yet.</div></div></section>
+  <section class="panel"><div class="section-head"><div><h2>Data health</h2><p>Missing data earns no points and blocks high priority.</p></div></div><div class="source-list" id="xHealth"></div></section>
+ </div>
+ <div class="foot">How it works: every few minutes the screen reads Binance spot data for USDT pairs with a verified market cap of $10M-$1B (Binance's circulating supply × price, cross-checked with CoinGecko), at least $1M of 24h volume and a spread of 0.30% or less. Stablecoins, wrapped and staked tokens, tokenized stocks and leveraged tokens are left out. <b>Model A (quiet accumulation)</b>: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout is the same, pressing a tested 7-day high. <b>Model B (early ignition)</b>: the last 3+ five-minute candles each at 2×+ normal volume for that hour, accelerating, with aggressive buying and price rising. Evidence is grouped into five independent families (activity, executed buying, structure, order book, strength vs BTC). Volume and trade count, CVD and buy share, and large-trade buying measure overlapping things, so each group counts once. High priority needs 3+ families, a score of 50+ and passing liquidity, data, extension, BTC and supply checks (a market cap that Binance and CoinGecko disagree on, or under 40% of supply circulating, blocks it). Coins already stretched beyond limits that scale with their own volatility go to "Already moved". Those are tracked too, as a control group. All settings are EARLY2X_* in .env; Telegram alerts stay off until EARLY2X_ALERTS=1.</div>
+</div>
 </main>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -270,6 +305,18 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   <div class="sec" style="padding-top:12px">How the daily setup score was built</div><div class="parts" id="mParts"></div>
   <div class="sec" style="padding-top:12px">Why it flagged</div><ul class="reasons" id="mReasons"></ul>
   <div class="modal-foot"><a class="btn" id="mBinance" href="#" target="_blank" rel="noopener noreferrer">Open on Binance</a><span>Set your entry, stop-loss and target before acting. Not financial advice.</span></div>
+ </section>
+</div>
+
+<div class="modal-backdrop" id="xModal" role="dialog" aria-modal="true" aria-labelledby="xmTitle">
+ <section class="modal" style="width:min(860px,100%)">
+  <div class="modal-head"><div><div class="eyebrow" id="xmEyebrow">Early 2x candidate</div><h2 id="xmTitle">—</h2><p id="xmSub">—</p></div><button class="btn" id="xmClose" aria-label="Close detail">✕</button></div>
+  <div class="book-meta" id="xmStats"></div>
+  <div class="sec">Independent confirmations</div><ul class="reasons" id="xmFam"></ul>
+  <div class="sec" style="padding-top:8px">Mandatory checks and late-entry checks</div><ul class="reasons" id="xmChecks"></ul>
+  <div class="sec" style="padding-top:8px">Exactly how the score was calculated</div><div id="xmScore" style="padding:6px 20px 4px"></div>
+  <div class="sec" style="padding-top:8px">Still missing for a high-priority call</div><ul class="reasons" id="xmMissing"></ul>
+  <div class="modal-foot"><a class="btn" id="xmBinance" href="#" target="_blank" rel="noopener noreferrer">Open on Binance</a><span>A 2x move is a research target, not a prediction. Set your own risk limits. Not financial advice.</span></div>
  </section>
 </div>
 
@@ -489,17 +536,19 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 
  // ---------- tabs ----------
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, stablecoin issuers, bridges), exchange inflows and outflows, the most active entities and wallets, plus DEX rotations on Ethereum, Base and Solana. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  let tab="ignition",rot=null,rotTimer=null;
- const TABS=[["ignition","#tabIgnition"],["rotation","#tabRotation"],["whales","#tabWhales"]];
+ const TABS=[["ignition","#tabIgnition"],["rotation","#tabRotation"],["whales","#tabWhales"],["early2x","#tabEarly2x"]];
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
   $("#lede").innerHTML=LEDES[t];
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
-  clearInterval(rotTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
   if(t==="whales")loadW();
+  if(t==="early2x"){loadX();xTimer=setInterval(loadX,30000);}
  }
  for(const [k,b] of TABS)$(b).onclick=()=>setTab(k);
  document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;const i=TABS.findIndex(x=>x[0]===tab),n=TABS[(i+(e.key==="ArrowRight"?1:TABS.length-1))%TABS.length];setTab(n[0]);$(n[1]).focus();});
@@ -742,6 +791,130 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
   }).join("")}</tr>`).join("");
  }
 
+ // ---------- early 2x movers ----------
+ let xd={},xState="quiet",xTimer=null;
+ const XSTATE={quiet:["Quiet accumulation","watch"],prebreakout:["Pre-breakout","watch"],ignition:["Early ignition","strong"],moved:["Already moved","risk"]};
+ const xn=(v,d=2,s="×")=>v==null?"—":Number(v).toFixed(d)+s;
+ const xfam={activity:"activity",buying:"buying",structure:"structure",orderbook:"order book",strength:"vs BTC"};
+ const xTabHint={quiet:"Model A: volume at 2×+ its 7-day baseline with more trades while price stays calm. Sorted by priority, then score.",
+  prebreakout:"Model A accumulation pressing a 7-day high that has been tested before (or with compressed volatility).",
+  ignition:"Model B: the last 3+ five-minute candles at 2×+ normal volume, accelerating, with aggressive buying, before a big move.",
+  moved:"Already stretched beyond limits set by each coin's own daily range. Listed so you do not chase them; tracked as a control group."};
+ function xRow(c){
+  const [st,k]=XSTATE[c.state]||["—",""],v=c.vol,f=c.flow,p=c.px,l=c.liq,d=c.deriv;
+  const pr=c.priority==="high"?'<span class="badge strong">High priority</span>':c.priority==="watch"?'<span class="badge watch">Watch</span>':"";
+  const tg=c.targets.map(t=>`+${t.pct}% ${price(t.price)}`).join(" · ");
+  const fut=!d?'<span class="muted">unavailable</span>':d.available===false?'<span class="muted">no perpetual</span>':`OI 24h ${pct1(d.oi24hPct)}<span class="sub">1h ${pct1(d.oi1hPct)} · 48h ${pct1(d.oi48hPct)}</span><span class="sub ${d.crowded?"red":""}">funding ${d.fundingPct==null?"—":d.fundingPct.toFixed(4)+"%"}${d.transition?" · "+esc(d.transition):""}</span>`;
+  const oc=c.onchain||{},ocTxt=[oc.whales?`whales: ${oc.whales.netToExchangesUsd24h>0?"+":""}${money(oc.whales.netToExchangesUsd24h)} net to exchanges (${oc.whales.transfers24h})`:"",oc.dex?`DEX net ${oc.dex.netUsd24h>=0?"+":"-"}${money(Math.abs(oc.dex.netUsd24h))} (${oc.dex.swaps24h} swaps)`:""].filter(Boolean);
+  const sup=c.supply&&c.supply.circulatingShare!=null?`${Math.round(c.supply.circulatingShare*100)}% circulating`:'<span class="muted">supply n/a</span>';
+  const un=c.unlock.state==="major"?`<span class="sub red">unlock: ${esc(c.unlock.text)}</span>`:c.unlock.state==="clear"?'<span class="sub green">no major unlock (verified)</span>':'<span class="sub muted">unlocks not verified</span>';
+  const cat=c.catalysts.length?`<span class="sub green">${esc(c.catalysts[0].title)} (${esc(c.catalysts[0].date)})</span>`:"";
+  const miss=c.state==="moved"?`<span class="red">${esc(c.late.filter(x=>x.severity==="reject").map(x=>x.why).join(" · "))}</span>`:c.missing.length?`<span class="amber">${esc(c.missing.slice(0,2).join(" · "))}</span>${c.missing.length>2?`<span class="sub">+${c.missing.length-2} more (click the token)</span>`:""}`:'<span class="green">nothing</span>';
+  const tags=(c.tags||[]).some(t=>/monitoring/i.test(t))?' <span class="badge risk">Monitoring</span>':"";
+  return `<tr><td><button class="coin-link sym" data-xsym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${tags}<span class="sub">${esc(c.pair)} · ${esc(c.name)}</span>${c.history&&c.history.recent?`<span class="sub amber">listed ${c.history.days} days ago</span>`:""}</td>
+  <td><span class="score mono">${c.score}<span class="scorebar"><i style="width:${c.score}%"></i></span></span><span class="sub"><span class="badge ${k}">${st}</span> ${pr}</span><span class="sub">${c.confirmations}/5 confirmed: ${esc(c.families.filter(x=>x.ok).map(x=>xfam[x.key]).join(", ")||"none")}</span>${c.flags.length?`<span class="sub red">${c.flags.length} risk flag${c.flags.length>1?"s":""}</span>`:""}</td>
+  <td class="mono">${money(c.mcap)}<span class="sub">${c.preferred?"preferred range":"extended range"} · ${esc(c.mcapBand||"")}</span><span class="sub">${c.mcapSource.startsWith("Binance")?"Binance supply":"CoinGecko"}${c.mcapCoinGecko?" · CoinGecko "+money(c.mcapCoinGecko):""}</span></td>
+  <td class="mono">${price(c.price)}<span class="sub">${tg}</span><span class="sub">2x market cap ${money(c.mcapAt2x)} (same supply)</span></td>
+  <td class="mono ${v.r24>=2?"green":""}">24h ${xn(v.r24)} · 1h ${xn(v.r1h,1)}<span class="sub">5m ${xn(v.r5,1)} · 15m ${xn(v.r15,1)} · held ${v.persist12??"—"}/12h</span><span class="sub">trades ${xn(v.trades24)} (24h)${v.consec5?` · ${v.consec5} hot 5m candle${v.consec5>1?"s":""}`:""}</span></td>
+  <td class="mono ${f.buy24>=53?"green":f.buy24<50?"red":""}">${f.buy24==null?"—":f.buy24.toFixed(1)+"%"} buy<span class="sub">${f.buyDelta==null?"":(f.buyDelta>=0?"+":"")+f.buyDelta.toFixed(1)+" pts vs 7d"} · 15m ${f.buy15==null?"—":f.buy15.toFixed(0)+"%"}</span><span class="sub">CVD ${f.cvdAccel?'<span class="green">accelerating</span>':f.cvdLast12>0?"positive":"negative"}${f.large&&f.large.buyShare!=null?` · big trades ${f.large.buyShare.toFixed(0)}% buys`:""}</span></td>
+  <td class="mono"><span class="${col(p.ret24)}">${pct1(p.ret24)}</span> 24h<span class="sub">${pct1(p.ret1h)} 1h · ${pct1(p.ret4h)} 4h · ${pct1(p.ret7d)} 7d</span><span class="sub">vs BTC ${pct1(p.rs24)}${p.rsImproving?" ↑":""} · ${p.aboveRange>0?pct1(p.aboveRange)+" above 7d high":p.distToHigh==null?"—":p.distToHigh.toFixed(1)+"% below 7d high"}${p.tests>=2?` (${p.tests} tests)`:""}</span></td>
+  <td class="mono">${l.spreadPct==null?"—":l.spreadPct.toFixed(3)+"%"}<span class="sub">vol ${money(l.quoteVolume24h)}${l.spreadTrend?" · "+l.spreadTrend:""}</span><span class="sub">${l.depthBid==null?"depth not checked":`±2%: ${money(l.depthBid)} bids / ${money(l.depthAsk)} asks`}</span></td>
+  <td class="mono">${fut}${ocTxt.map(t=>`<span class="sub">${esc(t)}</span>`).join("")}</td>
+  <td>${sup}${un}${cat}</td>
+  <td style="white-space:normal;min-width:220px;font-size:11px">${miss}</td></tr>`;
+ }
+ function xGroups(r,sel){
+  if(sel==="all")return [["All candidates",r.all]];
+  if(sel==="control")return [["Already moved (control)",r.controlAlreadyMoved]];
+  if(sel==="chronological")return [["Older 60%",r.chronological.earlier],["Newer 40%",r.chronological.later]];
+  const names={byState:{quiet:"Quiet accumulation",prebreakout:"Pre-breakout",ignition:"Early ignition",moved:"Already moved"},byPriority:{high:"High priority",watch:"Watch"}};
+  return Object.entries(r[sel]||{}).map(([k,b])=>[(names[sel]||{})[k]||k,b]);
+ }
+ function drawXResults(){
+  const r=xd.results;if(!r){$("#xVerdict").textContent="No results yet.";return;}
+  $("#xResRule").textContent=`Every snapshot is tracked for 42 days from its snapshot price. Returns are after ${r.feePct}% fees and ${r.slippagePct}% slippage (${r.costPct}% per trade). The -${r.stopPct}% stop is only a reference for ordering: tracking continues after it.`;
+  $("#xStopPct").textContent=r.stopPct;
+  $("#xVerdict").innerHTML=`<b>${esc(r.verdict)}</b>${r.chronological.splitAt?` Older/newer split at ${when(r.chronological.splitAt)}.`:""}`;
+  const gs=xGroups(r,$("#xGroup").value),H=(r.all.horizons||[]).map(h=>h.horizon);
+  $("#xHorHead").innerHTML=`<tr><th>Group</th><th>Signals</th>${H.map(h=>`<th>${h}</th>`).join("")}</tr>`;
+  $("#xHor").innerHTML=gs.map(([name,b])=>`<tr><td><b>${esc(name)}</b><span class="sub">${b.open} open${b.dataEnded?` · ${b.dataEnded} stopped trading`:""}${b.ambiguousBars?` · ${b.ambiguousBars} ambiguous bars`:""}</span></td><td class="mono">${b.signals}</td>${b.horizons.map(h=>`<td class="mono ${col(h.avgNetPct)}">${h.n?pct1(h.avgNetPct):"—"}<span class="sub">${h.n?`n=${h.n} · ${h.positivePct}% up · peak ${pct1(h.avgMfePct)}`:"n=0"}</span></td>`).join("")}</tr>`).join("")||'<tr><td colspan="11" class="empty">No signals in this group yet.</td></tr>';
+  const cell=(t,w)=>{const x=t[w];return x.n?`${x.hitPct}%<span class="sub">${x.hits} of ${x.n}</span>`:"—";};
+  $("#xTgt").innerHTML=gs.map(([name,b])=>{const [t25,t50,t100]=b.targets;return `<tr><td><b>${esc(name)}</b></td><td class="mono">${t25["14d"].n}</td><td class="mono">${cell(t25,"14d")}</td><td class="mono">${cell(t50,"14d")}</td><td class="mono">${cell(t100,"14d")}</td><td class="mono">${cell(t100,"42d")}</td>
+   <td class="mono">${t100["42d"].medianHours==null?"—":(t100["42d"].medianHours/24).toFixed(1)}</td><td class="mono red">${t25["42d"].medianDrawdownPct==null?"—":pct1(t25["42d"].medianDrawdownPct)}</td><td class="mono">${t25["42d"].beforeStopPct==null?"—":t25["42d"].beforeStopPct+"%"}</td><td class="mono">${b.falsePositives.pct==null?"—":b.falsePositives.pct+"%"}<span class="sub">${b.falsePositives.count} of ${b.falsePositives.n}</span></td></tr>`;}).join("");
+ }
+ function xRecentRow(s){
+  const t=s.track||{},hz=Object.entries(t.horizons||{}).pop(),now=t.entry?(t.last/t.entry-1)*100:null,hi=t.entry?(t.hi/t.entry-1)*100:null,lo=t.entry?(t.lo/t.entry-1)*100:null;
+  const hits=Object.entries(t.targets||{}).filter(([,v])=>v).map(([k,v])=>`+${k}% in ${v.hours<48?v.hours.toFixed(0)+"h":(v.hours/24).toFixed(1)+"d"}${v.beforeStop?"":" (after stop)"}`);
+  const [st,k]=XSTATE[s.state]||["—",""];
+  return `<div class="event" style="cursor:default"><div><strong><span class="badge tier ${k}">${st}</span>${esc(s.base)} · ${s.score}/100${s.priority==="high"?' <span class="badge strong">High</span>':""}</strong><small>${money(s.mcap)} · entry ${price(s.price)} · ${esc((s.confirmations||[]).map(x=>xfam[x]||x).join(", "))}</small><span class="track mono">${t.entry?`now <b class="${col(now)}">${pct1(now)}</b> · peak ${pct1(hi)} · low ${pct1(lo)}${hz?` · ${hz[0]} ${pct1(hz[1].ret)}`:""}${hits.length?` · <b class="green">${esc(hits.join(", "))}</b>`:""}${t.dataEnded?' · <span class="red">stopped trading</span>':""}`:"tracking starts within minutes"}</span></div><small class="mono">${when(s.at)}</small></div>`;
+ }
+ function drawX(){
+  const u=xd.universe||{},tabs=xd.tabs||{},reg=xd.regime;
+  const errs=Object.entries(xd.errors||{});
+  $("#xErrors").style.display=errs.length?"block":"none";
+  $("#xErrors").innerHTML=errs.map(([k,v])=>`<b>${esc(k)}:</b> ${esc(v)}`).join("<br>");
+  const exN=Object.values(u.excluded||{}).reduce((a,b)=>a+b,0);
+  $("#xkUni").textContent=u.evaluated??"—";
+  $("#xkUniHint").textContent=u.pairs?`of ${u.pairs} USDT pairs · ${exN} left out${u.tooNew?` · ${u.tooNew} too new`:""}`:"—";
+  const all=["quiet","prebreakout","ignition"].flatMap(k=>tabs[k]||[]);
+  $("#xkHigh").textContent=all.filter(c=>c.priority==="high").length;
+  $("#xkHighHint").textContent=`${all.length} candidates in total · ${(tabs.moved||[]).length} already moved`;
+  $("#xkBtc").textContent=reg?pct(reg.btc24):"—";$("#xkBtc").className="value "+(reg&&reg.deteriorating?"red":"");
+  $("#xkBtcHint").textContent=reg?`24h · 4h ${pct(reg.btc4h)} · 7d ${pct(reg.btc7d)}${reg.deteriorating?" · weak: no high priority":""}`:"—";
+  $("#xkSig").textContent=xd.signalCount??"—";
+  $("#xkSigHint").textContent=xd.results?`${xd.results.all.open} still open · 42-day tracking`:"snapshots with measured returns";
+  [["quiet","#xcQuiet"],["prebreakout","#xcPre"],["ignition","#xcIgn"],["moved","#xcMoved"]].forEach(([k,id])=>$(id).textContent=(tabs[k]||[]).length);
+  document.querySelectorAll("#xSeg [data-xs]").forEach(b=>{const on=b.dataset.xs===xState;b.classList.toggle("on",on);b.setAttribute("aria-selected",String(on));});
+  const rows=tabs[xState]||[];
+  $("#xTitle").textContent=(XSTATE[xState]||[""])[0]+(xState==="moved"?" — do not chase":"");
+  $("#xHint").textContent=xTabHint[xState];
+  $("#xChip").textContent=xd.lastScanAt?`scanned ${time(xd.lastScanAt)} · every ${xd.config.scanMinutes} min`:xd.status||"starting";
+  $("#xBody").innerHTML=rows.length?rows.map(xRow).join(""):`<tr><td colspan="11" class="empty">${xd.lastScanAt?"No coin has enough evidence for this state right now. An empty list is a valid answer.":"Waiting for the first scan…"}</td></tr>`;
+  drawXResults();
+  const rec=xd.recent||[];
+  $("#xRecent").innerHTML=rec.length?rec.slice(0,25).map(xRecentRow).join(""):'<div class="empty">No snapshots yet. A quiet market is normal.</div>';
+  const so=xd.sources||{},ai=so.assetInfo||{},ex=Object.entries(u.excluded||{}).sort((a,b)=>b[1]-a[1]);
+  const cls=v=>/^connected|^live/.test(v||"")?"green":/unavailable|error/.test(v||"")?"red":"amber";
+  $("#xHealth").innerHTML=[["Binance Spot (candles, trades, order book)",so.spot],["Binance asset info (circulating supply)",ai.source?(ai.source==="live"?`live · ${ai.coins} coins`:ai.source):"—"],["CoinGecko (supply, market cap check)",so.coingecko],["Binance Futures (context only)",so.futures],["Verified unlocks and catalysts",so.events]]
+   .map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill ${cls(v)}">${esc(v||"—")}</b></div>`).join("")
+   +ex.map(([k,v])=>`<div class="source-row"><span>Left out: ${esc(k)}</span><b class="status-pill">${v}</b></div>`).join("")
+   +`<div class="source-row"><span>Telegram alerts</span><b class="status-pill ${xd.telegramOn?"green":"amber"}">${xd.telegramOn?"on (high priority only)":xd.config&&xd.config.alerts?"on, but Telegram is not set up":"off · EARLY2X_ALERTS=1 to enable"}</b></div>`
+   +`<div class="source-row"><span>Last scan</span><b class="status-pill mono">${time(xd.lastScanAt)}${xd.lastScanMs!=null?" · "+(xd.lastScanMs/1000).toFixed(1)+"s":""}</b></div>`;
+ }
+ function openX(c){
+  if(!c)return;
+  const [st]=XSTATE[c.state]||["—"],stat=(l,v,k="")=>`<div class="book-stat"><span>${esc(l)}</span><strong class="mono ${k}">${v}</strong></div>`;
+  $("#xmTitle").textContent=`${c.base} / USDT · ${c.score}/100`;
+  $("#xmSub").textContent=`${c.name} · ${st}${c.priority?" · "+(c.priority==="high"?"high priority":"watch"):""} · market cap ${money(c.mcap)} (${c.mcapSource})`;
+  $("#xmStats").innerHTML=stat("Price",price(c.price))+c.targets.map(t=>stat(`+${t.pct}% target`,price(t.price))).join("")+stat("Market cap at 2x",money(c.mcapAt2x))
+   +stat("24h volume",xn(c.vol.r24)+" baseline",c.vol.r24>=2?"green":"")+stat("Buyers 24h",c.flow.buy24==null?"—":c.flow.buy24.toFixed(1)+"%")+stat("24h move",pct1(c.px.ret24),col(c.px.ret24))+stat("vs BTC 24h",pct1(c.px.rs24),col(c.px.rs24))
+   +stat("Typical daily range",c.px.typicalDailyRange==null?"—":c.px.typicalDailyRange+"%")+stat("Already-moved limit 24h",c.limits.ext24+"%")+stat("Spread",c.liq.spreadPct==null?"—":c.liq.spreadPct.toFixed(3)+"%")+stat("Depth ±2%",c.liq.depthBid==null?"not checked":money(Math.min(c.liq.depthBid,c.liq.depthAsk))+" min side");
+  $("#xmFam").innerHTML=c.families.map(x=>`<li><b class="${x.ok?"green":"muted"}">${x.ok?"✓":"✗"} ${esc(x.label)}</b>: ${esc(x.ok?x.evidence:"needs "+x.need)}</li>`).join("")+(()=>{const d=c.deriv,oc=c.onchain||{},p=[];
+   if(d&&d.available)p.push(`futures: open interest ${pct1(d.oi1hPct)} 1h, ${pct1(d.oi24hPct)} 24h, ${pct1(d.oi48hPct)} 48h; funding ${d.fundingPct==null?"—":d.fundingPct.toFixed(4)+"%"}${d.transition?" ("+d.transition+")":""}${d.crowded?" · crowded: "+d.crowdedWhy:""}`);
+   else p.push(d&&d.available===false?"futures: no USDT perpetual":"futures: unavailable");
+   p.push(oc.whales?`Ethereum whale transfers 24h: ${oc.whales.transfers24h} worth ${money(oc.whales.totalUsd24h)}, net ${money(oc.whales.netToExchangesUsd24h)} to exchanges`:"on-chain transfers: none tracked for this token");
+   if(oc.dex)p.push(`DEX (${oc.dex.networks.join(", ")}): net ${money(oc.dex.netUsd24h)} bought minus sold in 24h, ${oc.dex.swaps24h} swaps, ${oc.dex.wallets24h} wallets`);
+   return p.map(x=>`<li class="muted">${esc(x)}</li>`).join("")+'<li class="muted">Futures and on-chain data are context only and never count as a confirmation or as proof of whale buying.</li>';})();
+  $("#xmChecks").innerHTML=c.mandatory.map(x=>`<li><b class="${x.ok?"green":"red"}">${x.ok?"✓":"✗"} ${esc(x.key)}</b>: ${esc(x.why)}</li>`).join("")+c.late.map(x=>`<li class="${x.severity==="reject"?"red":"amber"}">${x.severity==="reject"?"Late entry":"Risk"}: ${esc(x.why)}</li>`).join("")+c.flags.filter(f=>!c.late.some(x=>x.why===f)).map(f=>`<li class="amber">${esc(f)}</li>`).join("");
+  $("#xmScore").innerHTML=Object.values(c.components).map(k=>`<div style="margin:10px 0 4px;display:flex;justify-content:space-between;gap:10px"><b>${esc(k.label)}</b><b class="mono">${k.points}/${k.max}</b></div>`
+   +k.rules.map(r=>`<div class="part" style="grid-template-columns:1fr 150px 56px"><span class="muted">${esc(r.rule)}</span><span class="mono ${r.missing?"muted":""}">${esc(r.value)}</span><b class="mono">${r.points}/${r.max}</b></div>`).join("")).join("")
+   +'<p class="muted" style="font-size:11px;line-height:1.6">Missing data earns 0 points. The score is not a probability of doubling unless it is calibrated on the tracked results below.</p>';
+  $("#xmMissing").innerHTML=c.missing.length?c.missing.map(m=>`<li>${esc(m)}</li>`).join(""):'<li class="green">Nothing: all checks pass.</li>';
+  $("#xmBinance").href="https://www.binance.com/en/trade/"+encodeURIComponent(c.base)+"_USDT?type=spot";
+  $("#xModal").classList.add("open");
+ }
+ const closeX=()=>$("#xModal").classList.remove("open");
+ $("#xmClose").onclick=closeX;
+ $("#xModal").addEventListener("click",e=>{if(e.target===$("#xModal"))closeX();});
+ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeX();});
+ $("#xBody").addEventListener("click",e=>{const b=e.target.closest("[data-xsym]");if(b)openX(Object.values(xd.tabs||{}).flat().find(c=>c.symbol===b.dataset.xsym));});
+ $("#xSeg").addEventListener("click",e=>{const b=e.target.closest("[data-xs]");if(b){xState=b.dataset.xs;store.set("early2xState",xState);drawX();}});
+ $("#xGroup").onchange=drawXResults;
+ {const s=store.get("early2xState");if(XSTATE[s])xState=s;}
+ async function loadX(){
+  try{const r=await fetch("/api/early2x",{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);xd=await r.json();drawX();}
+  catch(e){$("#xErrors").style.display="block";$("#xErrors").textContent="Cannot load /api/early2x: "+e.message;}
+ }
  // ---------- polling (3s keeps popup latency low) ----------
  async function load(){
   try{

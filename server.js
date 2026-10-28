@@ -403,6 +403,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  Early Setup Screener   ${base}/screener`);
   console.log(`  BTC rotation           ${base}/screener#rotation`);
   console.log(`  Whale tracker          ${base}/screener#whales`);
+  console.log(`  Early 2x movers        ${base}/screener#early2x`);
   console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);

@@ -69,6 +69,7 @@ import { fileURLToPath } from "node:url";
 import { createRotation } from "./rotation.js";
 import { startFlows, handleFlowsRequest } from "./flows.js";
 import { startWhales, handleWhalesRequest } from "./whales.js";
+import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -683,6 +684,10 @@ async function ensureMeta() {
 }
 const metaStatus = () => ({ source: meta.source, at: meta.at || null, coins: meta.coins.size, sectors: meta.narratives.size, error: meta.error });
 const marketCap = (base, price) => { const cs = meta.coins.get(base)?.cs; return cs && price > 0 ? cs * price : null; };
+// Read-only access for the Early 2x Movers screen (same product list: circulating supply, name, sector tags).
+export const assetInfo = (base) => meta.coins.get(base) || null;
+export const assetInfoStatus = () => metaStatus();
+export const loadAssetInfo = () => ensureMeta();
 
 // Universe: Binance USDT pairs, largest market cap first (coins without supply data after them, by 24h volume).
 function buildUniverse(tickers) {
@@ -1375,6 +1380,7 @@ export async function handleScreenerRequest(req, res, url) {
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;
   if (await handleFlowsRequest(req, res, url)) return true;
+  if (await handleEarly2xRequest(req, res, url)) return true;
   return false;
 }
 export async function serveScreenerPage(res) {
@@ -1397,6 +1403,8 @@ export function startScreener(baseUrl = "") {
   rotation.start();
   if (env.SCREENER_WHALES !== "0") { startWhales(); startFlows(); }
   else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");
+  if (env.EARLY2X !== "0") startEarly2x();
+  else console.log("Early 2x Movers: off (EARLY2X=0)");
 }
 
 // Standalone: `node screener.js` serves the screener on its own port.

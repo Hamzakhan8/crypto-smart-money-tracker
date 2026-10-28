@@ -18,13 +18,14 @@ A real-time dashboard that tracks crypto market momentum, buyer/seller imbalance
    | Early Setup Screener | http://localhost:3000/screener |
    | BTC rotation | http://localhost:3000/screener#rotation |
    | Whale tracker | http://localhost:3000/screener#whales |
+   | Early 2x movers | http://localhost:3000/screener#early2x |
    | AI trade desk | http://localhost:3000/ai |
 
 3. Optional settings go in a `.env` file in the project folder; it is loaded automatically, no `--env-file` needed. For example `GEMINI_API_KEY=your_key` for the AI analysis, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for alerts, or `PORT=3005` if port 3000 is taken.
 
 Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env): only ignition alerts (early and confirmed) and AI messages are sent: the AI's verdict on each new alert and results you send from the AI desk. Everything else stays on screen. To also send them: RADAR_TELEGRAM=1 (Market Flow Radar "Strong flow"), WHALES_TELEGRAM=1 (whale transfers), FLOWS_TELEGRAM=1 (DEX rotations). AI_REVIEW_TELEGRAM=0 stops the AI follow-ups.
 
-Tests: `npm test` checks the signal, outcome-tracking and AI safety logic (no internet or API key needed).
+Tests: `npm test` checks the signal, outcome-tracking, AI safety and Early 2x scoring / tracking logic (no internet or API key needed).
 
 Keeping git clean (one time): packages and files the app rewrites while it runs are listed in .gitignore, but copies that were committed earlier are still tracked, which causes merge trouble. To stop tracking them while keeping them on your PC, run once:
    ```bash
@@ -118,6 +119,31 @@ Analyze all: one request triages every igniting coin at once and ranks them; ope
 Automatic review: with a Gemini key set, every new ignition alert gets one AI analysis (TAKE / WAIT / SKIP) that is saved with the alert, shown in the alert history, sent to Telegram as a follow-up, and used by the performance panel ("AI said TAKE / WAIT / SKIP") so you can see after a few weeks whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off, AI_REVIEWS_PER_HOUR=12 caps the cost, AI_REVIEW_TELEGRAM=0 skips the Telegram follow-up.
 
 Rules the code enforces after Gemini answers: TAKE only for coins igniting right now with reward:risk of at least 1.2, never for coins that already ran; plans must fit the real levels or the screener's own +6% / -3% plan is shown instead; confidence is lowered for early signals, demo data, weak markets and 4h downtrends. Long only, no leverage, risk at most 1% of your account. Each analysis is one Gemini request (two with risk review) and is reused for 3 minutes. It is an AI opinion on data, not financial advice.
+
+9. Early 2x Movers (research screen)
+Open http://localhost:3000/screener#early2x. It looks for low- and mid-cap Binance spot USDT tokens that show measurable signs of a possible large move up before price expands. +100% within 1-14 days is the research target, with a second 15-42 day horizon. A 2x move is a target to measure against, not a prediction, and an empty list is a valid answer.
+
+Universe: Binance USDT pairs with a verified market cap of $10M-$1B ($10M-$500M preferred, $500M-$1B extended), at least $1M of 24h volume and a spread of 0.30% or less. Market cap = Binance's own circulating supply × price, cross-checked with CoinGecko when it can be reached. A coin with no verified market cap is never listed; nothing is estimated. Stablecoins, wrapped and staked tokens, gold, tokenized stocks and leveraged tokens are left out, and coins with under 14 days of history are flagged.
+
+Two independent models, on finished candles only:
+- Model A, quiet accumulation: 24h volume at least 2× its 7-day baseline, with more trades, held over several hours, while price stays within a band set by the coin's own daily range. Pre-breakout = the same, pressing a 7-day high that has been tested before (or with compressed volatility).
+- Model B, early ignition: the last 3+ five-minute candles each at 2×+ the normal volume for that hour of day, accelerating, with 55%+ aggressive buying and price rising.
+
+Evidence is grouped into five independent families: volume and trade activity, executed buying (buy share, CVD, large trades), price structure, order-book support, and strength vs BTC. Indicators that measure overlapping things count once. High priority needs 3+ families, a score of 50+ and passing liquidity, data-quality, extension, BTC and supply checks. A market cap where Binance and CoinGecko are more than 25% apart counts as not verified, and so does less than 40% of max supply circulating; either one blocks high priority. Coins stretched beyond limits that scale with their own volatility go to "Already moved — do not chase"; momentum alone is not rejected.
+
+Score out of 100, every point shown in the coin's detail view: spot volume anomaly and persistence 20, buying pressure and trade flow 20, price structure and breakout readiness 15, liquidity and execution 10, relative strength and market regime 10, volatility compression 10, tokenomics and verified catalysts 10, data reliability 5. Missing data earns no points. The score is not a probability of doubling.
+
+Futures (open interest over 1h / 24h / 48h, funding and its changes, crowded positioning) and on-chain flows (the whale and DEX trackers) are shown as context only. They never count as a confirmation or as proof of whale buying.
+
+Token unlocks and catalysts come only from data/early2x-events.json, which you keep, and only entries with an https source count. A verified unlock of 2%+ of circulating supply within 30 days is flagged and blocks high priority. A dated unlock check showing nothing major earns tokenomics points for 30 days. The file explains the format.
+
+Tracking: every listed coin is saved as an unchangeable snapshot before its move, then measured from the snapshot price at 1h, 6h, 12h, 24h, 3d, 7d, 14d, 21d and 42d. Each check records the return, the best and worst point, whether it reached +25%, +50% and +100%, how long that took, and how far it fell first. Price is read on 5-minute candles for the first day and hourly after that, with 1-minute candles to settle any candle that touched both a target and the -20% reference stop; if that cannot be settled, the stop counts first. Coins that stop trading keep their last price in the results instead of disappearing. The results panel shows sample sizes, fees (0.2%) and slippage (0.3%), false positives (never reached +25% in 14 days), and splits by state, priority, market-cap range and score. An older-vs-newer split shows whether results hold on later signals. "Already moved" coins are tracked too, as a control group. Nothing is called profitable until at least 30 signals have had 14 days to play out and the result is positive in both halves.
+
+Settings (optional, in .env): EARLY2X_MCAP_MIN=10000000 · EARLY2X_MCAP_PREFERRED_MAX=500000000 · EARLY2X_MCAP_MAX=1000000000 · EARLY2X_MIN_QUOTE_VOLUME=1000000 · EARLY2X_MAX_SPREAD_PCT=0.3 · EARLY2X_MIN_DEPTH_USD=10000 · EARLY2X_A_VOLUME_RATIO=2 · EARLY2X_B_RVOL_5M=2 · EARLY2X_B_CANDLES=3 · EARLY2X_MIN_CONFIRMATIONS=3 · EARLY2X_HIGH_MIN_SCORE=50 · EARLY2X_EXT_24H_MIN_PCT=15 · EARLY2X_EXT_24H_RANGE_MULT=2 · EARLY2X_MIN_CIRCULATING_PCT=40 · EARLY2X_MCAP_TOLERANCE_PCT=25 · EARLY2X_STOP_PCT=20 · EARLY2X_SLIPPAGE_PCT=0.3 · EARLY2X_COOLDOWN_HOURS=24 · EARLY2X_SCAN_MINUTES=5 · score weights EARLY2X_W_VOLUME=20 (also _FLOW, _STRUCTURE, _LIQUIDITY, _STRENGTH, _COMPRESSION, _TOKENOMICS, _DATA) · COINGECKO_API_KEY=your free demo key (optional, faster supply data) · EARLY2X_COINGECKO=0 to skip CoinGecko · EARLY2X=0 to switch the screen off. Every other threshold is listed at the top of early2x.js.
+
+Telegram: off until you set EARLY2X_ALERTS=1. Then only new high-priority candidates are sent, once per coin per 24 hours unless the state improves. No trades are ever placed.
+
+Data and storage: snapshots and tracking live in early2x_state.json (kept out of git). The file carries a version number and is upgraded automatically when the format changes, so there is no database or migration to run; delete the file to start the record again. GET /api/early2x/signals returns every snapshot with its tracking, for your own analysis. CoinGecko's free API is slow, so supply data arrives a few minutes after the first start (until then it earns no points).
 
 ⚠️ Disclaimer
 The scores and AI analyses are tools for research, not financial advice. A high score means buyers are currently aggressive, but it does not guarantee the price will continue to go up. Always check the charts before making a trade. This app does not place trades for you.

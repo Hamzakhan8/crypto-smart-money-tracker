@@ -15,3 +15,6 @@ binance_meta.json
 binance_meta.demo.json
 coingecko_cache.json
 screener_state.json
+early2x_state.json
+early2x_state.demo.json
+early2x_coingecko.json

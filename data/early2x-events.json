@@ -1,0 +1,6 @@
+{
+  "_help": "Verified token unlocks and catalysts for the Early 2x Movers screen. Only entries with an https source count. Dates are YYYY-MM-DD. unlocks: a scheduled unlock (percentOfCirculating = size as % of circulating supply; 2%+ within 30 days is flagged and blocks high priority). unlockChecks: the date you checked a token's unlock schedule and found no major unlock in the next 30 days (worth tokenomics points for 30 days). catalysts: a dated, sourced event (counts from 7 days before to 42 days after). Example entries: {\"symbol\": \"ABC\", \"date\": \"2026-11-20\", \"percentOfCirculating\": 3.5, \"source\": \"https://...\"} · {\"symbol\": \"ABC\", \"checkedOn\": \"2026-10-28\", \"source\": \"https://...\"} · {\"symbol\": \"ABC\", \"date\": \"2026-11-05\", \"title\": \"Mainnet launch\", \"source\": \"https://...\"}",
+  "unlocks": [],
+  "unlockChecks": [],
+  "catalysts": []
+}

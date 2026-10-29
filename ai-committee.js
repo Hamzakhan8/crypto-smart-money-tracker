@@ -49,6 +49,14 @@ export const usage = (res) => { const u = res?.usageMetadata || {}; return { in:
 export const DESKS = {
   spot: {
     what: "a Binance spot coin flagged by a volume-ignition screener (long only, no leverage)",
+    hardStops: `
+- the coin already ran (screener.moved)
+- BTC down more than 1% in 1h or 2% in 4h (market.btc1hPct, market.btc4hPct)
+- aggressive selling now: marketFlow.buyRatio5mPct under 45 with a negative marketFlow.netFlow5mUsd
+- spread above 30 bps or bids within 1% under $20,000 (orderBook.liquidityCheck)
+- a Binance monitoring tag (exchangeTags.monitoring or screener.monitoringList)
+- a confirmed high-severity bad news item from a real web search (NEWS REPORT hardStop, verified true): delisting,
+  hack or exploit, deposit / withdrawal halt, an unlock above 2% of the supply inside the holding time`.trim(),
     areas: ["trigger", "buying", "trend", "room", "liquidity", "positioning", "market", "track record"],
     glossary: `
 - alert: the kind of alert (tier confirmed / early / bigmove / none), trackedAs (its target %, stop %, holding hours),
@@ -59,8 +67,13 @@ export const DESKS = {
 - marketFlow: aggressive buying on Binance spot in the last 1-5 minutes (flowScore, buyRatio5mPct, netFlow5mUsd). It is
   not "smart money"; smartMoneyWallets are separate on-chain wallet signals.
 - chart: trend1h / trend4h, returnsPct, atrPct (a normal move per candle), priceVsVwapTodayPct, last2hOf15m.
-- levels: resistance and support with their distances in %, 24h / 7d / 15d highs and lows.
-- orderBook: spreadBps and depth bands (bids and asks in USD within x%, imbalance > 0 = more bids).
+- levels: resistance (resistanceIs = what it is: a high, a 1h swing high or a 1h / 4h EMA) and support with their
+  distances in %; overhead / underneath = the nearest levels above / below; 24h / 7d / 15d highs and lows.
+- orderBook: spreadBps and depth bands (bids and asks in USD within withinPct 0.1 / 0.25 / 0.5 / 1%, imbalance > 0 =
+  more bids). A thin 0.1% band is normal for small coins and is NOT the liquidity test: orderBook.liquidityCheck is
+  (bids within 1% under $20,000 or spread above 30 bps = hard stop).
+- exchangeTags: Binance tags. monitoring = delisting risk (a hard stop); seed = Binance's high-volatility tag for young
+  projects (a risk, not a hard stop).
 - futures: funding per 8h, open interest change, long/short and taker ratios (only when a perpetual exists).
 - whales: large Ethereum transfers of the token and exchange deposits / withdrawals in 24h (Ethereum only).
 - dexFlows: DEX buying and selling of the token (only for followed pools).
@@ -73,6 +86,13 @@ export const DESKS = {
   },
   alpha: {
     what: "a Binance Alpha token: an early on-chain token traded in Binance Wallet with a thin DEX pool (long only, no leverage)",
+    hardStops: `
+- already up more than 30% in 24 hours (screener.moved)
+- BTC down more than 1% in 1h or 2% in 4h (market.btc1hPct, market.btc4hPct)
+- DEX sellers in control: alpha.dex.buyers5mPct under 40 and alpha.dex.buyers1hPct under 45
+- pool liquidity under $50,000 (alpha.token.liquidityUsd)
+- a confirmed high-severity bad news item from a real web search (NEWS REPORT hardStop, verified true): delisting,
+  hack or exploit, deposit / withdrawal halt, an unlock above 2% of the supply inside the holding time`.trim(),
     areas: ["trigger", "DEX buying", "trend", "room", "liquidity and holders", "supply", "market", "track record"],
     glossary: `
 - alert: tier, trackedAs (target %, stop %, holding hours), anchorProbTargetPct / anchorProbStopPct (base rates), costPct.
@@ -81,7 +101,8 @@ export const DESKS = {
 - alpha.signal: volume vs normal and USD / trades in the last two 5-minute candles, 10-minute move, 1h and 24h change.
 - alpha.dex: DEX buys vs sells over 5 minutes and buyers % over 5 minutes / 1 hour, pool liquidity. liquidityNote: how
   big a normal order is next to the pool.
-- chart: trend1h / trend4h, returnsPct, atrPct. levels: resistance / support and distances, 24h / 3d / 7d highs and lows.
+- chart: trend1h / trend4h, returnsPct, atrPct. levels: resistance / support (resistanceIs / supportIs: a high, a 1h
+  swing high or low, a 1h / 4h EMA), distances, overhead / underneath levels, 24h / 3d / 7d highs and lows.
 - market: BTC moves, alt season meter, BTC regime. No order book, no futures data for these tokens.
 - livePerformance: live results by tier and matchingGroups (past Alpha alerts with the same conditions). aiCommittee:
   this committee's own past answers, each followed with its own plan.
@@ -207,7 +228,8 @@ export function cleanNews(text, grounding) {
     type: String(x.type || "other"), impact: ["positive", "negative", "neutral"].includes(x.impact) ? x.impact : "neutral",
     severity: ["low", "medium", "high"].includes(x.severity) ? x.severity : "low", pricedIn: ["yes", "no", "unclear"].includes(x.pricedIn) ? x.pricedIn : "unclear", source: String(x.source || "").slice(0, 80) }));
   return {
-    available: true, searched, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12),
+    available: true, searched, verified: searched, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12),
+    note: searched ? null : "No web search ran: these items come from the model's memory and are unverified. Treat the news as unknown.",
     summary: String(j.summary || "").slice(0, 600), overall: NEWS_ENUMS.overall.includes(j.overall) ? j.overall : "none",
     riskLevel: NEWS_ENUMS.riskLevel.includes(j.riskLevel) ? j.riskLevel : "none",
     // a hard stop counts only when the answer is backed by an actual search
@@ -219,13 +241,25 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
   if (!enabled) return { available: false, error: "News research is switched off (AI_NEWS=0)", off: true };
   const key = `${identity.symbol}|${identity.contract || ""}|${Math.round(holdHours)}`, hit = newsCache.get(key);
   if (hit && Date.now() - hit.at < NEWS_TTL) return { ...hit.report, cached: true };
-  const t0 = Date.now();
+  const t0 = Date.now(), name = identity.name ? ` (${identity.name})` : "", tokens = { in: 0, out: 0, think: 0 };
+  const ask = async (contents) => {
+    const res = await generate(ai, { model, contents, config: { systemInstruction: newsResearcherPrompt(identity, holdHours), ...roleConfig(model, "news"), tools: [{ googleSearch: {} }] } }, callOpts("news"));
+    const u = usage(res);
+    for (const k in tokens) tokens[k] += u[k];
+    return cleanNews(res.text, res.candidates?.[0]?.groundingMetadata);
+  };
   try {
-    const res = await generate(ai, { model, contents: `Research the news for ${identity.symbol}${identity.name ? ` (${identity.name})` : ""} now.`,
-      config: { systemInstruction: newsResearcherPrompt(identity, holdHours), ...roleConfig(model, "news"), tools: [{ googleSearch: {} }] } }, callOpts("news"));
-    const report = { ...cleanNews(res.text, res.candidates?.[0]?.groundingMetadata), model, ms: Date.now() - t0, at: Date.now(), tokens: usage(res) };
-    if (report.available) { newsCache.set(key, { at: Date.now(), report }); if (newsCache.size > 200) newsCache.delete(newsCache.keys().next().value); }
-    return report;
+    let report = await ask(`Research the news for ${identity.symbol}${name} now.`), requests = 1;
+    // Gemini decides itself whether to search. If it answered from memory, ask once more, insisting on a search.
+    if (report.available && !report.searched) {
+      requests++;
+      const again = await ask(`Use Google Search now: look up "${identity.symbol}${identity.name ? ` ${identity.name}` : ""} crypto news" and its Binance status before you answer. Do not answer from memory.`).catch(() => null);
+      if (again?.available) report = again;
+    }
+    const out = { ...report, model, ms: Date.now() - t0, at: Date.now(), tokens, requests };
+    // only verified news is kept for 30 minutes; unverified news is asked again next time
+    if (out.available && out.verified) { newsCache.set(key, { at: Date.now(), report: out }); if (newsCache.size > 200) newsCache.delete(newsCache.keys().next().value); }
+    return out;
   } catch (e) { return { available: false, error: e.message, model, ms: Date.now() - t0 }; }
 }
 
@@ -318,6 +352,9 @@ overturn you in either direction, so every claim needs a dossier number.
 
 ${rules}
 
+WORDING: SKIP is only the value of "decision". In the headline, thesis and every other text write "NO TRADE", never
+"SKIP".
+
 HOW TO USE YOUR COLLEAGUES' WORK
 - DATA ANALYST REPORT: a structured reading of the dossier. Use it to work faster, but the DOSSIER is the source of
   truth: where they differ, use the dossier number and say so. Answer every red flag and conflict it lists in your
@@ -326,8 +363,9 @@ HOW TO USE YOUR COLLEAGUES' WORK
   monitoring tag, hack or exploit, deposit / withdrawal halt, an unlock above 2% of the supply inside the holding time)
   is a HARD STOP. A medium negative item inside the holding time lowers the target chance (within the 15-point limit)
   or makes the call WAIT. Positive news that is already priced in does not raise the chance, and rumors do not count.
-  "Unavailable" means unknown: say so; do not treat it as good news.
-- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable".${debate ? `
+  "Unavailable", or verified: false (no web search ran, so the items come from the model's memory), means unknown:
+  say so; do not treat it as good or bad news, and its items do not count.
+- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable / unverified".${debate ? `
 - THE DEBATE: the bull argued for buying; then the bear read the bull's case and attacked it. Judge it like a referee:
   only arguments backed by a dossier number count; a bull point the bear showed wrong with a number is gone; a bear
   point or red flag the bull could not answer stands. Ignore tone, confidence and the strength scores they gave
@@ -437,7 +475,7 @@ WHERE THINGS ARE IN THIS REPORT
 - TRADER: the trader's verdict (TAKE / WAIT / SKIP = no trade), probabilities, plan, trigger, checklist and reasoning.
 - CODE CHECKS: what the code computed from the trader's plan: hardStops (the code's own checks and confirmed news),
   expectedValuePct, rewardRisk, realisticRewardRisk (target capped at levels.resistance), probabilities held near the
-  base rate, costPct, moved / igniting, and the code's notes.
+  base rate, costPct, moved / igniting, the code's notes, and auditHints: issues the code found for you to audit.
 - DATA ANALYST REPORT, NEWS REPORT (sources = what Google really returned), DEBATE (bull, then bear who saw the bull's
   case, and who the trader said won), RAW DATA (the dossier).
 - In RAW DATA: base rates alert.anchorProbTargetPct / alert.anchorProbStopPct (the rest end at the time limit, so
@@ -446,7 +484,21 @@ WHERE THINGS ARE IN THIS REPORT
   levels.support; normal move per candle chart.atrPct; current price price; the committee's own record
   livePerformance.aiCommittee.
 
+HARD STOPS IN THIS SYSTEM (the complete list; CODE CHECKS.hardStops shows the ones the code found failing)
+${DESKS[deskKey].hardStops}
+Nothing else is a hard stop. No alert signal, a weak base rate, a downtrend, a thin 0.1% order-book band or a Seed tag
+are reasons against the trade: put them in audit_findings or the deciding factor, not in hard_stop_failures.
+
+HOW TO AUDIT
+- Address every item of CODE CHECKS.auditHints in audit_findings: confirm it, correct it, or say why it does not matter.
+- corrected_numbers must be your own estimate: start from the base rate and explain every change in audit_findings. Do
+  not copy the trader's numbers without checking them.
+- A NEWS REPORT with verified false (no web search ran) is unknown news: flag it, and do not use its items or risk level.
+- Confidence: at most "medium" when the DATA ANALYST REPORT rates the data partial or is missing, "low" when it is poor.
+
 WHAT THE CODE DOES WITH YOUR ANSWER
+- Your confidence is capped by the data rating as above, and lowered one step when you report no audit findings while
+  auditHints lists issues.
 - Your probabilities are held within 15 points of the base rates. The code recomputes the expected value from your plan
   (timeouts counted as flat, costs subtracted) and the reward:risk with the target capped at levels.resistance.
 - A YES becomes WATCH when a hard stop fails, the coin already ran (screener.moved) or is not igniting now, your plan

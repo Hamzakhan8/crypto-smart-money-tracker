@@ -42,7 +42,7 @@ export function callFromResult(x, { source = "manual", at = Date.now(), depth = 
     bossReason: c.boss?.asked ? String(c.boss.summary || c.boss.reason || "").slice(0, 300) : null, sizePct: x.sizePct ?? null,
     debate: dbt ? { winner: dbt.verdict?.winner || null, bull: dbt.bull?.available ? dbt.bull.strength : null, bear: dbt.bear?.available ? dbt.bear.strength : null,
       bearPath: dbt.bear?.available ? String(dbt.bear.path || "").slice(0, 200) : null } : null,
-    news: c.news?.available ? c.news.riskLevel : null, newsStop: !!c.news?.hardStop, data: c.data?.available ? c.data.dataQuality?.rating || null : null,
+    news: c.news?.available ? (c.news.verified === false ? "unverified" : c.news.riskLevel) : null, fastNo: !!x.fastNo, newsStop: !!c.news?.hardStop, data: c.data?.available ? c.data.dataQuality?.rating || null : null,
     probTargetPct: x.probTargetPct ?? null, probStopPct: x.probStopPct ?? null, expectedValuePct: x.expectedValuePct ?? null, headline: String(x.headline || "").slice(0, 160),
     track: { status: "open", hi: entry, lo: entry, last: entry, to: null, bars: 0 },
   };

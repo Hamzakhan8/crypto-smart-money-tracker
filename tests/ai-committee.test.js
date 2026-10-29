@@ -221,3 +221,94 @@ test("AI committee: a WAIT comes with a watched price event; every Gemini reques
   assert.equal(desk.aiTracker.usage().requests, before + 1);
   assert.ok(desk.aiTracker.usage().tokens.think >= 500);
 });
+
+// A news researcher that searches (or not) per call: grounding = list of booleans, one per request.
+function newsAi(searchedPerCall, answer = NEWS) {
+  const calls = [];
+  return { calls, models: { generateContent: async (params) => {
+    const searched = searchedPerCall[calls.length] ?? false;
+    calls.push(params);
+    return { text: JSON.stringify(answer), candidates: [{ groundingMetadata: searched ? GROUNDING : {} }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 } };
+  } } };
+}
+
+test("fixes: news that was not searched is retried once, then marked unverified (unknown) and not cached", async () => {
+  cm._test.newsCache.clear();
+  const ok = newsAi([false, true]);
+  const a = await cm.newsResearch(ok, { identity: { symbol: "RRR" }, holdHours: 12, model: "m" });
+  assert.equal(ok.calls.length, 2); assert.match(ok.calls[1].contents, /Use Google Search now/);
+  assert.deepEqual([a.verified, a.requests, a.note], [true, 2, null]);
+  const memory = { ...NEWS, riskLevel: "medium", items: [{ date: "2026-10-21", title: "Atomic swaps launch", impact: "positive", severity: "low", pricedIn: "yes", source: "Official" }] };
+  const never = newsAi([false, false], memory);
+  const b = await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m" });
+  assert.equal(b.verified, false); assert.equal(b.requests, 2); assert.match(b.note, /model's memory and are unverified/);
+  await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m" });
+  assert.equal(never.calls.length, 4); // not cached: asked again next time
+  // the trader and the boss are told; Telegram and the record say "unverified"
+  assert.match(cm.traderPrompt("spot", "R"), /verified: false \(no web search ran/);
+  assert.match(cm.bossPrompt("spot"), /verified false \(no web search ran\) is unknown news/);
+});
+
+test("fixes: the liquidity test is bids within 1% (not the 0.1% band); a Binance monitoring tag is a hard stop", () => {
+  const bands = (b1) => [{ withinPct: 0.1, bidUsd: 1049 }, { withinPct: 0.25, bidUsd: 4000 }, { withinPct: 0.5, bidUsd: 9000 }, ...(b1 ? [{ withinPct: 1, bidUsd: b1 }] : [])];
+  assert.deepEqual([desk.liquidityCheck({ spreadBps: 8, bands: bands(25_000) }).passes, desk.liquidityCheck({ spreadBps: 8, bands: bands(25_000) }).bidsWithin1PctUsd], [true, 25000]);
+  assert.equal(desk.liquidityCheck({ spreadBps: 8, bands: bands(12_000) }).passes, false);
+  assert.equal(desk.liquidityCheck({ spreadBps: 45, bands: bands(90_000) }).passes, false);
+  const partial = desk.liquidityCheck({ spreadBps: 8, depthReachPct: 0.6, bands: bands(null) });
+  assert.equal(partial.passes, null); assert.match(partial.note, /reaches only 0.6%: at least \$9000 of bids within 0.5%/);
+  const d = { market: {}, orderBook: { spreadBps: 5, bands: bands(25_000) } };
+  assert.deepEqual(desk.hardStops(d), []); // a thin 0.1% band alone is not a hard stop
+  assert.deepEqual(desk.hardStops({ ...d, exchangeTags: { monitoring: true } }), ["Binance monitoring tag (delisting risk)"]);
+  // the boss gets the complete hard-stop list and is told what is NOT a hard stop
+  assert.match(cm.bossPrompt("spot"), /HARD STOPS IN THIS SYSTEM[\s\S]*bids within 1% under \$20,000[\s\S]*Nothing else is a hard stop\. No alert signal, a weak base rate, a downtrend, a thin 0\.1% order-book band/);
+  assert.match(cm.bossPrompt("alpha"), /pool liquidity under \$50,000/);
+});
+
+test("fixes: resistance includes swing highs and the EMAs above the price; support uses lows and swing lows only", () => {
+  const t0 = Date.parse("2026-10-01T00:00:00Z"), H = 3_600_000;
+  // a 1h downtrend from 120 to 100 with one swing high at 104 three hours ago
+  const h1 = Array.from({ length: 80 }, (_, i) => { const c = 120 - i * 0.25; return { t: t0 + i * H, o: c + 0.1, h: c + 0.3, l: c - 0.3, c }; });
+  h1[76] = { ...h1[76], h: 104 };
+  const price = 100.25, h4 = h1.filter((_, i) => i % 4 === 0);
+  const lv = desk.keyLevels(price, h1, h4, [{ price: 112, what: "7-day high" }], [{ price: 99, what: "24h low" }]);
+  assert.ok(lv.resistance.price < 104, JSON.stringify(lv.overhead)); // the falling 1h EMA20 is closer than the swing high
+  assert.match(lv.resistance.what, /1h EMA20/);
+  assert.ok(lv.overhead.some((x) => x.what === "1h swing high" && x.price === 104));
+  assert.equal(lv.support.what, "24h low"); // EMAs are never used as support
+  // with the resistance closer, the realistic reward:risk is capped there
+  const real = desk.realisticPlan({ levels: { resistance: lv.resistance.price } }, { entryLow: 100, entryHigh: 100.5, stop: 98, target1: 106 });
+  assert.equal(real.cappedAtResistance, true); assert.ok(real.rewardRisk < 2);
+});
+
+test("fixes: fast NO for a coin with no alert signal; the full committee for alerts", async () => {
+  const none = { ...dossier("MARSUSDT"), alert: desk.alertContext("none"), screener: { state: "heating", tier: null, moved: false } };
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: { ...trader("SKIP"), headline: "SKIP MARSUSDT: no signal" }, "Final Boss": BOSS_YES });
+  const x = await run(ai, none);
+  assert.deepEqual(ai.calls.map((c) => c.role).sort(), ["DATA ANALYST", "NEWS RESEARCHER", "TRADER"]); // 3 requests, not 6
+  assert.equal(x.final, "NO"); assert.equal(x.fastNo, true); assert.equal(x.committee.boss.asked, false); assert.match(x.committee.debate.skipped, /fast path/);
+  assert.equal(x.headline, "NO TRADE MARSUSDT: no signal"); // "SKIP" is never shown as a word
+  assert.match(desk.tgSingle({ ...x, symbol: "MARSUSDT" }), /Final: NO \(fast NO\)[\s\S]*boss skipped \(fast NO\)/);
+  // the trader is not a no: the boss is asked (still no debate)
+  const ai2 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT"), "Final Boss": boss("NO") });
+  const y = await run(ai2, none);
+  assert.deepEqual(ai2.calls.map((c) => c.role).sort(), ["DATA ANALYST", "Final Boss", "NEWS RESEARCHER", "TRADER"]);
+  assert.equal(y.fastNo, false);
+  // an alert review always gets the full committee
+  const ai3 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("SKIP"), "Final Boss": boss("NO") });
+  await run(ai3, none, { source: "alert" });
+  assert.equal(ai3.calls.length, 6);
+});
+
+test("fixes: the boss's confidence is capped by the data rating, and it gets a list of issues to audit", async () => {
+  const partial = { ...DATA, dataQuality: { rating: "partial", issues: [{ field: "dexFlows", problem: "untracked" }] } };
+  const ai = fakeAi({ "DATA ANALYST": partial, "NEWS RESEARCHER": NEWS, BULL: { ...BULL, strength: 2 }, BEAR, TRADER: trader("SKIP"),
+    "Final Boss": boss("NO", { confidence: "high", audit_findings: [] }) });
+  const x = await run(ai, { ...dossier(), futures: { available: false } });
+  const b = x.committee.boss;
+  assert.equal(b.confidenceSaid, "high"); assert.equal(b.confidence, "low"); // partial -> medium, then no findings -> one lower
+  assert.ok(x.guardNotes.some((n) => /said high confidence, but the data was rated partial: medium at most/.test(n)));
+  assert.ok(x.guardNotes.some((n) => /no audit findings although the code listed \d+ issues/.test(n)));
+  const hints = ai.calls.find((c) => c.role === "Final Boss").params.contents;
+  assert.match(hints, /"auditHints":\[[^\]]*TRADER moved the chances[^\]]*data rated partial[^\]]*the bull rated its own case 2\/10[^\]]*not tracked for this coin: futures/);
+  assert.match(cm.bossPrompt("spot"), /Address every item of CODE CHECKS\.auditHints[\s\S]*Do\s+not copy the trader's numbers/);
+});

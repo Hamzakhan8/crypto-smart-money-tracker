@@ -126,6 +126,38 @@ function trendOf(cs) {
 }
 const hiLo = (cs) => ({ high: Math.max(...cs.map((c) => c.h)), low: Math.min(...cs.map((c) => c.l)) });
 
+// Price levels around the price. Above: the given highs, 1h swing highs of the last 2 days (a candle whose high tops the
+// 2 before and the 2 after it) and the 1h / 4h EMA20 and EMA50 (in a downtrend the falling EMA is often the first
+// ceiling). Below: the given lows and 1h swing lows (EMAs below are listed but are not used as support for stops).
+// Levels within 0.2% of the price are ignored. resistance / support = the nearest one, with what it is.
+export function keyLevels(price, h1, h4, highs = [], lows = []) {
+  const up = highs.filter((x) => x.price > 0), down = lows.filter((x) => x.price > 0), sw = h1.slice(-50);
+  for (let i = 2; i < sw.length - 2; i++) {
+    const near = [sw[i - 2], sw[i - 1], sw[i + 1], sw[i + 2]];
+    if (near.every((x) => sw[i].h > x.h)) up.push({ price: sw[i].h, what: "1h swing high" });
+    if (near.every((x) => sw[i].l < x.l)) down.push({ price: sw[i].l, what: "1h swing low" });
+  }
+  for (const [cs, tf] of [[h1, "1h"], [h4, "4h"]]) for (const len of [20, 50]) {
+    const e = ema(cs.map((c) => c.c), len), v = e ? e[e.length - 1] : null;
+    if (v) (v > price ? up : down).push({ price: v, what: `${tf} EMA${len}`, dynamic: true });
+  }
+  const above = up.filter((x) => x.price > price * 1.002).sort((a, b) => a.price - b.price);
+  const below = down.filter((x) => x.price < price * 0.998).sort((a, b) => b.price - a.price);
+  const view = (x) => ({ price: sig(x.price), pct: r(pct(x.price, price)), what: x.what });
+  return { resistance: above[0] || null, support: below.find((x) => !x.dynamic) || null, overhead: above.slice(0, 6).map(view), underneath: below.slice(0, 6).map(view) };
+}
+
+// The liquidity hard stop spelled out: bids within 1% of the price under $20,000, or a spread above 30 bps. A thin 0.1%
+// band is normal for small coins and is not the test. When the 100-level book snapshot does not reach 1%, the widest
+// band it covers is a lower bound for the bids within 1%.
+export function liquidityCheck(ob) {
+  if (!ob?.bands) return { rule: "bids within 1% under $20,000 or spread above 30 bps = hard stop", passes: null, note: "no order book data" };
+  const b1 = ob.bands.find((x) => x.withinPct === 1), widest = ob.bands[ob.bands.length - 1], wideSpread = ob.spreadBps > 30;
+  const enough = b1 ? b1.bidUsd >= 20_000 : widest && widest.bidUsd >= 20_000 ? true : null; // a smaller band is only a lower bound
+  return { rule: "bids within 1% under $20,000 or spread above 30 bps = hard stop", bidsWithin1PctUsd: b1 ? b1.bidUsd : null, spreadBps: ob.spreadBps,
+    passes: wideSpread ? false : enough, note: b1 ? null : widest ? `the 100-level book reaches only ${ob.depthReachPct}%: at least $${widest.bidUsd} of bids within ${widest.withinPct}%` : "no depth bands" };
+}
+
 async function spot(symbol) {
   const q = (path) => fetchJson(`${BN}${path}`, { retries: 1, timeoutMs: 10_000 });
   const [t24, k15, k1h, k4h, book] = await Promise.all([
@@ -205,9 +237,12 @@ export async function buildDossier(symbol, tierHint = null) {
   const price = Number(s.t24.lastPrice) || s.m15[s.m15.length - 1]?.c;
   const atr1h = atrPct(s.h1), atr4h = atrPct(s.h4);
   const h24 = hiLo(s.h1.slice(-24)), h12 = hiLo(s.h1.slice(-12)), d7 = hiLo(s.h4.slice(-42)), d15 = hiLo(s.h4);
-  const above = [h24.high, d7.high, d15.high].filter((x) => x > price * 1.002).sort((a, b) => a - b);
-  const below = [h12.low, h24.low, d7.low].filter((x) => x < price * 0.998).sort((a, b) => b - a);
-  const resistance = above[0] ?? null, support = below[0] ?? null;
+  const lv = keyLevels(price, s.h1, s.h4, [{ price: h24.high, what: "24h high" }, { price: d7.high, what: "7-day high" }, { price: d15.high, what: "15-day high" }],
+    [{ price: h12.low, what: "12h low" }, { price: h24.low, what: "24h low" }, { price: d7.low, what: "7-day low" }]);
+  const resistance = lv.resistance?.price ?? null, support = lv.support?.price ?? null;
+  const base = symbol.replace(/USDT$/, ""), tags = assetInfo(base)?.tags || [];
+  const ob = s.book && Array.isArray(s.book.bids) && s.book.bids.length ? analyzeDepth(s.book) : { available: false };
+  if (ob.bands) ob.liquidityCheck = liquidityCheck(ob);
   const todayStart = Math.floor(Date.now() / 86_400_000) * 86_400_000, today = s.m15.filter((c) => c.t >= todayStart);
   const vwap = today.length ? today.reduce((a, c) => a + c.qv, 0) / today.reduce((a, c) => a + c.v, 0) : null;
   const last8 = s.m15.slice(-8);
@@ -220,7 +255,7 @@ export async function buildDossier(symbol, tierHint = null) {
   const stopRule = price * (1 - rule.stopPct / 100);
   const stopStructure = support && pct(support, price) > -8 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
   const stopAtr = atr1h ? price * (1 - (1.5 * atr1h) / 100) : null;
-  const tRule = price * (1 + rule.targetPct / 100), tRes = resistance && pct(resistance, price) < Math.max(25, rule.targetPct) ? resistance * 0.997 : null;
+  const tRule = price * (1 + rule.targetPct / 100), tRes = resistance && pct(resistance, price) < Math.max(25, rule.targetPct) && resistance * 0.997 > price * 1.002 ? resistance * 0.997 : null;
   const rr = (stop, target) => (stop && target && price > stop ? r((target - price) / (price - stop)) : null);
   const plan = {
     entry: sig(price), entryZone: [sig(price * (1 - Math.min(0.4, 0.25 * (atr1h || 1)) / 100)), sig(price)],
@@ -258,15 +293,17 @@ export async function buildDossier(symbol, tierHint = null) {
       volume24hUsd: Math.round(Number(s.t24.quoteVolume) || 0),
     },
     levels: {
-      resistance: sig(resistance), roomToResistancePct: r(pct(resistance, price)), support: sig(support), distanceToSupportPct: r(pct(support, price)),
+      resistance: sig(resistance), resistanceIs: lv.resistance?.what || null, roomToResistancePct: r(pct(resistance, price)),
+      support: sig(support), supportIs: lv.support?.what || null, distanceToSupportPct: r(pct(support, price)), overhead: lv.overhead, underneath: lv.underneath,
       high24h: sig(h24.high), low24h: sig(h24.low), high7d: sig(d7.high), low7d: sig(d7.low), high15d: sig(d15.high), low15d: sig(d15.low),
-      note: resistance == null ? "Price is at or above its 15-day high: no overhead level in this data." : null,
+      note: resistance == null ? "No level above the price in this data (highs, swing highs, EMAs)." : null,
     },
+    exchangeTags: { monitoring: tags.some((t) => /monitoring/i.test(t)) || !!cand?.monitoring, seed: tags.some((t) => /seed/i.test(t)), all: tags.slice(0, 8) },
     marketFlow: flow,
-    orderBook: s.book && Array.isArray(s.book.bids) && s.book.bids.length ? analyzeDepth(s.book) : { available: false },
+    orderBook: ob,
     futures: fut,
-    whales: tokenWhaleSummary(symbol.replace(/USDT$/, "")),
-    dexFlows: tokenFlowSummary(symbol.replace(/USDT$/, "")),
+    whales: tokenWhaleSummary(base),
+    dexFlows: tokenFlowSummary(base),
     market: {
       btcChange24hPct: snap.regime?.btcChange24hPct, btc1hPct: snap.regime?.btc1hPct, btc4hPct: snap.regime?.btc4hPct,
       marketWideSurge: !!snap.breadth?.marketWide, shareOfTokensSurging: snap.breadth?.hotShare, takerFlowBreadth: flowBreadth(),
@@ -426,6 +463,7 @@ export function hardStops(d, plan) {
   if (ob?.spreadBps > 30) out.push(`spread ${ob.spreadBps} bps`);
   const b1 = (ob?.bands || []).find((x) => x.withinPct === 1);
   if (b1 && b1.bidUsd < 20_000) out.push(`only $${b1.bidUsd} of bids within 1%`);
+  if (d.exchangeTags?.monitoring || d.screener?.monitoringList) out.push("Binance monitoring tag (delisting risk)");
   return out;
 }
 
@@ -536,14 +574,47 @@ const pickModel = (v, fallback) => {
 const newsOn = (opts) => opts.news !== false && env.AI_NEWS !== "0";
 const debateOn = (opts) => opts.debate !== false && env.AI_DEBATE !== "0";
 const flags = (opts) => (newsOn(opts) ? "n" : "-") + (debateOn(opts) ? "d" : "-");
+// No alert signal (no ignition tier): the fast path. The coin is checked without the debate, and when the trader and the
+// code both say no trade, without the Final Boss either (3 requests instead of 6). Alert reviews and trigger re-checks
+// always get the full committee. AI_FAST_NO=0 turns it off.
+const noSignal = (d) => d.alert?.tier === "none" || !d.screener?.tier;
+const fastPath = (d, opts) => env.AI_FAST_NO !== "0" && opts.fastNo !== false && !["alert", "trigger"].includes(opts.source) && noSignal(d);
+const noTradeWords = (t) => (typeof t === "string" ? t.replace(/\bSKIP\b/g, "NO TRADE") : t);
+const CONF_CAP = { good: "high", partial: "medium", poor: "low" };
+
+// Issues the code can see in the committee's work, handed to the Final Boss to audit one by one.
+export function auditHints(d, { out, pc, dz, data, news, dbt, code }) {
+  const h = [], a = d.alert || {}, sign = (v) => (v > 0 ? "+" : "") + v;
+  if (news?.available && news.verified === false) h.push("NEWS REPORT: no web search ran (asked twice); its items and risk level come from the model's memory and are unverified");
+  if (!news?.available && !news?.off) h.push(`NEWS REPORT unavailable (${news?.error || "no answer"}): the news is unknown`);
+  const mT = Math.round(Number(out.probTargetPct) - a.anchorProbTargetPct), mS = Math.round(Number(out.probStopPct) - a.anchorProbStopPct);
+  if (Number.isFinite(mT) && Number.isFinite(mS)) h.push(mT || mS ? `TRADER moved the chances from the base rate by ${sign(mT)} points (target) and ${sign(mS)} (stop): check the evidence for each (probReason)`
+    : `TRADER kept the base-rate chances (${a.anchorProbTargetPct}% / ${a.anchorProbStopPct}%): check whether the evidence should move them`);
+  const real = code.realisticRewardRisk;
+  if (real?.cappedAtResistance) h.push(`the plan's target ${pc.plan.target1} lies beyond the nearest resistance ${real.target} (${d.levels?.resistanceIs || "level"}): realistic R:R ${real.rewardRisk} instead of ${pc.plan.rewardRisk}`);
+  if (!(real?.rewardRisk >= 2)) h.push(`realistic reward:risk ${real?.rewardRisk ?? "n/a"} is under 2`);
+  h.push(`the code's expected value ${dz.expectedValuePct}% counts time-outs as flat (p_timeout = ${Math.max(0, 100 - dz.probTargetPct - dz.probStopPct)}%): give your own time-out estimate`);
+  if (pc.replaced) h.push("the trader's plan did not fit the price, so the reference plan was used");
+  if (!data?.available) h.push("the data analyst did not answer: data quality is unknown");
+  else if (data.dataQuality?.rating !== "good") h.push(`data rated ${data.dataQuality?.rating} (${(data.dataQuality?.issues || []).length} issues): confidence at most ${CONF_CAP[data.dataQuality?.rating] || "medium"}`);
+  if (dbt && !dbt.off && dbt.bull?.available && dbt.bull.strength <= 3) h.push(`the bull rated its own case ${dbt.bull.strength}/10: check whether it missed a stronger argument in the data`);
+  const lc = d.orderBook?.liquidityCheck;
+  if (lc) h.push(`liquidity test (orderBook.liquidityCheck): bids within 1% ${lc.bidsWithin1PctUsd != null ? `$${lc.bidsWithin1PctUsd}` : `not reached (${lc.note})`}, spread ${lc.spreadBps} bps: ${lc.passes === false ? "FAILS" : lc.passes ? "passes" : "unknown"}`);
+  const missing = [d.marketFlow && d.marketFlow.available === false ? "market flow" : null, d.futures && d.futures.available === false ? "futures" : null,
+    d.whales && d.whales.tracked === false ? "whale transfers" : null, d.dexFlows && d.dexFlows.tracked === false ? "DEX flows" : null].filter(Boolean);
+  if (missing.length) h.push(`not tracked for this coin: ${missing.join(", ")}`);
+  return h;
+}
 export async function runCommittee(ai, d, { desk, rules, identity, extraStops = () => [], opts }) {
-  const hold = d.alert?.trackedAs?.holdHours || 24;
+  const hold = d.alert?.trackedAs?.holdHours || 24, fast = fastPath(d, opts);
   const [data, news] = await Promise.all([
     dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
     newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts) }),
   ]);
-  const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debateOn(opts) });
+  const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debateOn(opts) && !fast });
+  if (fast && debateOn(opts)) dbt.skipped = "no alert signal: the fast path skips the debate";
   const tr = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, debate: dbt, model: opts.model }), out = tr.out;
+  out.headline = noTradeWords(out.headline); out.thesis = noTradeWords(out.thesis);
   if (!dbt.off) dbt.verdict = out.debate && ["bull", "bear", "even"].includes(out.debate.winner) ? { winner: out.debate.winner, reason: out.debate.reason } : null;
   const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
   if (pc.replaced) g.notes.push("The trader's plan did not fit the levels, so the reference plan is shown.");
@@ -555,15 +626,32 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
   g.notes.push(...pre.notes);
   const hard = [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : [])])];
   const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
-  // The Final Boss audits everything, whatever the trader decided.
+  // The Final Boss audits everything, whatever the trader decided (fast path: only when the trader or the code is not a no).
   const code = { decision: pre.decision, hardStops: hard, expectedValuePct: dz.expectedValuePct, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
     rewardRisk: pc.plan.rewardRisk, realisticRewardRisk: realisticPlan(d, pc.plan), costPct: d.alert.costPct, moved: !!d.screener?.moved, igniting: isIgniting(d),
     traderPlanReplaced: pc.replaced, notes: [...g.notes] };
-  const boss = { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, dossier: d, code,
+  code.auditHints = auditHints(d, { out, pc, dz, data, news, dbt, code });
+  const fastNo = fast && out.decision === "SKIP" && pre.decision === "SKIP";
+  const boss = fastNo ? { asked: false, verdict: null, reason: "Fast NO: no alert signal, and the trader and the code both say no trade, so the debate and the Final Boss were skipped (AI_FAST_NO=0 to always ask)." }
+    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, dossier: d, code,
     trader: { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, probTargetPct: out.probTargetPct, probStopPct: out.probStopPct,
       probReason: out.probReason, plan: pc.plan, waitFor: out.waitFor, trigger: out.trigger || null, hardStopsNamed: out.hardStops, checklist, headline: out.headline,
       thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk, invalidation: out.invalidation, debateWinner: dbt.verdict || null } }) };
-  const fin = finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor" });
+  // The boss's confidence is capped by the data rating, and lowered one step when it audited nothing the code had flagged.
+  if (boss.available) {
+    const capTo = data.available ? CONF_CAP[data.dataQuality?.rating] || "medium" : "medium";
+    if (LEVELS.indexOf(boss.confidence) > LEVELS.indexOf(capTo)) {
+      g.notes.push(`The Final Boss said ${boss.confidence} confidence, but the data was ${data.available ? `rated ${data.dataQuality?.rating}` : "not checked"}: ${capTo} at most.`);
+      boss.confidenceSaid = boss.confidence; boss.confidence = capTo;
+    }
+    if (!boss.auditFindings?.length && code.auditHints.length >= 2) {
+      g.notes.push(`The Final Boss reported no audit findings although the code listed ${code.auditHints.length} issues for it: its confidence was lowered one step.`);
+      boss.confidenceSaid ??= boss.confidence; boss.confidence = lower(boss.confidence);
+    }
+  }
+  const fin = fastNo ? { decision: "SKIP", final: "NO", plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct,
+    realistic: realisticPlan(d, pc.plan), trigger: null, notes: [boss.reason] }
+    : finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor" });
   g.notes.push(...fin.notes);
   const confidence = boss.available ? LEVELS[Math.min(LEVELS.indexOf(g.confidence), Math.max(0, LEVELS.indexOf(boss.confidence)))] : lower(g.confidence);
   const watch = fin.final === "WATCH" && boss.available && boss.watchTriggers?.length ? { triggers: boss.watchTriggers, expiresHours: boss.watchExpiresHours } : null;
@@ -574,8 +662,8 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
     plan: fin.plan, sizePct: boss.available && fin.final !== "NO" ? boss.plan?.sizePct ?? null : null,
     waitFor: watch ? `${watch.triggers.map((t) => `${t.condition} (${t.field} ${t.threshold})`).join("; ")}${watch.expiresHours ? `; within ${watch.expiresHours} hours` : ""}` : out.waitFor,
-    watch, trigger: fin.trigger, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
-    committee: { data, news, debate: dbt, trader: { decision: out.decision, model: opts.model, ms: tr.ms, tokens: tr.tokens }, boss },
+    watch, trigger: fin.trigger, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes, fastNo,
+    committee: { data, news, debate: dbt, trader: { decision: out.decision, model: opts.model, ms: tr.ms, tokens: tr.tokens }, boss, auditHints: code.auditHints },
   };
 }
 // Which models ran, how many requests were made and the tokens they used (news from the 30-minute cache costs nothing).
@@ -584,7 +672,7 @@ function committeeMeta(opts, c, t0) {
   const parts = [data, fresh(news) ? news : null, dbt.bull, dbt.bear, trader, boss.asked ? boss : null].filter((x) => x && x.tokens);
   return { model: opts.model, dataModel: MODELS.analyst, newsModel: news.off ? null : MODELS.analyst, debateModel: dbt.off ? null : MODELS.analyst,
     bossModel: boss.asked ? opts.reviewModel || MODELS.reviewer : null,
-    calls: 2 + (news.off || news.cached ? 0 : 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 : 0),
+    calls: 2 + (news.off || news.cached ? 0 : news.requests || 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 : 0),
     tokens: ["in", "out", "think"].reduce((o, k) => ({ ...o, [k]: parts.reduce((s, x) => s + (x.tokens[k] || 0), 0) }), {}),
     deepThinking: env.AI_DEEP_THINKING !== "0", source: opts.source || "manual", depth: opts.depth || 0, durationMs: Date.now() - t0, at: Date.now(), cached: false };
 }
@@ -726,7 +814,7 @@ export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${x.final
   x.decision === "WAIT" && x.watch ? `Plan if it triggers: entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} | target ${x.plan.target1}${x.sizePct != null ? ` | size ${x.sizePct}% of normal` : ""}` : null,
   x.decision === "WAIT" && x.trigger ? `Watching: ${x.trigger.event === "breakout" ? `a ${x.trigger.timeframe} close above ${x.trigger.price}` : `a dip to ${x.trigger.price}`} for ${x.trigger.expiresMinutes} min; the AI checks again if it happens.` : null,
   x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
-  x.committee?.news?.available && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
+  x.committee?.news?.available && x.committee.news.verified !== false && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
 // "bull 7 vs bear 5, bear won" (the strengths are the sides' own scores; the winner is the trader's call).
@@ -734,11 +822,12 @@ const debateLine = (dbt) => (!dbt || dbt.off ? null
   : `bull ${dbt.bull?.available ? dbt.bull.strength : "n/a"} vs bear ${dbt.bear?.available ? dbt.bear.strength : "n/a"}${dbt.verdict ? `, ${dbt.verdict.winner === "even" ? "even" : dbt.verdict.winner + " won"}` : ""}`);
 // One line on how each member voted (data quality, news risk, the debate, the trader, the Final Boss), then the boss's
 // summary and the factor that decided it.
-const bossVote = (b) => (!b?.asked ? "not asked" : !b.available ? "no answer" : `${b.verdict}${b.agreesWithTrader ? "" : " (overturned the trader)"}`);
+const bossVote = (b) => (!b?.asked ? (/^Fast NO/.test(b?.reason || "") ? "skipped (fast NO)" : "not asked") : !b.available ? "no answer" : `${b.verdict}${b.agreesWithTrader ? "" : " (overturned the trader)"}`);
 const tgCommittee = (x) => {
   const { data, news, debate: dbt, trader, boss } = x.committee;
-  return [[`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
-    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`, `boss ${bossVote(boss)}`].filter(Boolean).join(" · "),
+  return [[`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}${x.fastNo ? " (fast NO)" : ""}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
+    `news ${news?.available ? (news.verified === false ? "unverified" : `${news.riskLevel} risk`) : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`,
+    `boss ${bossVote(boss)}`].filter(Boolean).join(" · "),
     boss?.available && boss.summary ? `Boss: ${boss.summary}` : null, boss?.available && boss.decidingFactor ? `Deciding factor: ${boss.decidingFactor}` : null].filter(Boolean).join("\n");
 };
 
@@ -747,7 +836,7 @@ const reviewSummary = (out, tg) => {
   const c = out.committee || {};
   return { decision: out.decision, final: out.final, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
-    committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? c.news.riskLevel : null, newsHardStop: !!c.news?.hardStop,
+    committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? (c.news.verified === false ? "unverified" : c.news.riskLevel) : null, newsHardStop: !!c.news?.hardStop,
       debate: debateLine(c.debate), debateWinner: c.debate?.verdict?.winner || null,
       trader: c.trader?.decision || null, boss: c.boss?.available ? c.boss.verdict : null, bossAgrees: c.boss?.available ? c.boss.agreesWithTrader : null,
       bossSummary: c.boss?.available ? c.boss.summary : c.boss?.reason || null }, sizePct: out.sizePct ?? null,
@@ -816,9 +905,9 @@ export async function buildAlphaDossier(key, alert = null) {
   if (h1.length < 24) throw new AgentError(`${token.symbol}: not enough Alpha candle history`, 502);
   const price = alert ? f.close : (h1[h1.length - 1]?.c || tok.price);
   const atr1h = atrPct(h1), d1 = hiLo(h1.slice(-24)), d3 = hiLo(h1), d7 = h4.length ? hiLo(h4) : d3;
-  const above = [d1.high, d3.high, d7.high].filter((x) => x > price * 1.002).sort((a, b) => a - b);
-  const below = [d1.low, d3.low].filter((x) => x < price * 0.998).sort((a, b) => b - a);
-  const resistance = above[0] ?? null, support = below[0] ?? null;
+  const lv = keyLevels(price, h1, h4, [{ price: d1.high, what: "24h high" }, { price: d3.high, what: "3-day high" }, { price: d7.high, what: "7-day high" }],
+    [{ price: d1.low, what: "24h low" }, { price: d3.low, what: "3-day low" }]);
+  const resistance = lv.resistance?.price ?? null, support = lv.support?.price ?? null;
   const ret = (cs, n) => (cs.length > n ? r(pct(cs[cs.length - 1].c, cs[cs.length - 1 - n].c)) : null);
   const R = aSnap.replay, res = aSnap.results ? { confirmed: aSnap.results, early: aSnap.resultsEarly } : {};
   const t = tier === "confirmed" ? "confirmed" : "early";
@@ -834,7 +923,7 @@ export async function buildAlphaDossier(key, alert = null) {
   };
   const stopRule = price * (1 - cfg.stopPct / 100), tRule = price * (1 + cfg.targetPct / 100);
   const stopStructure = support && pct(support, price) > -12 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
-  const tRes = resistance && pct(resistance, price) < cfg.targetPct ? resistance * 0.997 : null;
+  const tRes = resistance && pct(resistance, price) < cfg.targetPct && resistance * 0.997 > price * 1.002 ? resistance * 0.997 : null;
   const rr = (stop, target) => (stop && target && price > stop ? r((target - price) / (price - stop)) : null);
   const order = 1000, poolShare = token.liquidity > 0 ? r((order / token.liquidity) * 100, 2) : null;
   const moved = f.chg24 > (cfg.maxChg24Pct ?? 30);
@@ -851,7 +940,8 @@ export async function buildAlphaDossier(key, alert = null) {
       liquidityNote: poolShare != null ? `a $${order} order is about ${poolShare}% of the pool; keep orders well under 1% of it` : null,
     },
     chart: { trend1h: trendOf(h1), trend4h: h4.length >= 21 ? trendOf(h4) : null, returnsPct: { "1h": ret(h1, 1), "4h": ret(h1, 4), "24h": ret(h1, 24), "3d": ret(h1, 71) }, atrPct: { "1h": r(atr1h) } },
-    levels: { resistance: sig(resistance), roomToResistancePct: r(pct(resistance, price)), support: sig(support), distanceToSupportPct: r(pct(support, price)),
+    levels: { resistance: sig(resistance), resistanceIs: lv.resistance?.what || null, roomToResistancePct: r(pct(resistance, price)), support: sig(support),
+      supportIs: lv.support?.what || null, distanceToSupportPct: r(pct(support, price)), overhead: lv.overhead, underneath: lv.underneath,
       high24h: sig(d1.high), low24h: sig(d1.low), high3d: sig(d3.high), low3d: sig(d3.low), high7d: sig(d7.high), low7d: sig(d7.low) },
     marketFlow: { available: false }, orderBook: { available: false },
     market: { btcChange24hPct: mctx.btcChange24hPct, btc1hPct: mctx.btc1hPct, btc4hPct: mctx.btc4hPct, marketWideSurge: false,

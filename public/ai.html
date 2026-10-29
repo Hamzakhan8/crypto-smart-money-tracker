@@ -192,15 +192,17 @@ details.notice div{margin-top:8px}
  const stat=(k,v,sub,cls="")=>`<div class="stat"><span>${esc(k)}</span><strong class="${cls}">${v}</strong>${sub?`<small>${sub}</small>`:""}</div>`;
  function factsHtml(d){
   const ch=d.chart||{},lv=d.levels||{},ob=d.orderBook||{},fu=d.futures||{},wh=d.whales||{},dx=d.dexFlows||{},mk=d.market||{},sc=d.screener,mf=d.marketFlow||{},sm=(mf.smartMoneyWallets&&mf.smartMoneyWallets.matchingSignals)||[];
-  const imb=ob.bands&&ob.bands.length?ob.bands[Math.min(1,ob.bands.length-1)]:null;
+  const imb=ob.bands&&ob.bands.length?ob.bands[Math.min(1,ob.bands.length-1)]:null,lq=ob.liquidityCheck||null;
   return `<div class="sec">Data the AI used</div><div class="facts">`+
    stat("Screener",sc?esc(sc.tier?sc.tier+" ignition":sc.state):"not flagged",sc&&sc.ignitionScore!=null?"score "+sc.ignitionScore:"")+
    stat("Trend 1h",esc(ch.trend1h?ch.trend1h.state.split(" (")[0]:"—"),ch.trend1h?"vs EMA20 "+pct(ch.trend1h.priceVsEma20Pct):"")+
    stat("Trend 4h",esc(ch.trend4h?ch.trend4h.state.split(" (")[0]:"—"),ch.trend4h?"vs EMA20 "+pct(ch.trend4h.priceVsEma20Pct):"")+
    stat("ATR (1h)",num(ch.atrPct&&ch.atrPct["1h"])+"%","typical hourly move")+
-   stat("To resistance",lv.roomToResistancePct==null?"none overhead":pct(lv.roomToResistancePct),lv.resistance?price(lv.resistance):"")+
-   stat("To support",lv.distanceToSupportPct==null?"—":pct(lv.distanceToSupportPct),lv.support?price(lv.support):"")+
+   stat("To resistance",lv.roomToResistancePct==null?"none overhead":pct(lv.roomToResistancePct),lv.resistance?price(lv.resistance)+(lv.resistanceIs?" · "+esc(lv.resistanceIs):""):"")+
+   stat("To support",lv.distanceToSupportPct==null?"—":pct(lv.distanceToSupportPct),lv.support?price(lv.support)+(lv.supportIs?" · "+esc(lv.supportIs):""):"")+
    stat("Order book",imb?(imb.imbalance>0?"more bids":"more asks"):"—",imb?`imbalance ${num(imb.imbalance)} within ${imb.withinPct}% · spread ${num(ob.spreadBps,1)} bps`:"",imb?col(imb.imbalance):"")+
+   (lq?stat("Liquidity test",lq.passes===false?"fails":lq.passes?"passes":"unknown",lq.bidsWithin1PctUsd!=null?`${usd(lq.bidsWithin1PctUsd)} of bids within 1% (needs $20k)`:esc(lq.note||""),lq.passes===false?"red":lq.passes?"green":""):"")+
+   (d.exchangeTags&&(d.exchangeTags.monitoring||d.exchangeTags.seed)?stat("Binance tag",d.exchangeTags.monitoring?"Monitoring":"Seed",d.exchangeTags.monitoring?"delisting risk: hard stop":"high-volatility young project",d.exchangeTags.monitoring?"red":"amber"):"")+
    stat("Funding / 8h",fu.available?num(fu.fundingPctPer8h,4)+"%":"n/a",fu.available?"OI 24h "+pct(fu.oiChange24hPct):esc(fu.reason||""),fu.available&&fu.fundingPctPer8h>0.05?"red":"")+
    stat("Long/short",fu.available?num(fu.longShortAccountRatio):"n/a",fu.available?"taker buy/sell "+num(fu.takerBuySellRatio30m):"")+
    stat("Whales → exchanges",wh.tracked&&wh.transfers24h?usd(wh.netToExchanges24h):"none seen",wh.tracked&&wh.transfers24h?`${wh.transfers24h} big transfers 24h (ETH chain)`:esc(wh.reason||"Ethereum only"),wh.netToExchanges24h>0?"red":wh.netToExchanges24h<0?"green":"")+
@@ -225,7 +227,7 @@ details.notice div{margin-top:8px}
    ${(x.hardStops||[]).length?`<div class="callout red"><b>Hard stop:</b> ${x.hardStops.map(esc).join("; ")}</div>`:""}
    <div class="table-wrap"><table class="table"><tbody>${(x.checklist||[]).map(c=>`<tr><td><b>${esc(c.item)}</b></td><td><span class="dec ${c.status==="pass"?"TAKE":c.status==="fail"?"SKIP":"WAIT"}">${esc(c.status)}</span></td><td class="muted">${esc(c.evidence)}</td></tr>`).join("")}</tbody></table></div>
    <p class="meta">Started from this alert's base rate: ${esc(al.anchorProbTargetPct)}% hit the target, ${esc(al.anchorProbStopPct)}% hit the stop (${esc(al.anchorFrom||"")}; ${esc(al.label||"")}, tracked as +${al.trackedAs?al.trackedAs.targetPct:"?"}% / -${al.trackedAs?al.trackedAs.stopPct:"?"}%). ${esc(x.probReason||"")}</p>`:"";
-  $("#result").innerHTML=`<div class="hero"><div class="big ${esc(x.decision)}" title="${esc(LBL[x.decision]||x.decision)}">${fin}<span class="sub" style="text-align:center">${esc(LBL[x.decision]||x.decision)}</span></div><div><h3>${esc(x.headline)}</h3><p>${evTxt(x)}</p><p>${esc(x.confidence)} confidence · setup ${x.setupScore}/10 · price ${price(x.dossier&&x.dossier.price)}</p>${changed}</div></div>
+  $("#result").innerHTML=`<div class="hero"><div class="big ${esc(x.decision)}" title="${esc(LBL[x.decision]||x.decision)}">${fin}${x.final==="NO"?"":`<span class="sub" style="text-align:center">${esc(x.final==="WATCH"?"wait for triggers":LBL[x.decision]||x.decision)}</span>`}</div><div><h3>${esc(x.headline)}</h3><p>${evTxt(x)}</p><p>${esc(x.confidence)} confidence · setup ${x.setupScore}/10 · price ${price(x.dossier&&x.dossier.price)}</p>${changed}</div></div>
    ${committeeHtml(x)}
    <div class="thesis">${esc(x.thesis)}</div>
    ${(x.guardNotes||[]).length?`<div class="callout">${x.guardNotes.map(esc).join("<br>")}</div>`:""}
@@ -256,16 +258,16 @@ details.notice div{margin-top:8px}
     ${(d.dataQuality&&d.dataQuality.issues||[]).length?`<p class="muted"><b>Data issues:</b> ${d.dataQuality.issues.map(i=>esc(i.field)+": "+esc(i.problem)).join("; ")}</p>`:""}
     ${(d.areas||[]).length?`<details><summary>Evidence by area</summary><ul>${d.areas.map(a=>`<li><b>${esc(a.area)}</b> ${pill(a.reading,a.reading==="supports"?"TAKE":a.reading==="against"?"SKIP":"WAIT")} ${esc(a.note)}${(a.evidence||[]).length?`<span class="sub mono">${a.evidence.map(esc).join(" · ")}</span>`:""}</li>`).join("")}</ul></details>`:""}`
    :`<p class="muted">Not available (${esc(d.error||"no answer")}). The trader worked from the raw data.</p>`;
-  const newsCard=n.available?`<p>${esc(n.summary||"No relevant news found.")}</p>
+  const newsCard=n.available?`${n.verified===false?`<p class="amber"><b>Not verified:</b> no web search ran${n.requests>1?" (asked twice)":""}, so the model answered from memory. These items are unverified and the news counts as unknown.</p>`:""}<p${n.verified===false?' class="muted"':""}>${esc(n.summary||"No relevant news found.")}</p>
     ${(n.items||[]).length?`<ul>${n.items.map(i=>`<li><span class="mono muted">${esc(i.date)}</span> ${esc(i.title)} <span class="sub"><span class="${i.impact==="negative"?"red":i.impact==="positive"?"green":"muted"}">${esc(i.impact)}</span> · ${esc(i.severity)} · priced in: ${esc(i.pricedIn)}${i.source?" · "+esc(i.source):""}</span></li>`).join("")}</ul>`:""}
     ${(n.upcoming||[]).length?`<p><b>Coming up:</b> ${n.upcoming.map(u=>esc(u.date)+" "+esc(u.event)+" ("+esc(u.impact)+")").join("; ")}</p>`:""}
     ${n.hardStop?`<p class="red"><b>Hard stop:</b> ${esc(n.hardStopReason)}</p>`:n.unverifiedHardStop?`<p class="amber">The researcher flagged a hard stop but no search backed it, so it was not used.</p>`:""}
-    ${(n.sources||[]).length?`<details><summary>${n.sources.length} source${n.sources.length===1?"":"s"} searched</summary><ul>${n.sources.map(s=>`<li><a href="${safeUrl(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a></li>`).join("")}</ul></details>`:n.searched?"":`<p class="muted">No search results came back.</p>`}
+    ${(n.sources||[]).length?`<details><summary>${n.sources.length} source${n.sources.length===1?"":"s"} searched</summary><ul>${n.sources.map(s=>`<li><a href="${safeUrl(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a></li>`).join("")}</ul></details>`:""}
     ${n.cached?`<span class="sub">Saved news from ${esc(ago(n.at))}</span>`:""}`
    :`<p class="muted">${n.off?"Switched off.":"Not available ("+esc(n.error||"no answer")+")."} News is unknown: the trader was told not to treat that as good news.</p>`;
   const db=c.debate||{off:true},vd=db.verdict;
   const pts=a=>(a||[]).length?`<ul>${a.map(p=>`<li>${esc(p.point)}<span class="sub mono">${esc(p.evidence)}</span></li>`).join("")}</ul>`:"";
-  const sideCard=(sd,isBull)=>!sd||!sd.available?`<p class="muted">${db.off?"Debate switched off.":"No answer ("+esc((sd&&sd.error)||"unavailable")+"). The trader judged without this side."}</p>`
+  const sideCard=(sd,isBull)=>!sd||!sd.available?`<p class="muted">${db.off?(db.skipped?esc(db.skipped)+".":"Debate switched off."):"No answer ("+esc((sd&&sd.error)||"unavailable")+"). The trader judged without this side."}</p>`
    :`<p>${esc(sd.thesis)}</p>${!isBull&&(sd.rebuttals||[]).length?`<p><b>Answers to the bull:</b></p><ul>${sd.rebuttals.map(r=>`<li>${pill(r.verdict,r.verdict==="holds"?"TAKE":r.verdict==="wrong"?"SKIP":"WAIT")} ${esc(r.bullPoint)}<span class="sub">${esc(r.evidence)}</span></li>`).join("")}</ul>`:""}
     ${(sd.points||[]).length?`<p><b>${isBull?"Reasons to buy":"Reasons not to buy"}:</b></p>`+pts(sd.points):""}<p><b>${isBull?"Path to the target":"Most likely path to the stop"}:</b> ${esc(sd.path)}</p>
     <details><summary>Weak spot and red flags</summary><p><b>Weakest point:</b> ${esc(sd.weakestPoint)}</p><p><b>Would change its mind:</b> ${esc(sd.wouldChangeMyMind)}</p>
@@ -276,17 +278,18 @@ details.notice div{margin-top:8px}
   const bossCard=!b.asked?`<p class="muted">${esc(b.reason||"Not asked.")}</p>`
    :b.available===false?`<p class="amber">No answer (${esc(b.reason)}), so there is no YES. Run it again in a minute.</p>`
    :`<p><b>${esc(b.summary)}</b></p><p><b>Deciding factor:</b> ${esc(b.decidingFactor)}</p>
-    <p class="muted">${esc(b.confidence)} confidence · ${b.agreesWithTrader?"agrees with the trader":"overturned the trader"}${b.plan&&b.verdict!=="NO"?` · size ${num(b.plan.sizePct,0)}% of normal`:""}</p>
+    <p class="muted">${esc(b.confidence)} confidence${b.confidenceSaid&&b.confidenceSaid!==b.confidence?` (it said ${esc(b.confidenceSaid)}; capped by the code)`:""} · ${b.agreesWithTrader?"agrees with the trader":"overturned the trader"}${b.plan&&b.verdict!=="NO"?` · size ${num(b.plan.sizePct,0)}% of normal`:""}</p>
     ${(b.hardStopFailures||[]).length?`<p class="red"><b>Hard-stop failures:</b> ${b.hardStopFailures.map(esc).join("; ")}</p>`:""}
     ${(b.watchTriggers||[]).length?`<p><b>Watch for${b.watchExpiresHours?` (next ${num(b.watchExpiresHours,0)} h)`:""}:</b></p><ul>${b.watchTriggers.map(t=>`<li>${esc(t.condition)}<span class="sub mono">${esc(t.field)} ${esc(t.threshold)}</span></li>`).join("")}</ul>`:""}
     ${cn?`<p class="mono" style="font-size:11.5px">Corrected: ${num(cn.pTargetPct,0)}% target / ${num(cn.pStopPct,0)}% stop / ${num(cn.pTimeoutPct,0)}% time-out · realistic target ${price(cn.realisticTarget)} · R:R ${num(cn.realisticRr)} · EV ${pct(cn.expectedValuePct,2)}</p>`:""}
-    ${(b.auditFindings||[]).length?`<details ${b.auditFindings.some(f=>f.severity==="high")?"open":""}><summary>Audit: ${b.auditFindings.length} finding${b.auditFindings.length===1?"":"s"}</summary><ul>${b.auditFindings.map(f=>`<li>${pill(f.severity,sevTone[f.severity])} ${esc(f.issue)}<span class="sub mono">${esc(f.field)}</span><span class="sub">${esc(f.correction)}</span></li>`).join("")}</ul></details>`:""}`;
+    ${(b.auditFindings||[]).length?`<details ${b.auditFindings.some(f=>f.severity==="high")?"open":""}><summary>Audit: ${b.auditFindings.length} finding${b.auditFindings.length===1?"":"s"}</summary><ul>${b.auditFindings.map(f=>`<li>${pill(f.severity,sevTone[f.severity])} ${esc(f.issue)}<span class="sub mono">${esc(f.field)}</span><span class="sub">${esc(f.correction)}</span></li>`).join("")}</ul></details>`:`<p class="amber">No audit findings.</p>`}
+    ${(c.auditHints||[]).length?`<details><summary>What the code asked it to audit (${c.auditHints.length})</summary><ul>${c.auditHints.map(h=>`<li>${esc(h)}</li>`).join("")}</ul></details>`:""}`;
   const aq=(b.available&&b.agentQuality)||{};
   const card=(role,name,model,badge,body,q)=>`<div class="member"><span class="role">${role}${model?" · "+esc(model):""}${q==="weak"?' · <span class="amber">boss: weak</span>':q==="ok"?" · boss: ok":""}</span><h4>${name}${badge}</h4>${body}</div>`;
   const nTrader=db.off?3:5;
-  return `<div class="sec">The committee</div><div class="crew">`+
+  return `<div class="sec">The committee</div>${x.fastNo?`<div class="callout blue"><b>Fast NO:</b> no alert signal, and the trader and the code both say no trade, so the debate and the Final Boss were skipped (3 requests instead of 6).</div>`:db.skipped?`<p class="meta">${esc(db.skipped)}.</p>`:""}<div class="crew">`+
    card("1 · Data analyst","Checks the numbers",m.dataModel,d.available?pill("data "+((d.dataQuality&&d.dataQuality.rating)||"?"),tone[d.dataQuality&&d.dataQuality.rating]):pill("n/a"),dataCard,aq.dataAnalyst)+
-   card("2 · News researcher","Searches the web",m.newsModel,n.available?pill((n.riskLevel||"none")+" risk",tone[n.riskLevel]):pill(n.off?"off":"n/a"),newsCard,aq.news)+
+   card("2 · News researcher","Searches the web",m.newsModel,n.available?(n.verified===false?pill("unverified","WAIT"):pill((n.riskLevel||"none")+" risk",tone[n.riskLevel])):pill(n.off?"off":"n/a"),newsCard,aq.news)+
    (db.off?"":card("3 · Bull","The case for",m.debateModel,sideBadge(db.bull,true),sideCard(db.bull,true),aq.bull)+card("4 · Bear","The case against",m.debateModel,sideBadge(db.bear,false),sideCard(db.bear,false),aq.bear))+
    card(nTrader+" · Trader","Makes the call",m.model,pill(LBL[c.trader&&c.trader.decision]||"?",c.trader&&c.trader.decision),traderCard,aq.trader)+
    card((nTrader+1)+" · Final Boss","Audits it all: YES, WATCH or NO",m.bossModel,b.available&&b.verdict?pill(b.verdict,tone[b.verdict]):pill(b.asked?"no answer":"not asked","WAIT"),bossCard)+`</div>`;

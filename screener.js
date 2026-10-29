@@ -594,6 +594,7 @@ export function classifyBigMove(x, p = DEFAULT_BIGMOVE) {
   else if (!(x.r5 >= p.r5 && x.prevR5 >= p.prevR5)) miss.push(`two 5m candles at ${p.prevR5}x and ${p.r5}x normal volume`);
   if (!(x.ret10 > 0)) miss.push("price turning up");
   if (!(x.buy10 >= p.minBuy)) miss.push(`buyers ${p.minBuy}%+`);
+  if (x.monitoring) miss.push("off Binance's Monitoring list (delisting risk)"); // all 3 such live alerts hit -10%
   return { state: miss.length ? "watch" : "ignited", miss };
 }
 
@@ -632,7 +633,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
   const core = quoteVol >= MIN_QUOTE_VOLUME;
   const ig = core ? classifyIgnition(fast, priceChg, t.distToHigh) : { state: null, moved: false, movedWhy: [], miss: [], slow: false };
   const e5 = fast?.early ?? fast?.bigEarly ?? null;
-  const bm = BIG_ON && fast ? classifyBigMove({ quoteVolume: quoteVol, rvolD: t.rvol, r5: e5?.r5, prevR5: e5?.prevR5, ret10: e5?.ret10, buy10: e5?.buy10 }) : { state: null, miss: [] };
+  const bm = BIG_ON && fast ? classifyBigMove({ quoteVolume: quoteVol, rvolD: t.rvol, r5: e5?.r5, prevR5: e5?.prevR5, ret10: e5?.ret10, buy10: e5?.buy10, monitoring: fast.monitoring }) : { state: null, miss: [] };
   let score = s.score, label = labelFor(score);
   if (ig.moved) { score = Math.min(score, MOVED_SCORE_CAP); label = "Already moved"; }
   let igs = null;

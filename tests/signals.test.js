@@ -138,6 +138,9 @@ test("big-move tier: small coin waking up + 5m ignition; size and daily-volume b
   assert.equal(waiting.state, "watch");
   assert.ok(waiting.miss.some((m) => /5m candles/.test(m)) && waiting.miss.some((m) => /buyers/.test(m)), JSON.stringify(waiting.miss));
   assert.equal(sc.classifyBigMove({ ...ok, ret10: -0.2 }).state, "watch");
+  const tagged = sc.classifyBigMove({ ...ok, monitoring: true });                         // Binance Monitoring tag = delisting risk
+  assert.equal(tagged.state, "watch");
+  assert.match(tagged.miss.join(), /Monitoring/);
   assert.equal(sc.classifyBigMove({ ...ok, r5: null, prevR5: null }).miss[0], "5m check");
   assert.equal(sc.classifyBigMove(ok, { ...sc.DEFAULT_BIGMOVE, minDailyRvol: 3 }).state, null); // settings are respected
   assert.equal(sc.DEFAULT_BIGMOVE.targetPct, 40);

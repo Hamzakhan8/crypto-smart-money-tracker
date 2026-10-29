@@ -27,9 +27,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Initialize Gemini using environment variable securely
 const ai = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;
 
-// Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP), saved with the alert, so the screener's
-// performance panel can show whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off;
-// AI_REVIEWS_PER_HOUR caps the cost (default 12).
+// Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP) by the AI committee (3 Gemini requests, 4
+// for a TAKE), saved with the alert, so the screener's performance panel can show whether the AI's calls really do
+// better. AI_AUTO_REVIEW=0 turns it off; AI_REVIEWS_PER_HOUR caps the cost (default 12 reviews).
 const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
 const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
 let aiReviewTimes = [];

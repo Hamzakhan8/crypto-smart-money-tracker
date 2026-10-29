@@ -19,16 +19,19 @@
 // perpetual), large Ethereum transfers and exchange flows (whale tracker), DEX buying and selling (DEX tracker), BTC
 // and the market backdrop, and a reference plan from the screener's own +target / -stop rule.
 //
-// Single coin: POST /api/ai/analyze (optional second-model risk review). All ignition coins: POST /api/ai/analyze-all
-// (one batched triage call). Facts only, no AI: GET /api/ai/dossier?symbol=. Research tool, not financial advice.
+// Single coin: POST /api/ai/analyze runs the four-member AI committee (ai-committee.js): a data analyst and a news
+// researcher (web search) report first, a trader decides, and for a TAKE that passes the code checks a final boss says
+// YES or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
+// GET /api/ai/dossier?symbol=. Research tool, not financial advice.
 
 import { Type } from "@google/genai";
-import { screenerSnapshot, fetchJson, CONFIG, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor, noteAiVerdict, freshAiVerdicts } from "./screener.js";
+import { screenerSnapshot, fetchJson, CONFIG, assetInfo, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor, noteAiVerdict, freshAiVerdicts } from "./screener.js";
 import { alphaKlinesUrl, parseKlines } from "./alpha.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
 import { sendTelegram, telegramWants } from "./telegram.js";
+import { dataReview, newsResearch, traderDecision, finalBoss, committeeChecks, bossCall } from "./ai-committee.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -286,7 +289,8 @@ const RULES = `
 You decide whether to buy one Binance spot coin RIGHT NOW. Long only, no leverage. The default answer is SKIP (no trade):
 TAKE has to be earned by the evidence. Most ignition alerts fail, and a skipped trade costs nothing.
 
-Use ONLY the DOSSIER and quote its numbers exactly. Never invent prices, levels, news or data. null or "unavailable" means
+Use ONLY the DOSSIER (and your colleagues' reports when you have them) and quote its numbers exactly. Never invent
+prices, levels, news or data. null or "unavailable" means
 unknown, and unknown is not good news. marketFlow is aggressive buying on Binance spot in the last 1-5 minutes, not
 "smart money"; smartMoneyWallets are separate on-chain signals.
 
@@ -320,12 +324,6 @@ Work through these steps in order and show them in your answer:
    account per trade.
 Be concise and concrete.`.trim();
 
-const ANALYST_SYSTEM = `You are a disciplined crypto spot trader and risk manager reviewing one setup.\n\n${RULES}`;
-const REVIEWER_SYSTEM = `You are a skeptical head of risk double-checking a trader's call. Find reasons it is wrong: numbers that do not
-match the dossier, a missed hard stop, probabilities moved far from the alert's base rate without evidence, an expected
-value that does not add up, ignored red flags (crowded futures, exchange deposits, weak trend, no room to resistance, BTC
-weakness, a weak market regime), or a plan whose stop or target is not supported by the levels.\n\n${RULES}\n
-Verdict: "agree" (call is sound), "downgrade" (TAKE should be WAIT, or WAIT should be SKIP), "reject" (should be SKIP).`;
 const TRIAGE_SYSTEM = `You are a disciplined crypto spot trader triaging several setups from a volume-ignition screener at once.\n\n${RULES}
 For each coin give a decision, the chance of its target and of its stop (starting from that coin's alert anchors), and the
 single most important reason and risk. Rank the best setups highest.`;
@@ -364,11 +362,6 @@ const DECISION_SCHEMA = {
   required: ["decision", "hardStops", "checklist", "probTargetPct", "probStopPct", "probReason", "confidence", "setupScore", "headline", "thesis",
     "bullishPoints", "bearishPoints", "plan", "waitFor", "invalidation", "keyRisk"],
 };
-const REVIEW_SCHEMA = {
-  type: Type.OBJECT,
-  properties: { verdict: { type: Type.STRING, enum: ["agree", "downgrade", "reject"] }, reason: { type: Type.STRING }, risks: strArr },
-  required: ["verdict", "reason", "risks"],
-};
 const TRIAGE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -392,7 +385,6 @@ const TRIAGE_SCHEMA = {
 // ───────────────────────────── guards (code, not the model) ─────────────────────────────
 const lower = (c) => LEVELS[Math.max(0, LEVELS.indexOf(c) - 1)];
 const cap = (c, max) => LEVELS[Math.min(Math.max(0, LEVELS.indexOf(c)), LEVELS.indexOf(max))];
-const STEP_DOWN = { TAKE: "WAIT", WAIT: "SKIP", SKIP: "SKIP" };
 
 export function applyGuards(d, out) {
   const notes = [];
@@ -467,41 +459,56 @@ const pickModel = (v, fallback) => {
   return v;
 };
 
+// The AI committee (ai-committee.js) around the code's guards: the data analyst and the news researcher work at the same
+// time, the trader decides with both reports, the code checks the trader's numbers (guards, plan, expected value, hard
+// stops), and only a TAKE that survives goes to the final boss for YES or NO. 3 Gemini calls, 4 for a TAKE.
+const newsOn = (opts) => opts.news !== false && env.AI_NEWS !== "0";
+export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, extraStops = () => [], opts }) {
+  const hold = d.alert?.trackedAs?.holdHours || 24;
+  const [data, news] = await Promise.all([
+    dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
+    newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts) }),
+  ]);
+  const out = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, model: opts.model });
+  const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
+  if (pc.replaced) g.notes.push("The trader's plan did not fit the levels, so the reference plan is shown.");
+  const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
+  g.notes.push(...dz.notes);
+  const extra = extraStops(d);
+  if (extra.length && dz.decision !== "SKIP") { g.notes.push(`Hard stop: ${extra.join("; ")}. No trade.`); dz.decision = "SKIP"; }
+  const pre = committeeChecks(dz.decision, { news, data });
+  g.notes.push(...pre.notes);
+  const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
+  const boss = pre.decision !== "TAKE" ? { asked: false, verdict: null, reason: `Not asked: the call was ${LABEL[pre.decision]} before the final check.` }
+    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, keyFacts: keyFacts(d),
+      trade: { symbol: d.symbol, price: d.price, alert: { tier: d.alert.tier, label: d.alert.label, trackedAs: d.alert.trackedAs, anchorProbTargetPct: d.alert.anchorProbTargetPct,
+        anchorProbStopPct: d.alert.anchorProbStopPct, costPct: d.alert.costPct }, plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
+        expectedValuePct: dz.expectedValuePct, confidence: g.confidence, codeNotes: g.notes },
+      reasoning: { checklist, probReason: out.probReason, thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk,
+        invalidation: out.invalidation, hardStopsNamed: out.hardStops } }) };
+  const fin = bossCall(pre.decision, boss);
+  g.notes.push(...fin.notes);
+  if (fin.decision !== "TAKE" && g.decision === "TAKE") g.confidence = lower(g.confidence);
+  return {
+    decision: fin.decision, final: fin.final, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
+    hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : []), ...(out.hardStops || [])])], checklist,
+    headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
+    plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
+    committee: { data, news, trader: { decision: out.decision, model: opts.model }, boss },
+  };
+}
+const committeeMeta = (opts, c, t0) => ({ model: opts.model, dataModel: MODELS.analyst, newsModel: c.committee.news.off ? null : MODELS.analyst,
+  bossModel: c.committee.boss.asked ? opts.reviewModel || MODELS.reviewer : null, calls: 2 + (c.committee.news.off || c.committee.news.cached ? 0 : 1) + (c.committee.boss.asked ? 1 : 0),
+  durationMs: Date.now() - t0, at: Date.now(), cached: false });
+
 async function analyzeOne(ai, symbol, opts) {
   const t0 = Date.now();
   const d = await buildDossier(symbol, opts.tier || null);
-  const res = await generate(ai, {
-    model: opts.model, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nWork through the steps, then decide: TAKE, WAIT or SKIP (no trade).`,
-    config: { systemInstruction: ANALYST_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: DECISION_SCHEMA },
-  });
-  const out = jsonFrom(res, "Analyst");
-  let review = null;
-  if (opts.deep) {
-    try {
-      review = jsonFrom(await generate(ai, {
-        model: opts.reviewModel, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nTRADER'S CALL (JSON)\n${JSON.stringify(out)}\n\nReview it.`,
-        config: { systemInstruction: REVIEWER_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: REVIEW_SCHEMA },
-      }), "Reviewer");
-    } catch (e) { review = { verdict: "unavailable", reason: e.message, risks: [] }; }
-  }
-  const analystDecision = out.decision;
-  if (review?.verdict === "downgrade") out.decision = STEP_DOWN[out.decision] || "SKIP";
-  if (review?.verdict === "reject") out.decision = "SKIP";
-  const g = applyGuards(d, out);
-  if (out.decision !== analystDecision) g.notes.unshift(`Risk review (${review.verdict}): ${analystDecision} became ${out.decision}.`);
-  const pc = checkPlan(d, out.plan);
-  if (pc.replaced) g.notes.push("The model's plan did not fit the levels, so the screener's reference plan is shown.");
-  const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
-  g.notes.push(...dz.notes);
-  if (dz.decision !== "TAKE" && g.decision === "TAKE") g.confidence = lower(g.confidence);
-  return {
-    symbol, decision: dz.decision, modelDecision: analystDecision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
-    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
-    hardStops: [...new Set([...(dz.hardStops || []), ...(out.hardStops || [])])], checklist: Array.isArray(out.checklist) ? out.checklist.slice(0, 12) : [],
-    headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
-    plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes, review,
-    dossier: d, meta: { model: opts.model, reviewModel: opts.deep ? opts.reviewModel : null, durationMs: Date.now() - t0, at: Date.now(), cached: false },
-  };
+  const base = symbol.replace(/USDT$/, ""), info = assetInfo(base);
+  const c = await runCommittee(ai, d, { desk: "spot", rules: RULES, identity: { symbol: base, name: info?.name || null }, opts,
+    keyFacts: (x) => ({ ...compact(x), atrPct: x.chart.atrPct, levels: x.levels, market: x.market, matchingGroups: x.livePerformance?.matchingGroups }) });
+  return { symbol, ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
 }
 
 // The important fields only, for triaging many coins in one call.
@@ -572,22 +579,39 @@ const telegram = (text, opts = { kind: "ai", force: true }) => sendTelegram(text
 export const LABEL = { TAKE: "TAKE", WAIT: "WAIT", SKIP: "NO TRADE" };
 const ICON = { TAKE: "🟢", WAIT: "🟡", SKIP: "🔴" };
 export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
-  x.headline,
+  x.headline, x.committee ? tgCommittee(x) : null,
   `Chance: ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct >= 0 ? "+" : ""}${x.expectedValuePct}% per trade · ${x.confidence} confidence · setup ${x.setupScore}/10`,
   x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk} | hold ${x.plan.holdHours}h` : null,
   x.decision === "WAIT" && x.waitFor ? `Trigger: ${x.waitFor}` : null,
   x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
+  x.committee?.news?.available && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
-// Automatic review of a new screener alert (called by server.js): one analysis with the default model, a short summary
-// saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
-export async function reviewAlert(ai, symbol, tier = null) {
-  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, deep: false, tier: tier === "ignition" ? "confirmed" : tier };
-  const out = await cached(`one:${symbol}:${opts.model}:-:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
-  const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
-  return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
+// One line on how each member voted: data quality, news risk, the trader's call, the final boss.
+const tgCommittee = (x) => {
+  const { data, news, trader, boss } = x.committee;
+  return [`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
+    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, `trader ${LABEL[trader?.decision] || "?"}`,
+    `boss ${boss?.asked ? (boss.verdict || "no answer") : "not needed"}`].join(" · ") + (boss?.asked && boss.verdict === "NO" ? `\nBoss: ${boss.reason}` : "");
+};
+
+// What is saved with an alert after its automatic review: the call, the numbers and how each committee member voted.
+const reviewSummary = (out, tg) => {
+  const c = out.committee || {};
+  return { decision: out.decision, final: out.final, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
+    committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? c.news.riskLevel : null, newsHardStop: !!c.news?.hardStop,
+      trader: c.trader?.decision || null, boss: c.boss?.asked ? c.boss.verdict : null, bossReason: c.boss?.asked ? c.boss.reason : null },
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
+};
+
+// Automatic review of a new screener alert (called by server.js): the full committee with the default models, a short
+// summary saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
+export async function reviewAlert(ai, symbol, tier = null) {
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, tier: tier === "ignition" ? "confirmed" : tier };
+  const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:n:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
+  const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
+  return reviewSummary(out, tg);
 }
 
 // ───────────────────────────── Binance Alpha tokens ─────────────────────────────
@@ -605,8 +629,8 @@ You decide whether to buy one Binance Alpha token RIGHT NOW: an early on-chain t
 Alpha, with a thin DEX pool. Long only, no leverage. The default answer is SKIP (no trade): most Alpha volume ignitions
 fade, pools are thin (a market order moves the price) and tokens can be delisted.
 
-Use ONLY the DOSSIER and quote its numbers exactly. Never invent prices, levels, news or data. null means unknown, and
-unknown is not good news. There is no order book and no futures data for these tokens.
+Use ONLY the DOSSIER (and your colleagues' reports when you have them) and quote its numbers exactly. Never invent
+prices, levels, news or data. null means unknown, and unknown is not good news. There is no order book and no futures data for these tokens.
 
 Work through these steps in order and show them in your answer:
 1. HARD STOPS. If any one applies, the answer is SKIP: already up more than 30% in 24 hours (screener.moved); BTC down
@@ -625,7 +649,6 @@ Work through these steps in order and show them in your answer:
 6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs.
    Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
 Be concise and concrete.`.trim();
-const ALPHA_SYSTEM = `You are a disciplined crypto trader and risk manager reviewing one early on-chain token.\n\n${ALPHA_RULES}`;
 
 const alertMatching = (a) => { try { return a ? alphaMatchingFor(a) : []; } catch { return []; } };
 async function alphaCandles(id, interval, limit, quote) {
@@ -671,7 +694,7 @@ export async function buildAlphaDossier(key, alert = null) {
     dataQuality: { demo: false, notes: [alert ? `Reviewed with the numbers at alert time (${new Date(alert.t).toISOString()}); candles are fresh.` : "Manual check with the latest scan."] },
     screener: { state: alert ? "ignited" : tok?.state || "quiet", tier: tier ? t : null, moved, movedWhy: moved ? [`up ${f.chg24}% in 24 hours`] : [], stillNeeds: alert ? [] : (tok?.fails || []).slice(0, 4) },
     alpha: {
-      token: { alphaId: id, symbol: token.symbol, name: token.name, chain: token.chain, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
+      token: { alphaId: id, symbol: token.symbol, name: token.name, chain: token.chain, contract: token.contract || null, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
         circulatingPct: token.circPct, daysOnAlpha: token.ageDays, volume24hUsd: token.vol24 },
       signal: { volumeVsNormal: [f.r1, f.r2], usdPer5m: [f.usd1, f.usd2], tradesPer5m: [f.trades1, f.trades2], move10mPct: f.move10, change1hPct: f.chg1h, change24hPct: f.chg24, volume24hUsd: f.qv24 },
       dex: dex ? { buys5m: dex.m5?.buys, sells5m: dex.m5?.sells, buyers5mPct: dex.buyShare5m, buyers1hPct: dex.buyShare1h, poolLiquidityUsd: dex.liquidity, dex: dex.dex } : { available: false },
@@ -698,36 +721,19 @@ export function alphaHardStops(d) {
 }
 async function analyzeAlpha(ai, key, opts) {
   const t0 = Date.now();
-  const d = await buildAlphaDossier(key, opts.alert || null);
-  const out = jsonFrom(await generate(ai, {
-    model: opts.model, contents: `DOSSIER (JSON)\n${JSON.stringify(d)}\n\nWork through the steps, then decide: TAKE, WAIT or SKIP (no trade).`,
-    config: { systemInstruction: ALPHA_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: DECISION_SCHEMA },
-  }), "Analyst");
-  const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
-  if (pc.replaced) g.notes.push("The model's plan did not fit the levels, so the reference plan is shown.");
-  const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
-  g.notes.push(...dz.notes);
-  const extra = alphaHardStops(d);
-  if (extra.length && dz.decision !== "SKIP") { g.notes.push(`Hard stop: ${extra.join("; ")}. No trade.`); dz.decision = "SKIP"; }
-  return {
-    symbol: d.symbol, alphaId: d.alpha.token.alphaId, kind: "alpha", decision: dz.decision, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
-    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
-    hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(out.hardStops || [])])], checklist: Array.isArray(out.checklist) ? out.checklist.slice(0, 12) : [],
-    headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
-    plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes, review: null,
-    dossier: d, meta: { model: opts.model, durationMs: Date.now() - t0, at: Date.now(), cached: false },
-  };
+  const d = await buildAlphaDossier(key, opts.alert || null), t = d.alpha.token;
+  const c = await runCommittee(ai, d, { desk: "alpha", rules: ALPHA_RULES, identity: { symbol: d.symbol, name: t.name, chain: t.chain, contract: t.contract }, opts,
+    extraStops: alphaHardStops, keyFacts: (x) => ({ price: x.price, screener: x.screener, alpha: x.alpha, chart: x.chart, levels: x.levels, market: x.market, livePerformance: x.livePerformance }) });
+  return { symbol: d.symbol, alphaId: t.alphaId, kind: "alpha", ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
 }
 // Automatic review of a new Alpha alert (server.js), saved with the alert. Telegram follow-up only when Alpha alerts
 // go to Telegram and AI verdicts are switched on.
 export async function reviewAlpha(ai, alert) {
   const telegramOn = telegramWants("ai") && telegramWants(alert.tier === "confirmed" ? "alpha" : "alphaEarly");
-  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, alert }));
+  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, alert }));
   const tg = telegramOn && !out.meta.cached
     ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`), { kind: "ai" }) : null;
-  return { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
-    probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
-    telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
+  return reviewSummary(out, tg);
 }
 
 // ───────────────────────────── API ─────────────────────────────
@@ -772,8 +778,9 @@ export async function handleAiRequest(req, res, url, ai) {
     else if (url.pathname === "/api/ai/alpha" && req.method === "POST") {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI." }), true;
-      const body = await readJsonBody(req), key = String(body.key || "").slice(0, 40), model = pickModel(body.model, MODELS.analyst);
-      const out = await cached(`alpha-now:${key}:${model}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, { model }));
+      const body = await readJsonBody(req), key = String(body.key || "").slice(0, 40);
+      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false };
+      const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${newsOn(opts) ? "n" : "-"}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, opts));
       const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
       jsonResponse(res, 200, { ...out, telegram: tg });
     }
@@ -781,10 +788,10 @@ export async function handleAiRequest(req, res, url, ai) {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI trade desk." }), true;
       const body = await readJsonBody(req);
-      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), deep: body.deep === true };
+      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false };
       if (url.pathname === "/api/ai/analyze") {
         const symbol = normSymbol(body.symbol);
-        const out = await cached(`one:${symbol}:${opts.model}:${opts.deep ? opts.reviewModel : "-"}`, RESULT_TTL, body.refresh === true, () => analyzeOne(ai, symbol, opts));
+        const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${newsOn(opts) ? "n" : "-"}`, RESULT_TTL, body.refresh === true, () => analyzeOne(ai, symbol, opts));
         const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out)) : null;
         jsonResponse(res, 200, { ...out, telegram: tg });
       } else {

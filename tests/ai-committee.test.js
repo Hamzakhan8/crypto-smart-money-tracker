@@ -1,0 +1,120 @@
+// The four-member AI committee (ai-committee.js + ai-trade.js runCommittee) with a fake Gemini client: each member gets
+// its own prompt, news sources come from Google's grounding data, the code checks the trader, and only the final boss's
+// YES makes a TAKE. No network, no API key.
+import test from "node:test";
+import assert from "node:assert/strict";
+
+process.env.SCREENER_LIBRARY_ONLY = "1"; // load the screener's logic without starting it
+const cm = await import("../ai-committee.js");
+const desk = await import("../ai-trade.js");
+
+const ROLE = /^You are the (DATA ANALYST|NEWS RESEARCHER|TRADER|CHIEF RISK OFFICER)/;
+const GROUNDING = { webSearchQueries: ["ABC token news"], groundingChunks: [{ web: { uri: "https://www.binance.com/en/support/announcement/x", title: "binance.com" } }] };
+// answers: { "DATA ANALYST": {...} | Error, "NEWS RESEARCHER": ..., TRADER: ..., "CHIEF RISK OFFICER": ... }
+function fakeAi(answers) {
+  const calls = [];
+  return { calls, models: { generateContent: async (params) => {
+    const role = (String(params.config.systemInstruction).match(ROLE) || [])[1] || "?";
+    calls.push({ role, params });
+    const a = answers[role];
+    if (a instanceof Error) throw a;
+    return { text: typeof a === "string" ? a : JSON.stringify(a), candidates: [{ groundingMetadata: role === "NEWS RESEARCHER" ? GROUNDING : undefined }] };
+  } } };
+}
+const alert = desk.alertContext("confirmed");
+const dossier = (symbol = "ABCUSDT") => ({ symbol, price: 100, alert, screener: { state: "ignited", tier: "confirmed", moved: false }, dataQuality: { demo: false, notes: [] },
+  market: { btc1hPct: 0.2, btc4hPct: 0.5 }, chart: { trend4h: { state: "uptrend" }, atrPct: { "1h": 0.8 } }, levels: { roomToResistancePct: 8 },
+  marketFlow: { available: true, buyRatio5mPct: 62, netFlow5mUsd: 5000 }, orderBook: { spreadBps: 4, bands: [{ withinPct: 1, bidUsd: 90_000, askUsd: 70_000 }] },
+  referencePlan: { entryZone: [99.8, 100], stops: { screenerRule: 97 }, targets: { screenerRule: 106, nearResistance: 104 } } });
+const DATA = { dataQuality: { rating: "good", issues: [] }, areas: [{ area: "buying", reading: "supports", evidence: ["marketFlow.buyRatio5mPct = 62"], note: "buyers in control" }],
+  conflicts: [], redFlags: [], keyNumbers: ["marketFlow.buyRatio5mPct = 62: buyers in control"], summary: "Clean ignition with buyers in control." };
+const NEWS = { summary: "No relevant news.", overall: "none", riskLevel: "none", hardStop: false, hardStopReason: "", items: [], upcoming: [] };
+const trader = (decision) => ({ decision, hardStops: [], checklist: [{ item: "news", status: "pass", evidence: "no relevant news found" }], probTargetPct: 40, probStopPct: 30,
+  probReason: "volume and buyers", confidence: "high", setupScore: 8, headline: "Clean breakout", thesis: "t", bullishPoints: ["b"], bearishPoints: ["r"],
+  plan: { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 106, holdHours: 12 }, waitFor: decision === "WAIT" ? "5m close above 101 within 30 minutes" : "", invalidation: "below 97", keyRisk: "BTC" });
+const BOSS_YES = { verdict: "YES", reason: "All six tests pass.", biggestRisk: "BTC turns", mustBeTrue: "exit if buyers drop under 50%", checks: [{ test: "stop", pass: true, note: "3.7x ATR" }] };
+const run = (ai, d = dossier(), opts = {}) => {
+  cm._test.newsCache.clear();
+  return desk.runCommittee(ai, d, { desk: "spot", rules: "RULES: decide carefully.", identity: { symbol: d.symbol.replace(/USDT$/, ""), name: "Abc Protocol" },
+    keyFacts: (x) => ({ price: x.price, atrPct: x.chart.atrPct }), opts: { model: "trader-model", reviewModel: "boss-model", news: true, ...opts } });
+};
+
+test("AI committee: four members, each with its own prompt; a TAKE needs the final boss's YES", async () => {
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": "```json\n" + JSON.stringify(NEWS) + "\n```", TRADER: trader("TAKE"), "CHIEF RISK OFFICER": BOSS_YES });
+  const x = await run(ai);
+  assert.equal(x.decision, "TAKE"); assert.equal(x.final, "YES");
+  assert.deepEqual(ai.calls.map((c) => c.role).sort(), ["CHIEF RISK OFFICER", "DATA ANALYST", "NEWS RESEARCHER", "TRADER"]);
+  const by = Object.fromEntries(ai.calls.map((c) => [c.role, c.params]));
+  assert.deepEqual(by["NEWS RESEARCHER"].config.tools, [{ googleSearch: {} }]);             // the researcher searches the web
+  assert.equal(by["NEWS RESEARCHER"].config.responseSchema, undefined);                    // (search and a JSON schema do not mix)
+  assert.ok(by["DATA ANALYST"].config.responseSchema && by["CHIEF RISK OFFICER"].config.responseSchema);
+  assert.equal(by.TRADER.model, "trader-model"); assert.equal(by["CHIEF RISK OFFICER"].model, "boss-model");
+  assert.match(by.TRADER.contents, /DATA ANALYST REPORT[\s\S]*Clean ignition[\s\S]*NEWS REPORT[\s\S]*No relevant news/);
+  assert.match(by["CHIEF RISK OFFICER"].contents, /TRADE \(JSON\)[\s\S]*"expectedValuePct":[\d.]+[\s\S]*KEY FACTS/); // the boss sees the EV the code recomputed
+  assert.equal(x.committee.news.sources[0].url, GROUNDING.groundingChunks[0].web.uri);
+  assert.equal(x.committee.boss.asked, true); assert.equal(x.committee.data.dataQuality.rating, "good");
+});
+
+test("AI committee: the final boss's NO, or no answer, means no TAKE; a WAIT never reaches the boss", async () => {
+  const no = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("TAKE"),
+    "CHIEF RISK OFFICER": { ...BOSS_YES, verdict: "NO", reason: "The stop sits inside normal noise." } }));
+  assert.equal(no.decision, "SKIP"); assert.equal(no.final, "NO"); assert.equal(no.modelDecision, "TAKE");
+  assert.ok(no.guardNotes.some((n) => /Final boss said NO: The stop sits inside normal noise/.test(n)));
+  const silent = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("TAKE"), "CHIEF RISK OFFICER": new Error("model not found") }));
+  assert.equal(silent.decision, "WAIT"); assert.equal(silent.final, "NO"); assert.equal(silent.committee.boss.available, false);
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT") });
+  const wait = await run(ai);
+  assert.equal(wait.decision, "WAIT"); assert.equal(wait.final, "NO"); assert.equal(wait.committee.boss.asked, false);
+  assert.ok(!ai.calls.some((c) => c.role === "CHIEF RISK OFFICER"));
+});
+
+test("AI committee: a confirmed bad news item is a hard stop; poor data is no TAKE; a failed member is unknown, not good", async () => {
+  const bad = { ...NEWS, overall: "negative", riskLevel: "high", hardStop: true, hardStopReason: "Binance adds ABC to the monitoring tag",
+    items: [{ date: "2026-10-28", title: "Binance monitoring tag", type: "exchange", impact: "negative", severity: "high", pricedIn: "no", source: "Binance" }] };
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": bad, TRADER: trader("TAKE") });
+  const x = await run(ai);
+  assert.equal(x.decision, "SKIP"); assert.ok(x.hardStops.some((h) => /monitoring tag/.test(h)));
+  assert.ok(!ai.calls.some((c) => c.role === "CHIEF RISK OFFICER"));
+  const poor = await run(fakeAi({ "DATA ANALYST": { ...DATA, dataQuality: { rating: "poor", issues: [{ field: "marketFlow", problem: "missing" }] } }, "NEWS RESEARCHER": NEWS, TRADER: trader("TAKE") }));
+  assert.equal(poor.decision, "SKIP"); assert.ok(poor.guardNotes.some((n) => /rated the data poor/.test(n)));
+  // the analyst fails and news is switched off: the trader still decides, and is told both are unknown
+  const ai2 = fakeAi({ "DATA ANALYST": new Error("quota"), TRADER: trader("WAIT") });
+  const y = await run(ai2, dossier("XYZUSDT"), { news: false });
+  assert.equal(y.decision, "WAIT"); assert.equal(y.committee.data.available, false); assert.equal(y.committee.news.off, true);
+  assert.match(ai2.calls.find((c) => c.role === "TRADER").params.contents, /DATA ANALYST REPORT \(JSON\)\n\{"available":false,"note":"quota"\}/);
+  assert.ok(!ai2.calls.some((c) => c.role === "NEWS RESEARCHER"));
+});
+
+test("AI committee: news report is cleaned; a hard stop counts only when a search backs it; news is cached per coin", async () => {
+  const chunks = { webSearchQueries: ["q"], groundingChunks: [{ web: { uri: "https://a.com/x", title: "A" } }, { web: { uri: "https://a.com/x", title: "A" } }, { web: { uri: "https://b.com", title: "B" } }] };
+  const n = cm.cleanNews(JSON.stringify({ ...NEWS, hardStop: true, hardStopReason: "exploit", items: [{ date: "2026-10-28T10:00", title: "t", impact: "awful", severity: "huge", pricedIn: "maybe" }] }), chunks);
+  assert.equal(n.available, true); assert.equal(n.sources.length, 2); assert.equal(n.hardStop, true);
+  assert.deepEqual([n.items[0].date, n.items[0].impact, n.items[0].severity, n.items[0].pricedIn], ["2026-10-28", "neutral", "low", "unclear"]);
+  const unbacked = cm.cleanNews(JSON.stringify({ hardStop: true, riskLevel: "extreme" }), {});
+  assert.equal(unbacked.hardStop, false); assert.equal(unbacked.unverifiedHardStop, true); assert.equal(unbacked.riskLevel, "none");
+  assert.equal(cm.cleanNews('Report: {"summary":"ok","overall":"none","riskLevel":"low","hardStop":false,"items":[]} end.', chunks).riskLevel, "low");
+  assert.equal(cm.cleanNews("Sorry, I could not search.", null).available, false);
+  cm._test.newsCache.clear();
+  const ai = fakeAi({ "NEWS RESEARCHER": NEWS });
+  const id = { symbol: "QQQ", name: "Q coin" };
+  await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m" });
+  const again = await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m" });
+  assert.equal(again.cached, true); assert.equal(ai.calls.length, 1);
+  assert.equal((await cm.newsResearch(fakeAi({ "NEWS RESEARCHER": new Error("down") }), { identity: { symbol: "ZZZ" }, holdHours: 12, model: "m" })).available, false);
+});
+
+test("AI committee: prompts name the coin, the time window and each member's job; Telegram shows the votes", () => {
+  const np = cm.newsResearcherPrompt({ symbol: "ABC", name: "Abc Protocol", chain: "BSC", contract: "0xabc" }, 168, new Date("2026-10-29T12:00:00Z"));
+  assert.match(np, /Today is 2026-10-29 12:00 UTC/); assert.match(np, /BUYING ABC \(Abc Protocol\) on BSC, contract 0xabc and holding it for up to 168 hours/);
+  assert.match(np, /no relevant news" is a valid/);
+  assert.match(cm.dataAnalystPrompt(cm.DESKS.alpha), /You do NOT decide[\s\S]*DEX buying/);
+  assert.match(cm.traderPrompt("spot", "MY RULES"), /MY RULES[\s\S]*Add a checklist item "news"/);
+  assert.match(cm.bossPrompt("spot"), /When in doubt, NO[\s\S]*YES only if all six pass/);
+  const x = { symbol: "ABCUSDT", decision: "SKIP", final: "NO", headline: "h", probTargetPct: 40, probStopPct: 30, expectedValuePct: 1.2, confidence: "medium", setupScore: 7,
+    plan: { entryLow: 1, entryHigh: 1.01, stop: 0.97, stopPct: -3, target1: 1.06, target1Pct: 6, rewardRisk: 2, holdHours: 12 }, hardStops: [], keyRisk: "k",
+    committee: { data: { available: true, dataQuality: { rating: "good" } }, news: { available: true, riskLevel: "low", summary: "Listing on Coinbase next week.", items: [{}] },
+      trader: { decision: "TAKE" }, boss: { asked: true, available: true, verdict: "NO", reason: "Target beyond the 7-day high." } } };
+  const t = desk.tgSingle(x);
+  assert.match(t, /Final: NO · data good · news low risk · trader TAKE · boss NO\nBoss: Target beyond the 7-day high\./);
+  assert.match(t, /News: Listing on Coinbase next week\./);
+});

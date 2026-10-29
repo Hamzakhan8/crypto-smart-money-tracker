@@ -42,7 +42,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
 | **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
-| **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
+| **AI desk** | http://localhost:3000/ai | A committee of four AI members (data analyst, news researcher, trader, final boss) answers **YES / NO** (TAKE / WAIT / NO TRADE) with entry, stop, targets and expected value |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
 **Section tags:** every page has a row of tags under its title (for example *Live watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
@@ -181,6 +181,8 @@ Ignition alerts are rare (often a few a day across all coins), so a quiet phone 
 
 Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works, and every new ignition alert gets an automatic AI verdict. To control cost: `AI_REVIEWS_PER_HOUR=12` (the default) caps automatic reviews; `AI_AUTO_REVIEW=0` turns them off.
 
+**Cost per analysis:** the AI committee makes 3 Gemini requests (data analyst, news researcher, trader), and a 4th with the stronger model only when the trader says TAKE. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. `AI_NEWS=0` switches the news search off everywhere (2-3 requests per analysis).
+
 ---
 
 ## 5. A simple daily routine
@@ -243,7 +245,7 @@ Binance Alpha tokens are the early on-chain tokens in Binance Wallet (for exampl
 
 Each row shows volume vs normal, price change, DEX buyers vs sellers (from DexScreener, because Binance's Alpha data has no buy/sell side), liquidity, holders, market cap and links. Every alert is tracked: +40% before -10% within 7 days, after 1% costs.
 
-> Alpha pools are thin (often a few hundred thousand dollars), so a market order moves the price, and tokens can be delisted. The AI desk does not analyse Alpha tokens.
+> Alpha pools are thin (often a few hundred thousand dollars), so a market order moves the price, and tokens can be delisted. Press **Ask AI** on a row for the AI committee's YES / NO (see [AI trade desk](#67-ai-trade-desk)).
 
 ### 6.4 Early 2x movers
 
@@ -318,17 +320,29 @@ The first load downloads daily candles for every narrative coin (a few minutes);
 
 Lists the coins the screener flags as igniting or heating up.
 
-- **Analyze:** Gemini gets everything that matters about the coin (the signal, 15m / 1h / 4h charts, support and resistance, order book, futures positioning, Market Flow Radar numbers, whale and DEX flows, BTC, and how often this kind of alert won before) and answers **TAKE, WAIT or NO TRADE** with entry, stop, targets, reward:risk and the reasons for and against.
-- **Analyze all:** ranks every igniting coin in one request. **Data only** shows the facts for free, without calling Gemini. **Risk review** adds a second model to double-check.
-- **Automatic review:** every new ignition alert, and every confirmed Alpha alert, gets one AI verdict saved with the alert (verdicts also go to Telegram), so after a few weeks the performance panels show whether the AI's calls really do better.
+- **Analyze:** the code gathers everything that matters about the coin (the signal, 15m / 1h / 4h charts, support and resistance, order book, futures positioning, Market Flow Radar numbers, whale and DEX flows, BTC, and how often this kind of alert won before) and hands it to the **AI committee**, which answers **YES or NO** (TAKE, WAIT or NO TRADE) with entry, stop, targets, reward:risk and the reasons for and against.
+- **Analyze all:** ranks every igniting coin in one quick request. **Data only** shows the facts for free, without calling Gemini. **News search** (on by default) lets the news researcher search the web.
+- **Automatic review:** every new ignition alert, and every confirmed Alpha alert, gets the full committee's verdict saved with the alert (verdicts also go to Telegram, with each member's vote), so after a few weeks the performance panels show whether the AI's calls really do better.
 - **Alpha tokens:** press **Ask AI** on any row of the Alpha tab. The AI gets Alpha's own 1h / 4h candles, DexScreener buyers vs sellers, pool liquidity, holders and supply, with Alpha's own rule (+40% / -10% / 7 days, 1% costs) and its replay and live results. Extra hard stops: DEX sellers in control, pool under $50k.
 - **It learns from your live data:** the AI is shown how past alerts with the same conditions did (BTC trend, alt season, time of day, buyers…; groups with 10+ resolved alerts), so a condition that keeps losing lowers its chances.
 
-**How the AI decides:** no trade is the default.
-1. **Hard stops** (any one means no trade): the coin already ran, BTC down more than 1% in 1 hour or 2% in 4 hours, aggressive selling now, a wide spread or a thin order book.
-2. **Checklist:** trigger, buying, trend, room to resistance, liquidity, futures and whales, market breadth, past results.
+**The AI committee:** four AI members, each with one job and its own carefully written instructions (`ai-committee.js`). The page shows one card per member.
+
+| # | Member | Model | Job |
+|---|---|---|---|
+| 1 | **Data analyst** | `GEMINI_ANALYST_MODEL` | Reads the data only. Rates its quality (good / partial / poor), lists the evidence for and against in each area with the exact numbers, conflicts (e.g. strong 5-minute buying inside a 4h downtrend), red flags and the 3-5 numbers that matter most. It does not decide. |
+| 2 | **News researcher** | `GEMINI_ANALYST_MODEL` + Google Search | Searches the web for the last 7 days and the next 14: delistings and Binance monitoring tags, deposit / withdrawal halts, hacks, token unlocks, listings, lawsuits, launches. Checks that each item is about this coin, says whether it is already priced in, and rates the risk. The sources come from Google's own search data, so the links are real. "No relevant news" is a normal answer. |
+| 3 | **Trader** | the model you pick | Decides TAKE / WAIT / NO TRADE with both reports, following the rules below. Must answer every red flag, and adds a "news" line to its checklist. |
+| 4 | **Final boss** | `GEMINI_REVIEW_MODEL` (stronger) | Asked only when the trade is a TAKE after the code checks. Runs six tests (data, red flags, news, chances, stop distance vs normal noise, market) and says **YES** only if all pass. "When in doubt, NO." |
+
+Members 1 and 2 work at the same time. If the data analyst or the news search fails, the trader is told that part is unknown (never "fine"). If the final boss cannot answer, there is no TAKE.
+
+**How the trader decides:** no trade is the default.
+1. **Hard stops** (any one means no trade): the coin already ran, BTC down more than 1% in 1 hour or 2% in 4 hours, aggressive selling now, a wide spread or a thin order book, or a confirmed bad news item (delisting or monitoring tag, hack, deposit / withdrawal halt, an unlock above 2% of the supply during the trade).
+2. **Checklist:** trigger, buying, trend, room to resistance, liquidity, futures and whales, market breadth, past results, news.
 3. **Chances** of hitting the target and the stop, starting from the real base rates and moved by at most 15 points.
 4. **Expected value** after costs. The code recomputes it: TAKE needs +0.5% or more per trade and reward:risk of 1.5+.
+5. **Final YES / NO:** a TAKE that passes the code goes to the final boss. YES = take it as planned; NO = no trade, with the reason and what would have to change.
 
 Long only, no leverage, risk at most 1% of your account per trade.
 
@@ -483,8 +497,9 @@ All settings go in `.env` and are optional. Restart the app after a change.
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | — | See [Set up Telegram](#3-set-up-telegram-alerts) |
 | `GEMINI_API_KEY` | — | See [Set up the AI](#4-set-up-the-ai-gemini) |
-| `GEMINI_ANALYST_MODEL` | `gemini-3.5-flash` | Model for analyses |
-| `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the risk review |
+| `GEMINI_ANALYST_MODEL` | `gemini-3.5-flash` | Model for analyses: the AI desk's data analyst, news researcher and (by default) the trader |
+| `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the final boss (AI desk) and the risk review (Market Flow brief) |
+| `AI_NEWS` | on | `0` = no web news search by the AI committee |
 | `AI_AUTO_REVIEW` | on | `0` = no automatic verdict on new alerts |
 | `AI_REVIEWS_PER_HOUR` | `12` | Cost cap for automatic verdicts |
 | `AI_REVIEW_TELEGRAM` | on | `0` = AI verdicts off on Telegram by default |
@@ -689,7 +704,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked, when the final boss can say no, news hard stops), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -707,7 +722,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
-| `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
+| `ai-trade.js`, `ai-committee.js`, `agent.js` | AI desk (data, the four-member committee's prompts, code checks) and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |

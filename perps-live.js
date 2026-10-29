@@ -21,7 +21,7 @@ const r2 = (v, d = 2) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
 const sideOf = (dir) => (dir > 0 ? "long" : "short");
 const fmtPx = (v) => (!(v > 0) ? "—" : v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(4) : v.toPrecision(4));
 
-export function createPerps({ fetchJson, base = "https://fapi.binance.com", stateFile = null, reportFile = null, sendTelegram = null,
+export function createPerps({ fetchJson, base = "https://fapi.binance.com", stateFile = null, reportFile = null, bundledReport = null, sendTelegram = null,
   wantTelegram = () => false, telegramConfigured = () => false, now = () => Date.now(), top = 50, costPct = 0.08, demo = false }) {
   base = base.replace(/\/$/, "");
   const st = { status: demo ? "demo" : "starting", error: null, updatedAt: null, nextScanAt: null, scanMs: null, universeAt: null, btc: null, excluded: { tradfi: [], other: 0 }, rows: [], lastBar: null };
@@ -34,18 +34,23 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
   async function pool(items, n, fn) { let i = 0; await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); })); }
 
   // ───────────── the tested record of each setup (perps_report.json) ─────────────
+  // Your own `node perps-backtest.js` report, else the copy shipped in data/ (so verdicts work from the first start)
   async function loadReport() {
-    if (!reportFile) return;
+    for (const [file, own] of [[reportFile, true], [bundledReport, false]]) if (file && await loadReportFrom(file, own)) return;
+    report = null;
+  }
+  async function loadReportFrom(file, own) {
     try {
-      const r = JSON.parse(await readFile(reportFile, "utf8"));
+      const r = JSON.parse(await readFile(file, "utf8"));
       const recent = new Map();
       for (const t of r.trades || []) { const k = `${t[0]}|${t[1]}`; if (!recent.has(k)) recent.set(k, []); recent.get(k).push(t); }
-      report = { generatedAt: r.generatedAt, from: r.from, to: r.to, split: r.split, top: r.top, coins: r.coins, costPctPerSide: r.costPctPerSide,
+      report = { own, generatedAt: r.generatedAt, from: r.from, to: r.to, split: r.split, top: r.top, coins: r.coins, costPctPerSide: r.costPctPerSide,
         setups: r.setups, exits: r.exits, combined: r.combined || null,
         results: Object.fromEntries((r.results || []).map((x) => [`${x.setup}|${x.side === "long" ? 1 : -1}`, { ...x, rules: undefined,
           rulesBrief: Object.fromEntries(Object.entries(x.rules || {}).map(([k, v]) => [k, { avgR: v.all.avgR, olderR: v.older.avgR, newerR: v.newer.avgR, verdict: v.verdict }])),
           last: (recent.get(`${x.setup}|${x.side === "long" ? 1 : -1}`) || []).sort((a, b) => b[3] - a[3]).slice(0, 8) }])) };
-    } catch { report = null; }
+      return true;
+    } catch { return false; }
   }
   const recordOf = (setup, dir) => report?.results?.[`${setup}|${dir}`] || null;
 

@@ -246,6 +246,7 @@ const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
 // Perps tab: swing setups on Binance USDⓈ-M perpetuals, the ones tested by perps-backtest.js (perps-live.js)
 const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "perps_state.demo.json" : "perps_state.json"), reportFile: path.join(here, "perps_report.json"),
+  bundledReport: path.join(here, "data", "perps-report.json"), // shipped results, until you run perps-backtest.js yourself
   sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured,
   top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
 });

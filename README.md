@@ -362,7 +362,7 @@ The top of the page shows your closed trades, win rate, total profit or loss in 
 
 Swing trades (held up to 10 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `node perps-backtest.js` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
 
-**First, once:** run `node perps-backtest.js` in a second terminal (1-2 hours the first time). It gives every setup its tested record; until then every signal says WAIT ("no backtest report yet"). The tab reloads the report by itself; re-run it every month or so.
+**The tested record:** the app ships with the results of a full run (Dec 2021 to Sep 2026) in `data/perps-report.json`, so verdicts work from the first start. Run `node perps-backtest.js` yourself (1-2 hours the first time) to refresh them with the newest months: your own `perps_report.json` then replaces the shipped copy automatically. Re-run it every month or so.
 
 - **Signals:** after every 4h close (00, 04, 08, 12, 16, 20 UTC), the 50 most liquid perpetuals (by 30-day volume, without stablecoins or perpetuals on stocks, ETFs and commodities) are checked for the two setups worth watching:
   - **20-day breakout / breakdown on volume**, long and short;

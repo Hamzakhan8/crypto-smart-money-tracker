@@ -32,6 +32,36 @@ test("classifyIgnition: quality gates turn it into heating with reasons", () => 
   }
 });
 
+test("classifyIgnition v7: no ignition right under a recent high or below the 20-day average", () => {
+  const ok = { ...igniting(), distTo12hHigh: -2.5, distTo24hHigh: -4, aboveSma20d: true };
+  assert.equal(sc.classifyIgnition(ok, 2, -0.02).state, "ignited");
+  for (const [patch, re] of [[{ distTo12hHigh: -0.4 }, /break of its 12h high \(0\.4% above\)/], [{ distTo12hHigh: 0 }, /12h high/],
+    [{ distTo24hHigh: -1.2 }, /break of its 24h high/], [{ aboveSma20d: false }, /20-day average/]]) {
+    const r = sc.classifyIgnition({ ...ok, ...patch }, 2, -0.02);
+    assert.equal(r.state, "heating", JSON.stringify(patch));
+    assert.ok(r.miss.some((m) => re.test(m)), `${JSON.stringify(patch)} -> ${r.miss}`);
+  }
+  // a breakout above the high, plenty of room, or unknown data does not block
+  for (const patch of [{ distTo12hHigh: 0.3, distTo24hHigh: 0.3 }, { distTo12hHigh: -1, distTo24hHigh: -1.5 }, { distTo12hHigh: null, distTo24hHigh: null, aboveSma20d: null }])
+    assert.equal(sc.classifyIgnition({ ...ok, ...patch }, 2, -0.02).state, "ignited", JSON.stringify(patch));
+  // the checks can be switched off (SCREENER_ROOM_12H=0, SCREENER_ROOM_24H=0, SCREENER_DAILY_TREND=0)
+  const off = { ...sc.DEFAULT_IGNITION, room12h: 0, room24h: 0, dailyTrend: false };
+  assert.equal(sc.classifyIgnition({ ...ok, distTo12hHigh: -0.2, distTo24hHigh: -0.2, aboveSma20d: false }, 2, -0.02, off).state, "ignited");
+});
+
+test("fiveMinFeatures: distance to the prior 12h and 24h highs (last 15 minutes left out)", () => {
+  const n = 289, k = { t: [], open: [], high: [], low: [], close: [], qv: [], trades: [], buy: [] };
+  for (let i = 0; i < n; i++) {
+    const px = 100;
+    k.t.push(1.7e12 + i * 3e5); k.open.push(px); k.close.push(px); k.low.push(px - 0.5); k.qv.push(100); k.trades.push(10); k.buy.push(50);
+    k.high.push(i === 10 ? 110 : i === 200 ? 102 : i >= n - 3 ? 120 : px + 0.5); // 24h high 110, 12h high 102, a fresh spike in the last 15 min
+  }
+  const f = sc.fiveMinFeatures(k, n - 1, k.t[n - 1] + 3e5, () => 100);
+  assert.ok(Math.abs(f.distTo12hHigh - (100 / 102 - 1) * 100) < 1e-9, f.distTo12hHigh);
+  assert.ok(Math.abs(f.distTo24hHigh - (100 / 110 - 1) * 100) < 1e-9, f.distTo24hHigh);
+  assert.equal(sc.fiveMinFeatures(k, 200, k.t[200] + 3e5, () => 100).distTo24hHigh, null); // not enough history
+});
+
 test("classifyIgnition: tokens that already ran never ignite; slow tokens are skipped", () => {
   assert.equal(sc.classifyIgnition(igniting(), 15, 0).state, "ran");
   assert.equal(sc.classifyIgnition({ ...igniting(), ret1h: 9 }, 2, 0).state, "ran");

@@ -4,6 +4,8 @@
 //   node screener-backtest.js --days 45 --symbols 120
 //   node screener-backtest.js --list SOL,SUI,LINK,INJ --days 20
 //   node screener-backtest.js --refresh            # ignore the download cache
+//   node screener-backtest.js --end 2026-10-29T12  # a fixed window (reproduce an earlier report)
+//   BINANCE_SPOT_URL=https://data-api.binance.vision node screener-backtest.js   # if api.binance.com is blocked
 //
 // It imports the live signal functions from screener.js (without starting the server), so it replays the same rules.
 // For every 5 minutes of history it rebuilds each token's 15m and 1h volume vs its own hour-of-day normal, the 5m
@@ -100,12 +102,14 @@ async function pickSymbols() {
   const t = await fetchJson(`${BN}/api/v3/ticker/24hr`, { timeoutMs: 20_000 });
   return ["BTC", ...t.filter((x) => /USDT$/.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol))
     .map((x) => [x.symbol.slice(0, -4), Number(x.quoteVolume)])
-    .filter(([b, v]) => b !== "BTC" && !STABLES.has(b) && !NONCRYPTO.has(b) && !skip.has(b) && v >= CONFIG.minQuoteVolume)
+    // today's volume only picks the list; each signal still needs $5M+ 24h volume at that moment (as live)
+    .filter(([b, v]) => b !== "BTC" && !STABLES.has(b) && !NONCRYPTO.has(b) && !skip.has(b) && v >= CONFIG.minQuoteVolume * 0.4)
     .sort((a, b) => b[1] - a[1]).slice(0, TOPN - 1).map(([b]) => b)];
 }
 
 // ───────────────────────────── replay ─────────────────────────────
-const end = Math.floor(Date.now() / HOUR) * HOUR;    // closed candles only; reruns within the hour reuse the cache
+const endArg = argv.includes("--end") ? Date.parse(argv[argv.indexOf("--end") + 1] + ":00:00Z") : NaN;
+const end = Math.floor((Number.isFinite(endArg) ? Math.min(endArg, Date.now()) : Date.now()) / HOUR) * HOUR; // closed candles only; reruns within the hour reuse the cache
 const sigStart = end - DAYS * DAY, start = sigStart - WARM_DAYS * DAY;
 const N = (end - start) / STEP, H = N / 12;
 const tGrid = Float64Array.from({ length: N }, (_, i) => start + i * STEP);
@@ -185,12 +189,13 @@ function replay(series) {
       const ret15 = ret(s, i, 3);
       if (!(ret15 >= -0.5 && ret15 <= CONFIG.maxMove15m)) continue;
       const prof = s.prof[d], close = s.k.close[i], qv24 = qvSum(s, i - 287, i), change24h = ret(s, i, 288);
+      if (qv24 < CONFIG.minQuoteVolume) continue; // as live: only coins with enough 24h volume at that moment
       const tm = techMetrics(s.days[d], close, qv24);
       if (!tm) continue;
       const expect5 = (endMs) => prof.hours[Math.floor((endMs - STEP) / HOUR) % 24] / 12;
       const f = {
         rvol15: s.r15, ret15, rvol1h: qvSum(s, i - 11, i) / expSum(prof, i - 11, i), ret1h: ret(s, i, 12), spreadBps: null,
-        marketWide, rs15: ret15 - btc15, btc1h, btc4h, range6h: prof.range6h, seasonal: true, rsiD: tm.rsi,
+        marketWide, rs15: ret15 - btc15, btc1h, btc4h, range6h: prof.range6h, seasonal: true, rsiD: tm.rsi, aboveSma20d: tm.aboveSma,
         ...fiveMinFeatures(s.k, i, tGrid[i] + STEP, expect5), early: earlyFeatures(s.k, i, expect5),
       };
       const ctx = scoreToken(tm, null, null, null, null, qv24, change24h).score;
@@ -248,13 +253,17 @@ async function main() {
 
   // 1) Old vs new logic, whole period, live exit rule
   const ignited = (c) => classifyIgnition(c.f, c.change24h, c.distToHigh).state === "ignited";
+  const V6 = { ...DEFAULT_IGNITION, room12h: 0, room24h: 0, dailyTrend: false }; // before the v7 room and 20-day checks
+  const ignitedV6 = (c) => classifyIgnition(c.f, c.change24h, c.distToHigh, V6).state === "ignited";
   const old = select(cands, v4Ignited);
   const earlyTier = select(cands, ignited);
   const v4 = select(cands, (c) => ignited(c) && c.ig >= CONFIG.igniteMinScore); // current confirmed tier
+  const v6Early = select(cands, ignitedV6), v6Conf = select(cands, (c) => ignitedV6(c) && c.ig >= CONFIG.igniteMinScore);
   const W1 = [40, 8, 6, 6, 6, 12];
   console.log("OLD vs NEW LOGIC (whole period, live exit rule)");
   console.log(row(["", "Signals", "Win", "Loss", "Flat", "Avg net"], W1));
-  for (const [name, ev] of [["v4 logic (before, 15m trigger)", old], [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4]]) {
+  for (const [name, ev] of [["v4 logic (before, 15m trigger)", old], ["v6 early tier (no room / 20-day checks)", v6Early], ["v6 confirmed tier", v6Conf],
+    [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4]]) {
     const s = stats(ev);
     console.log(row([name, s.n, fmtW(s), s.n ? ((s.losses / s.n) * 100).toFixed(0) + "%" : "—", s.n ? ((s.flat / s.n) * 100).toFixed(0) + "%" : "—", fmtP(s.net)], W1));
   }
@@ -328,10 +337,10 @@ async function main() {
     console.log("  No setting stayed profitable after fees on the unseen period. Do not trade this signal on its own as is;");
     console.log("  try a longer period (--days 60), more tokens (--symbols 150) or other exit rules (SCREENER_TARGET_PCT / SCREENER_STOP_PCT).");
   }
-  console.log("\nNot included: spread, funding, open interest, narratives. Universe = today's top tokens by volume, which flatters results a little.");
+  console.log("\nNot included: spread, funding, open interest, narratives. Universe = today's top tokens by volume (delisted coins are missing), which flatters results a little.");
   await writeFile(path.join(here, "backtest_report.json"), JSON.stringify({
     generatedAt: new Date().toISOString(), days: DAYS, tokens: series.map((s) => s.name), split: day(split), config: CONFIG,
-    oldVsNew: { v4: stats(old), early: stats(earlyTier), confirmed: stats(v4) },
+    oldVsNew: { v4: stats(old), v6early: stats(v6Early), v6confirmed: stats(v6Conf), early: stats(earlyTier), confirmed: stats(v4) },
     grid: results.map((r) => ({ ...r, p: { earlyRvol: r.p.earlyRvol, minBuy: r.p.minBuy, requireTrend: r.p.requireTrend, maxRsi: r.p.maxRsi } })),
     exitRules: RULES.map(([T, S], r) => ({ target: T, stop: S, ...stats(v4, r) })),
     signals: v4.map((c) => ({ token: c.s, time: new Date(c.t).toISOString(), igScore: c.ig, outcome: c.out[0].o, resultPct: +c.out[0].r.toFixed(2) })),

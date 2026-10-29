@@ -228,7 +228,7 @@ Watches every liquid Binance USDT pair and alerts when volume ignites before pri
 | **Confirmed ignition** | The same, plus an ignition score of 65+ (volume that keeps running). Usually a few minutes later | The tier worth trading |
 | **Big-move** (research) | A 5m ignition on a smaller coin ($1M-$10M daily volume) whose daily volume is already 1.5x its 20-day average. Target +40% before -10% within 7 days | A watchlist, not a proven edge |
 
-**Quality checks** (all must pass): daily RSI 65 or lower, not an exhausted spike, not the top tick of the 2-hour range, rising 4-hour trend, BTC not falling over 1 and 4 hours, tight spread, no market-wide surge. Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list never alert. Coins that already ran are marked **Already moved — do not chase**.
+**Quality checks** (all must pass): daily RSI 65 or lower, price above its 20-day average, room above (not less than 1% under its 12-hour high or 1.5% under its 24-hour high: it waits for the break), not an exhausted spike, not the top tick of the 2-hour range, rising 4-hour trend, BTC not falling over 1 and 4 hours, tight spread, no market-wide surge. Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list never alert. Coins that already ran are marked **Already moved — do not chase**.
 
 **Every alert is tracked as a trade:** take profit at +6%, stop at -3%, otherwise sell after 12 hours (big-move: +40% / -10% / 7 days), judged on 1-minute candles after 0.2% fees and 0.1% slippage. The **performance panel** shows the results per tier and per AI verdict.
 
@@ -374,6 +374,8 @@ Replays are a starting point; your live alerts are the real test. Every alert si
 | **Alert speed** | How many seconds after the 5-minute candle closed the alert fired, and where price was 1, 2 and 5 minutes later (Alpha: 5 and 15 minutes) | If price usually runs away before you can act, speed is costing you money |
 | **Is the AI helping?** | Results by AI verdict (TAKE / WAIT / NO TRADE), and whether its stated chance matches reality (when it says 30%, does it hit about 30%?) | If TAKE does not beat NO TRADE after 30+ alerts each, use the AI only as a trap detector (its hard stops) |
 
+**What your first live results changed (v7, Oct 29 2026).** In the first two days of v6, 17 quick alerts resolved: 1 hit the target, 10 hit the stop. The AI said SKIP to 7 of them and all 7 lost, mostly because price sat right under a recent high. A 90-day replay agreed: alerts less than 1% under the 12-hour high (or 1.5% under the 24-hour high) and alerts below the coin's 20-day average lost money. v7 skips both, which turned the replay's confirmed tier from -0.12% to +0.49% per trade with about 40% fewer alerts. Other ideas were tested and **not** used because they did not help in both halves of the 90 days: other targets and stops, break-even and trailing stops, 1-4 hour time exits, and holding alerts while BTC is in a downtrend. Big-move alerts no longer go out for coins on Binance's Monitoring list (all three such live alerts hit -10%). The performance panel starts counting v7 alerts from zero; switch to **All alerts** to see the older ones.
+
 Alerts are also faster now: the Ignition screener runs an extra scan 4 seconds after every 5-minute candle closes, and the Alpha scan starts 5 seconds after the close with the hottest tokens first (it used to wait 25 seconds).
 
 ### 6.9 Trade journal
@@ -427,8 +429,8 @@ Every tool was replayed on past Binance data with costs included. Short version:
 
 | Tool | Test | Result |
 |---|---|---|
-| **Ignition, confirmed** | 60 days, 47 coins, +6% / -3% / 12h, after costs | Hit target 30%, hit stop 21%, **+0.93% per trade** on average |
-| **Ignition, early** | same | Hit target 25%, **+0.55% per trade** |
+| **Ignition, confirmed** | 90 days (Aug-Oct 2026), 96 coins, each counted only while it had $5M+ daily volume (as live), +6% / -3% / 12h, after costs | Hit target 25%, hit stop 32%, **+0.49% per trade** (older half -0.35%, newer half +1.03%). Without the v7 room and 20-day checks: -0.12% |
+| **Ignition, early** | same | Hit target 26%, hit stop 36%, **+0.46% per trade** (without the v7 checks: +0.09%) |
 | **Big-move tier** | 90 days, every Binance USDT pair, +40% / -10% / 7 days | About 1 in 10 reached +40%. **+2.5% per trade** in the Aug-Sep alt rally, **-1.8%** in October |
 | **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
 | **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
@@ -542,6 +544,8 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_EARLY_RVOL` | `3` | Volume multiple for an early ignition |
 | `SCREENER_IGNITE_MIN_SCORE` | `65` | Score for a confirmed ignition |
 | `SCREENER_MAX_DAILY_RSI` | `65` | Skip coins above this daily RSI |
+| `SCREENER_ROOM_12H` / `SCREENER_ROOM_24H` | `1` / `1.5` | No ignition while price sits less than this % under its 12h / 24h high (`0` = off) |
+| `SCREENER_DAILY_TREND` | on | `0` = also alert coins below their 20-day average |
 | `SCREENER_EARLY_ALERTS` | on | `0` = only confirmed alerts |
 | `SCREENER_SETUP_ALERTS` | off | `1` = alerts for daily setups (watchlist) |
 | `SCREENER_REGIME_GATE` | off | `1` = hold ignition alerts while BTC is in a daily downtrend |

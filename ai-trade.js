@@ -43,12 +43,13 @@ const MIN = 60_000, HOUR = 3_600_000;
 const DOSSIER_TTL = 60_000, RESULT_TTL = 3 * MIN;
 const BATCH_MAX = 12;
 const LEVELS = ["low", "medium", "high"];
-// From the 60-day replay of 47 Binance crypto tokens on 5-minute candles, Aug 29 - Oct 28 2026 (screener v6 exit rule,
-// 0.2% fees + 0.1% slippage). hitTargetPct = target before stop, hitStopPct = stop first, the rest ended flat.
+// From the 90-day replay of 96 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener v7 rules, each
+// coin counted only while it had $5M+ 24h volume as live, 0.2% fees + 0.1% slippage). hitTargetPct = target before stop,
+// hitStopPct = stop first, the rest ended flat.
 const REPLAY = {
-  source: "60-day replay of 47 Binance crypto tokens on 5-minute candles, Aug 29 - Oct 28 2026 (screener-backtest.js)",
+  source: "90-day replay of 96 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener-backtest.js, v7 rules)",
   rule: `take profit +${CONFIG.targetPct}%, stop -${CONFIG.stopPct}%, else exit after ${CONFIG.outcomeHours}h; ${CONFIG.feePct}% fees + ${CONFIG.slippagePct}% slippage`,
-  confirmed: { signals: 122, hitTargetPct: 30, hitStopPct: 21, flatPct: 48, avgNetPct: 0.93 }, early: { signals: 266, hitTargetPct: 25, hitStopPct: 29, flatPct: 45, avgNetPct: 0.55 },
+  confirmed: { signals: 102, hitTargetPct: 25, hitStopPct: 32, flatPct: 43, avgNetPct: 0.49 }, early: { signals: 230, hitTargetPct: 26, hitStopPct: 36, flatPct: 38, avgNetPct: 0.46 },
 };
 const COST_PCT = (CONFIG.feePct || 0) + (CONFIG.slippagePct || 0);
 const MIN_EV_PCT = Number.isFinite(Number(env.AI_MIN_EV_PCT)) && env.AI_MIN_EV_PCT !== "" && env.AI_MIN_EV_PCT !== undefined ? Number(env.AI_MIN_EV_PCT) : 0.5;

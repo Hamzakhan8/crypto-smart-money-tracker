@@ -46,6 +46,17 @@
 //   - "Closed in profit" is reported next to "hit target", and each alert can carry an AI review (TAKE / WAIT / SKIP)
 //     so the performance panel shows whether the AI's calls actually do better.
 //
+// v7 (same trigger, two more quality checks), from the first live v6 results plus a 90-day replay (Aug 1 - Oct 29 2026,
+// 96 Binance crypto tokens, each counted only while it had $5M+ 24h volume, as live):
+//   - Live v6, Oct 27-29: 17 quick alerts resolved, 1 hit the target, 10 hit the stop. The AI said SKIP to 7 of them
+//     (all 7 lost), mostly because price sat right under a recent high. The replay agreed: alerts less than 1% under the
+//     12h high (or 1.5% under the 24h high) averaged -0.5% per trade, and alerts below the coin's 20-day average -0.5%.
+//   - New checks: room above (not just under the 12h / 24h high: wait for the break) and price above its 20-day average.
+//     Replay (screener-backtest.js --days 90 --end 2026-10-29T12), +6% / -3% / 12h after costs: confirmed -0.12% ->
+//     +0.49% per trade (older half -0.35%, newer +1.03%; v6 was worse in both), early +0.09% -> +0.46%, with about 40%
+//     fewer alerts. Exit rules, the BTC regime gate and time exits were also
+//     tested; none beat the current rule in both halves, so they are unchanged.
+//
 // Whale tracker ("Whale tracker" tab): whales.js follows every large Ethereum transfer with Arkham-style labels
 // (/api/whales), flows.js follows DEX swaps and token rotations (/api/flows). SCREENER_WHALES=0 switches both off.
 //
@@ -79,7 +90,7 @@ import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, s
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
 const LIBRARY_ONLY = env.SCREENER_LIBRARY_ONLY === "1"; // set by screener-backtest.js: export the logic, start nothing
-export const LOGIC_VERSION = 6;
+export const LOGIC_VERSION = 7;
 const HOST = env.SCREENER_HOST || env.HOST || "127.0.0.1";
 const PORT = num("SCREENER_PORT", 3001);
 const DEMO = env.DEMO === "1";
@@ -112,6 +123,9 @@ const REQUIRE_TREND = env.SCREENER_REQUIRE_TREND !== "0";       // price above a
 const MAX_EXTENSION = num("SCREENER_MAX_EXTENSION", 4);        // % max distance above the 4h average (stretched = late)
 const MAX_FADE = num("SCREENER_MAX_FADE", 1);                  // % max pullback from the last 15m high (burst fading)
 const MAX_WICK = num("SCREENER_MAX_WICK", 0.55);               // max share of the last 15m range that is upper wick (selling)
+const ROOM_12H = num("SCREENER_ROOM_12H", 1);                  // % no ignition while price sits less than this under its 12h high (resistance: wait for the break)
+const ROOM_24H = num("SCREENER_ROOM_24H", 1.5);                // % the same for the 24h high
+const DAILY_TREND = env.SCREENER_DAILY_TREND !== "0";           // price above its 20-day average
 const TARGET_PCT = num("SCREENER_TARGET_PCT", 6);              // exit / outcome tracking: win = +target% before -stop%
 const STOP_PCT = num("SCREENER_STOP_PCT", 3);
 const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 12) * 3_600_000;
@@ -170,6 +184,7 @@ export const DEFAULT_IGNITION = {
   minBuy: MIN_BUY_RATIO, minPersist: MIN_PERSIST, maxSpread: MAX_SPREAD_BPS, minRangeRatio: MIN_RANGE_RATIO, targetPct: ROOM_REF_PCT,
   btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExt: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
   earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, maxRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+  room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
 };
 export const DEFAULT_BIGMOVE = {
   minVolume: num("SCREENER_BIGMOVE_MIN_VOLUME", 1_000_000), maxVolume: num("SCREENER_BIGMOVE_MAX_VOLUME", 10_000_000), // 24h quote volume, USDT
@@ -211,6 +226,7 @@ const state = {
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+    room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
     bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
   },
   telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
@@ -451,7 +467,7 @@ export function fiveMinFeatures(k, end, nowMs, expect5) {
     nearHigh: close >= hi * 0.995,
     fadePct: hi3 > 0 && close > 0 ? (hi3 / close - 1) * 100 : 0,  // pullback from the last 15m high
     wickShare: span > 0 ? wick / span : 0,                         // share of the last 15m range that is upper wick
-    trendUp: null, extPct: null, breakout: null, distTo12hHigh: null,
+    trendUp: null, extPct: null, breakout: null, distTo12hHigh: null, distTo24hHigh: null,
   };
   if (end >= 59) { // 4h average and its slope over the last hour
     let s = 0, sp = 0;
@@ -466,6 +482,11 @@ export function fiveMinFeatures(k, end, nowMs, expect5) {
     for (let i = end - 146; i <= end - 3; i++) h12 = Math.max(h12, k.high[i]);
     out.breakout = close > h12;
     out.distTo12hHigh = (close / h12 - 1) * 100;
+  }
+  if (end >= 287) { // prior 24h high, excluding the last 15 minutes
+    let h24 = -Infinity;
+    for (let i = end - 287; i <= end - 3; i++) h24 = Math.max(h24, k.high[i]);
+    out.distTo24hHigh = (close / h24 - 1) * 100;
   }
   return out;
 }
@@ -537,7 +558,8 @@ export function scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceCh
   return { score, reasons, parts };
 }
 
-// f = fast-layer metrics (or undefined), with f.early = earlyFeatures, f.rsiD = daily RSI, f.btc4h = BTC % over 4h.
+// f = fast-layer metrics (or undefined), with f.early = earlyFeatures, f.rsiD = daily RSI, f.btc4h = BTC % over 4h,
+// f.aboveSma20d = price above its 20-day average (daily closes).
 // moved: the token has already run (hide / never alert).
 // state: ignited | heating | ran | null. miss = what a "heating" token still lacks (shown on the page).
 // slow = its typical 6h range is too small to reach the target, so it is never an ignition.
@@ -568,6 +590,11 @@ export function classifyIgnition(f, change24h, distToHigh = 0, p = DEFAULT_IGNIT
   if (f.btc1h != null && f.btc1h < p.btc1hMin) miss.push(`steady BTC (BTC ${f.btc1h.toFixed(1)}% 1h)`);
   if (f.btc4h != null && f.btc4h < p.btc4hMin) miss.push(`BTC not falling (BTC ${f.btc4h.toFixed(1)}% 4h)`);
   if (f.rsiD != null && f.rsiD > p.maxRsi) miss.push(`daily RSI under ${p.maxRsi} (now ${Math.round(f.rsiD)})`);
+  if (p.dailyTrend && f.aboveSma20d === false) miss.push("price above its 20-day average");
+  // resistance right overhead: an ignition just under a recent high usually stalls there (v7)
+  const under = (d, room) => d != null && room > 0 && d <= 0 && d > -room;
+  if (under(f.distTo12hHigh, p.room12h)) miss.push(`a break of its 12h high (${Math.abs(f.distTo12hHigh).toFixed(1)}% above)`);
+  else if (under(f.distTo24hHigh, p.room24h)) miss.push(`a break of its 24h high (${Math.abs(f.distTo24hHigh).toFixed(1)}% above)`);
   if (f.regimeOff) miss.push(`BTC daily trend (${f.regimeOff})`);
   if (f.monitoring) miss.push("off Binance's Monitoring list (delisting risk)");
   if (f.persist != null) {
@@ -628,7 +655,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
   const quoteVol = n(tk.quoteVolume) || 0;
   const priceChg = n(tk.priceChangePercent) || 0;
   const s = scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg);
-  if (fast) fast.rsiD = t.rsi;
+  if (fast) { fast.rsiD = t.rsi; fast.aboveSma20d = t.aboveSma; }
   // coins under SCREENER_MIN_QUOTE_VOLUME are scanned for the big-move tier only; the quick tiers never see them
   const core = quoteVol >= MIN_QUOTE_VOLUME;
   const ig = core ? classifyIgnition(fast, priceChg, t.distToHigh) : { state: null, moved: false, movedWhy: [], miss: [], slow: false };
@@ -655,7 +682,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
     rangePos: round(fast?.rangePos, 2), spreadBps: round(fast?.spreadBps, 1), rs15: round(fast?.rs15, 2),
     range6h: round(fast?.range6h, 2), btc1h: round(fast?.btc1h, 2), trendUp: fast?.trendUp ?? null, extPct: round(fast?.extPct, 2),
     fadePct: round(fast?.fadePct, 2), wickShare: round(fast?.wickShare, 2), breakout: fast?.breakout ?? null,
-    distTo12hHigh: round(fast?.distTo12hHigh, 2),
+    distTo12hHigh: round(fast?.distTo12hHigh, 2), distTo24hHigh: round(fast?.distTo24hHigh, 2),
     r5: round(fast?.early?.r5, 2), prevR5: round(fast?.early?.prevR5, 2), ret10m: round(fast?.early?.ret10, 2), buyRatio10m: round(fast?.early?.buy10, 1),
     closePos5: round(fast?.early?.closePos5, 2), btc4h: round(fast?.btc4h, 2),
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
@@ -1330,6 +1357,8 @@ const BUCKETS = [
   ["AI said TAKE", (c) => c.aiDecision === "TAKE"], ["AI said WAIT", (c) => c.aiDecision === "WAIT"], ["AI said SKIP", (c) => c.aiDecision === "SKIP"],
   ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
   ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
+  ["Less than 1% under its 12h high", (c) => c.distTo12hHigh != null && c.distTo12hHigh <= 0 && c.distTo12hHigh > -1],
+  ["Above its 20-day average", (c) => c.aboveSma === true], ["Below its 20-day average", (c) => c.aboveSma === false],
   ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],
   ["Buyers 65%+", (c) => c.buyRatio15m >= 65], ["Buyers under 65%", (c) => c.buyRatio15m < 65],
   ["15m volume 6x+", (c) => c.rvol15 >= 6], ["15m volume under 6x", (c) => c.rvol15 < 6],
@@ -1480,7 +1509,7 @@ function demoRoll(i, kind) { // kind: "ignite" | "ran" | "cold"
     chg: kind === "ran" ? rnd(16, 45) : kind === "ignite" ? rnd(0.5, 6) : rnd(-6, 6),
     f: kind === "ignite" ? { ...common, rvol15: rnd(4.2, 9), ret15: rnd(0.4, 3), rvol1h: rnd(1.8, 4), ret1h: rnd(0.8, 5), buy15: rnd(60, 74),
       persist: Math.random() < 0.6 ? 3 : 2, persistOf: 3, tradesRatio: rnd(1.5, 3.2), rangePos: rnd(0.65, 0.97), nearHigh: Math.random() < 0.5, rs15: rnd(0.1, 2),
-      trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0.1, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: rnd(-1.5, 1.5),
+      trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0.1, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: Math.random() < 0.6 ? rnd(0.1, 1.5) : rnd(-4, -1.1), distTo24hHigh: rnd(-6, 1),
       early: { r5: rnd(3.2, 9), prevR5: rnd(3.1, 8), ret10: rnd(0.3, 2), buy10: rnd(59, 75), closePos5: rnd(0.5, 0.88), body5: rnd(0.2, 0.7) } }
       : kind === "ran" ? { ...common, rvol15: rnd(3, 6), ret15: rnd(3.5, 9), rvol1h: rnd(3, 6), ret1h: rnd(9, 20), buy15: rnd(55, 70),
         persist: 3, persistOf: 3, tradesRatio: rnd(2, 4), rangePos: 0.97, nearHigh: true, rs15: rnd(3, 8),
@@ -1613,7 +1642,7 @@ let started = false;
 export function startScreener(baseUrl = "") {
   if (started || LIBRARY_ONLY) return;
   started = true;
-  console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, ` +
+  console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, room ${ROOM_12H}% / ${ROOM_24H}% under the 12h / 24h high, above 20-day avg: ${DAILY_TREND ? "on" : "off"}, ` +
     `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
   console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
   if (!DEMO) startTelegram({ demo: DEMO }).then((m) => console.log(`Telegram: ${m} | on: ${Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label).join(", ")}`));

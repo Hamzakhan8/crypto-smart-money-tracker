@@ -132,4 +132,7 @@ test("archive: zip reading, candles, metrics per 4h bar and joining day files", 
   const joined = Hs.mergeMetric([T0, 110, 3.5, 4, 0.5, 1, T0 + 1], [T0, 120, 4, 5, 2, 1, T0 + 9]);
   assert.deepEqual(joined.slice(0, 5), [T0, 120, 4, 5, 1.25]);
   assert.ok(Hs.EXCLUDED.has("TSLA") && !Hs.EXCLUDED.has("T")); // TUSDT is Threshold (crypto), not TrueUSD
+  // a market closed on weekends (stock / ETF / oil perpetual) vs crypto, from daily volume
+  const days = (weekendVol) => Array.from({ length: 35 }, (_, k) => { const t = T0 + k * DAY, d = new Date(t).getUTCDay(); return [t, 1, 1.1, 0.9, 1, d === 0 || d === 6 ? weekendVol : 100]; });
+  assert.equal(Hs.isTradFi(days(15)), true); assert.equal(Hs.isTradFi(days(55)), false); assert.equal(Hs.isTradFi(days(15).slice(0, 10)), false); // too short to tell
 });

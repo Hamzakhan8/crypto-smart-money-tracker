@@ -25,6 +25,17 @@ export const EXCLUDED = new Set(["USDC", "FDUSD", "TUSD", "BUSD", "USDP", "DAI",
   "AAPL", "AMD", "AMZN", "COIN", "CRCL", "GOOGL", "GOOG", "HOOD", "INTC", "META", "MSFT", "MSTR", "NFLX", "NVDA", "PLTR", "QQQ", "SPY", "TSLA",
   "IBM", "ORCL", "BABA", "GME", "AMC", "UBER", "SNAP", "PYPL", "SQ", "SHOP", "AVGO", "TSM", "ARM", "SMCI", "MU", "BRK", "JPM", "V", "MA", "DIS"]);
 export const baseOf = (sym) => sym.replace(/USDT$/, "");
+// Binance keeps adding perpetuals on stocks, ETFs and oil (SanDisk, SK Hynix, SOXL, crude...). Their markets close on
+// weekends, so their weekend volume collapses: at most ~30% of weekday volume, while even BTC, the quietest crypto on
+// weekends, keeps ~50%. Daily candles: [t, o, h, l, c, quoteVolume]. Needs about 4 weeks of history.
+export function weekendShare(daily) {
+  const we = [], wd = [];
+  for (const x of daily) { if (!(x[5] > 0)) continue; const d = new Date(x[0]).getUTCDay(); (d === 0 || d === 6 ? we : wd).push(x[5]); }
+  if (we.length < 6 || wd.length < 15) return null;
+  const med = (a) => [...a].sort((p, q) => p - q)[a.length >> 1];
+  return med(we) / med(wd);
+}
+export const isTradFi = (daily) => { const w = weekendShare(daily); return w != null && w < 0.35; };
 
 // ───────────────────────────── archive access ─────────────────────────────
 // The archive's file list (S3), page by page.
@@ -157,6 +168,9 @@ export async function loadHistory({ from = "2021-12", to, top = 50, log = consol
     if (++done % 2000 === 0) log(`  daily candles: ${done}/${jobs1d.length} files`);
   });
   for (const rows of daily.values()) rows.sort((a, b) => a[0] - b[0]);
+  const tradfi = [...daily.keys()].filter((s) => isTradFi(daily.get(s)));
+  if (tradfi.length) log(`${tradfi.length} perpetuals on stocks, ETFs or commodities left out (markets closed on weekends): ${tradfi.map(baseOf).join(", ")}`);
+  for (const s of tradfi) daily.delete(s);
   // 3. The most liquid coins at the start of each month (by quote volume in the 30 days before)
   const universe = {};
   for (const m of months.slice(1)) {

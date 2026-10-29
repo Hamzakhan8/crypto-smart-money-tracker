@@ -366,6 +366,10 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
 | **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
 | **BTC rotation** | Oct 2024 to Oct 2026, 107 weekly decisions | Rotation ranking **+28%** (same as holding BTC, +28%); token picks +136%, but almost all of it from one meme-pump week (-9% without it) |
+| **Perps: 20-day breakdown short** | Dec 2021 to Sep 2026, the 50 most liquid USDⓈ-M perps of each month (406 coins), 0.08% per side + every funding payment, target 2.5R / stop / 10 days | 1,976 trades, 41% won, **+0.15R per trade** (before 2025 +0.20R, 2025-26 +0.07R). Holds with a 2R target. Still positive with higher costs (+0.14R) and with the top 30 coins only (+0.13R). Not yet "proven": the newer period is thin |
+| **Perps: the other setups** | same | **Lose after costs:** buying the dip in an uptrend (pullback long, -0.07R) and buying a flush (-0.20R). **Thin:** breakout long, pullback short, crowded fade (+0.03 to +0.09R). The plain-trend benchmark is about zero (longs paid ~0.19% funding per trade) |
+
+**Perps leads to prove live, not proof:** these were found after looking at both periods. A breakdown short when BTC itself is trending up (the coin is weak on its own) did +0.39R / +0.26R (older / newer, 545 trades); a breakout long when funding is negative (shorts crowded) did +0.52R / +0.22R (232 trades).
 
 Two real examples:
 - **EVAA (Alpha):** the early tier caught its Oct 26-27 start (+40% the next day), but it had flagged EVAA 34 times in 60 days: 6 winners, 23 stopped out. The confirmed tier missed that start.

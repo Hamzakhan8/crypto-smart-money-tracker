@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts } from "./screener.js";
-import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource } from "./ai-trade.js";
+import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource, meterAi, aiCanSpend, startAiDesk } from "./ai-trade.js";
 import { sendTelegram as tgQueue, telegramWants, telegramConfigured } from "./telegram.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
@@ -24,12 +24,13 @@ const WEB3_API = "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw
 const CHAINS = [{ id: "56", name: "BSC" }, { id: "CT_501", name: "Solana" }];
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// Initialize Gemini using environment variable securely
-const ai = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;
+// Initialize Gemini using environment variable securely. Every request is counted for the AI desk's daily limit.
+const ai = env.GEMINI_API_KEY ? meterAi(new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })) : null;
 
 // Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP) by the AI committee (5 Gemini requests with
 // the bull vs bear debate, one more for a TAKE), saved with the alert, so the screener's performance panel can show
-// whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off; AI_REVIEWS_PER_HOUR caps the cost (default 12).
+// whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off; AI_REVIEWS_PER_HOUR caps the cost (default 12)
+// and AI_DAILY_REQUESTS caps Gemini requests per day (default 400; checked before each review).
 const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
 const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
 let aiReviewTimes = [];
@@ -41,7 +42,7 @@ const aiBudget = () => {
   return true;
 };
 if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
-  if (!aiBudget()) return;
+  if (!aiCanSpend() || !aiBudget()) return;
   try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol, ev.tier) }); }
   catch (e) { annotateEvent(ev.id, { ai: { error: e.message, at: Date.now() } }); }
 });
@@ -49,7 +50,7 @@ if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
 // hourly budget. Its Telegram follow-up is sent only when Alpha alerts go to Telegram.
 if (AI_AUTO_REVIEW && env.ALPHA_AI_REVIEW !== "0") onAlphaAlert(async (a) => {
   if (a.tier !== "confirmed" && env.ALPHA_AI_REVIEW !== "all") return;
-  if (!aiBudget()) return;
+  if (!aiCanSpend() || !aiBudget()) return;
   try { annotateAlpha(a.id, { ai: await reviewAlpha(ai, a) }); }
   catch (e) { annotateAlpha(a.id, { ai: { error: e.message, at: Date.now() } }); }
 });
@@ -421,6 +422,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  Early 2x movers        ${base}/screener#early2x`);
   console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
+  startAiDesk(ai); // follows every AI answer and watches WAIT triggers
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");
 });

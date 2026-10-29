@@ -1239,7 +1239,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#aAi").innerHTML=`<div><div class="big ${cls}">${x.final?x.final+" · ":""}${LBL[x.decision]||esc(x.decision)}: ${esc(x.symbol)}</div><small>${esc(x.headline||"")}</small></div>${crew}
    <div>Chance ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected <b class="${col(x.expectedValuePct)}">${pct(x.expectedValuePct)}</b> per trade · ${esc(x.confidence)} confidence · setup ${x.setupScore}/10</div>
    ${x.decision!=="SKIP"?`<div class="mono">Entry ${p.entryLow}-${p.entryHigh} · stop ${p.stop} (${p.stopPct}%) · target ${p.target1} (+${p.target1Pct}%) · R:R ${p.rewardRisk}</div>`:""}
-   ${x.waitFor&&x.decision==="WAIT"?`<div><b>Wait for:</b> ${esc(x.waitFor)}</div>`:""}
+   ${x.waitFor&&x.decision==="WAIT"?`<div><b>Wait for:</b> ${esc(x.waitFor)}${x.trigger?` <small>(watched for ${x.trigger.expiresMinutes} min: the AI checks again if ${x.trigger.event==="breakout"?"a "+esc(x.trigger.timeframe)+" candle closes above "+x.trigger.price:"the price dips to "+x.trigger.price}; see the AI desk)</small>`:""}</div>`:""}
    ${x.hardStops&&x.hardStops.length?`<div class="red"><b>Hard stop:</b> ${esc(x.hardStops.join("; "))}</div>`:""}
    <div><b>Checklist</b><ul>${(x.checklist||[]).map(c=>`<li><span class="${c.status==="pass"?"green":c.status==="fail"?"red":"muted"}">${esc(c.status)}</span> ${esc(c.item)}: ${esc(c.evidence)}</li>`).join("")}</ul></div>
    <div><b>Key risk:</b> ${esc(x.keyRisk||"")}</div>${(x.guardNotes||[]).length?`<small>${esc(x.guardNotes.join(" "))}</small>`:""}<small>AI opinion on the Alpha tab's data. Research only, not financial advice.</small>`;

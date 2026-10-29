@@ -163,3 +163,23 @@ test("AI committee: prompts name the coin, the time window and each member's job
   assert.match(t, /Final: NO · data good · news low risk · trader TAKE · boss NO\nBoss: Target beyond the 7-day high\./);
   assert.match(t, /News: Listing on Coinbase next week\./);
 });
+
+test("AI committee: a WAIT comes with a watched price event; every Gemini request is counted for the daily limit", async () => {
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR,
+    TRADER: { ...trader("WAIT"), trigger: { event: "breakout", price: 101.5, timeframe: "5m", expiresMinutes: 45 } } });
+  const x = await run(ai, dossier("WWWUSDT"));
+  assert.equal(x.decision, "WAIT");
+  assert.deepEqual(x.trigger, { event: "breakout", price: 101.5, timeframe: "5m", expiresMinutes: 45, distPct: 1.5 });
+  assert.ok(ai.calls.find((c) => c.role === "TRADER").params.config.responseSchema.properties.trigger); // the trader is asked for it
+  assert.match(desk.tgSingle({ ...x, symbol: "WWWUSDT" }), /Watching: a 5m close above 101.5 for 45 min; the AI checks again if it happens\./);
+  // a TAKE never carries a trigger, even if the model filled one in
+  const t = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, "CHIEF RISK OFFICER": BOSS_YES,
+    TRADER: { ...trader("TAKE"), trigger: { event: "breakout", price: 101.5, timeframe: "5m", expiresMinutes: 45 } } }), dossier("VVVUSDT"));
+  assert.equal(t.decision, "TAKE"); assert.equal(t.trigger, null);
+  // the metered client counts requests and tokens
+  const before = desk.aiTracker.usage().requests;
+  const metered = desk.meterAi(fakeAi({ TRADER: trader("WAIT") }));
+  await metered.models.generateContent({ config: { systemInstruction: "You are the TRADER" } });
+  assert.equal(desk.aiTracker.usage().requests, before + 1);
+  assert.ok(desk.aiTracker.usage().tokens.think >= 500);
+});

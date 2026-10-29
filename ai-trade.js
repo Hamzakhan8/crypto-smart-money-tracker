@@ -22,16 +22,19 @@
 // Single coin: POST /api/ai/analyze runs the AI committee (ai-committee.js): a data analyst and a news researcher (web
 // search) report first, a bull and a bear argue the trade, a trader decides, and for a TAKE that passes the code checks
 // a final boss says YES or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
-// GET /api/ai/dossier?symbol=. Research tool, not financial advice.
+// GET /api/ai/dossier?symbol=. Track record, watched WAIT triggers and today's Gemini use: GET /api/ai/record
+// (ai-tracker.js). Research tool, not financial advice.
 
 import { Type } from "@google/genai";
+import { fileURLToPath } from "node:url";
 import { screenerSnapshot, fetchJson, CONFIG, assetInfo, matchingGroups, alphaTokenFor, alphaSnapshot, alphaMatchingFor, noteAiVerdict, freshAiVerdicts } from "./screener.js";
 import { alphaKlinesUrl, parseKlines } from "./alpha.js";
 import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
 import { sendTelegram, telegramWants } from "./telegram.js";
-import { dataReview, newsResearch, debate, traderDecision, finalBoss, committeeChecks, bossCall, roleConfig } from "./ai-committee.js";
+import { dataReview, newsResearch, debate, traderDecision, finalBoss, committeeChecks, bossCall, roleConfig, usage } from "./ai-committee.js";
+import { createAiTracker, cleanTrigger, TF } from "./ai-tracker.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -275,6 +278,8 @@ export async function buildDossier(symbol, tierHint = null) {
       aiCalls: (snap.stats?.current?.buckets || []).filter((b) => /^AI said/.test(b.name)).map((b) => ({ call: b.name.replace("AI said ", ""), resolved: b.resolved, hitTargetPct: b.winRatePct, avgNetPct: b.netPct })),
       // live results of past alerts that shared this coin's conditions (10+ resolved each), with the older / newer half
       matchingGroups: cand ? matchingGroups(cand) : [],
+      // the committee's own past calls, followed with their own plans (ai-tracker.js)
+      aiCommittee: tracker.trackRecord("spot"),
     },
     referencePlan: plan,
     baseRates: { replay: REPLAY, live: { confirmed: liveRate(live.ignition), early: liveRate(live.early) } },
@@ -317,7 +322,10 @@ Work through these steps in order and show them in your answer:
    TAKE only if there is no hard stop, the expected value is at least +0.5% per trade, reward:risk is at least 1.5 and
    the price is inside the entry zone now.
    WAIT when the setup is close and one specific thing is missing: waitFor must name a price level, a condition and a
-   time limit, e.g. "a 5m close above 0.0512 with buyers 55%+ within 30 minutes; otherwise no trade".
+   time limit, e.g. "a 5m close above 0.0512 with buyers 55%+ within 30 minutes; otherwise no trade". Put the same
+   price event in trigger (breakout = a candle closes above the price; pullback = the price trades down to it; the
+   candle timeframe; the time limit in minutes): the code watches it and the committee checks the coin again when it
+   happens. For TAKE and SKIP leave trigger empty.
    SKIP (no trade) for everything else, including when the data is too thin to judge.
 6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs
    (its target, stop and holding time; a big-move alert aims for its large target over days). Risk at most 1% of the
@@ -356,6 +364,12 @@ const DECISION_SCHEMA = {
       required: ["entryLow", "entryHigh", "stop", "target1", "holdHours"],
     },
     waitFor: { type: Type.STRING, description: "For WAIT: price level, condition and time limit; otherwise empty" },
+    trigger: {
+      type: Type.OBJECT, nullable: true, description: "For WAIT only: the price event that would make it a TAKE; null for TAKE and SKIP",
+      properties: { event: { type: Type.STRING, enum: ["breakout", "pullback"] }, price: { type: Type.NUMBER }, timeframe: { type: Type.STRING, enum: ["5m", "15m", "1h"] },
+        expiresMinutes: { type: Type.INTEGER } },
+      required: ["event", "price", "timeframe", "expiresMinutes"],
+    },
     invalidation: { type: Type.STRING },
     keyRisk: { type: Type.STRING },
   },
@@ -499,7 +513,8 @@ export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, ext
     tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
     hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : []), ...(out.hardStops || [])])], checklist,
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
-    plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
+    plan: pc.plan, waitFor: out.waitFor, trigger: fin.decision === "WAIT" ? cleanTrigger(out.trigger, d.price) : null,
+    invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
     committee: { data, news, debate: dbt, trader: { decision: out.decision, model: opts.model, ms: tr.ms, tokens: tr.tokens }, boss },
   };
 }
@@ -511,7 +526,7 @@ function committeeMeta(opts, c, t0) {
     bossModel: boss.asked ? opts.reviewModel || MODELS.reviewer : null,
     calls: 2 + (news.off || news.cached ? 0 : 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 : 0),
     tokens: ["in", "out", "think"].reduce((o, k) => ({ ...o, [k]: parts.reduce((s, x) => s + (x.tokens[k] || 0), 0) }), {}),
-    deepThinking: env.AI_DEEP_THINKING !== "0", durationMs: Date.now() - t0, at: Date.now(), cached: false };
+    deepThinking: env.AI_DEEP_THINKING !== "0", source: opts.source || "manual", depth: opts.depth || 0, durationMs: Date.now() - t0, at: Date.now(), cached: false };
 }
 
 async function analyzeOne(ai, symbol, opts) {
@@ -519,7 +534,8 @@ async function analyzeOne(ai, symbol, opts) {
   const d = await buildDossier(symbol, opts.tier || null);
   const base = symbol.replace(/USDT$/, ""), info = assetInfo(base);
   const c = await runCommittee(ai, d, { desk: "spot", rules: RULES, identity: { symbol: base, name: info?.name || null }, opts,
-    keyFacts: (x) => ({ ...compact(x), atrPct: x.chart.atrPct, levels: x.levels, market: x.market, matchingGroups: x.livePerformance?.matchingGroups }) });
+    keyFacts: (x) => ({ ...compact(x), atrPct: x.chart.atrPct, levels: x.levels, market: x.market, matchingGroups: x.livePerformance?.matchingGroups,
+      aiCommittee: x.livePerformance?.aiCommittee }) });
   return { symbol, ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
 }
 
@@ -570,6 +586,7 @@ async function analyzeMany(ai, symbols, opts) {
 // Every fresh analysis is remembered per coin for the "AI: TAKE" tabs (Alpha tokens under "A:" + their Alpha id).
 function remember(result) {
   const at = result?.meta?.at || Date.now();
+  if (result?.committee) tracker.record(result, { source: result.meta?.source || "manual", depth: result.meta?.depth || 0 });
   if (result?.kind === "alpha") noteAiVerdict("A:" + (result.dossier?.alpha?.token?.alphaId || result.alphaId || result.symbol), { ...result, at });
   else if (result?.decision && result.symbol) noteAiVerdict(result.symbol, { ...result, at });
   for (const c of result?.coins || []) noteAiVerdict(c.symbol, { ...c, at });
@@ -584,6 +601,58 @@ function cached(key, ttl, refresh, run) {
   return p;
 }
 
+// ───────────────────────────── track record, WAIT triggers, daily limit ─────────────────────────────
+// Every committee answer is followed with its own plan; WAIT triggers are watched and, when one hits, the committee checks
+// the coin again (from the daily budget) and Telegram gets the new answer. AI_DAILY_REQUESTS (default 400, 0 = no limit)
+// caps Gemini requests per UTC day for automatic work; your own analyses always run.
+const DAILY_LIMIT = env.AI_DAILY_REQUESTS === "0" ? 0 : Math.max(1, Math.trunc(Number(env.AI_DAILY_REQUESTS)) || 400);
+const FULL_RUN = 6; // the most requests one analysis can make
+let aiClient = null;
+async function barsFor(x, { interval, startTime, limit }) {
+  if (x.kind === "alpha") {
+    const j = await fetchJson(alphaKlinesUrl(x.alphaId, { interval, startTime, limit, quote: x.quote || "USDT" }), { retries: 1, timeoutMs: 12_000 });
+    return { barMs: TF[interval], bars: parseKlines(j?.data ?? j).map((k) => ({ t: k[0], o: k[1], h: k[2], l: k[3], c: k[4] })) };
+  }
+  const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(x.symbol)}&interval=${interval}&startTime=${startTime}&limit=${limit}`, { retries: 1 });
+  return { barMs: TF[interval], bars: (Array.isArray(raw) ? raw : []).map((k) => ({ t: Number(k[0]), o: Number(k[1]), h: Number(k[2]), l: Number(k[3]), c: Number(k[4]) })) };
+}
+async function onTriggerHit(tr) {
+  const coin = tr.symbol.replace(/USDT$/, ""), mins = Math.max(1, Math.round((tr.hitAt - tr.armedAt) / MIN));
+  const head = `⏰ AI TRIGGER HIT: ${coin} ${tr.event === "breakout" ? `closed above ${tr.price} (${tr.timeframe})` : `dipped to ${tr.price}`}, ${mins} min after the AI said WAIT.`;
+  if (!aiClient || !tracker.canSpend(FULL_RUN)) {
+    const why = aiClient ? "today's AI limit is reached" : "Gemini is not set up";
+    await telegram(`${head}\nNo fresh AI check: ${why}. Check the chart yourself.`, { kind: "ai" });
+    return { checked: false, reason: why, at: Date.now() };
+  }
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, source: "trigger", depth: (tr.depth || 0) + 1, tier: tr.tier };
+  const out = await cached(`trig:${tr.id}`, RESULT_TTL, true, () => (tr.kind === "alpha" ? analyzeAlpha(aiClient, tr.alphaId, opts) : analyzeOne(aiClient, tr.symbol, opts)));
+  await telegram(`${head}\n${tgSingle(out, "(fresh committee check)")}`, { kind: "ai" });
+  return { checked: true, decision: out.decision, final: out.final, headline: out.headline, at: Date.now() };
+}
+const tracker = createAiTracker({
+  file: env.SCREENER_LIBRARY_ONLY === "1" ? null : fileURLToPath(new URL("./ai_calls.json", import.meta.url)), bars: barsFor, dailyLimit: DAILY_LIMIT, onTriggerHit,
+  onWarn: (level, u) => telegram(`AI DESK: ${u.requests} of ${u.limit} Gemini requests used today (UTC)${level >= 2
+    ? ". The daily limit is reached: automatic reviews and trigger re-checks pause until midnight UTC; your own analyses still run. Raise AI_DAILY_REQUESTS in .env if needed."
+    : " (80%)."}`, { kind: "ai" }),
+});
+// Counts every Gemini request and its tokens (wraps the client once, in server.js).
+export function meterAi(client) {
+  if (!client) return client;
+  const gen = client.models.generateContent.bind(client.models);
+  const models = Object.create(client.models, { generateContent: { value: async (params) => {
+    tracker.countRequest();
+    const res = await gen(params);
+    tracker.countTokens(usage(res));
+    return res;
+  } } });
+  return Object.create(client, { models: { value: models } });
+}
+// Room for one more automatic analysis today? (server.js checks it before each automatic review)
+export const aiCanSpend = () => tracker.canSpend(FULL_RUN);
+// Starts following calls (every 2 minutes) and watching WAIT triggers (every minute).
+export function startAiDesk(client) { aiClient = client; return tracker.start(); }
+export const aiTracker = tracker;
+
 // ───────────────────────────── Telegram ─────────────────────────────
 // Shared queue (telegram.js): retried until delivered. Default: you asked for it (the "send to Telegram" box), so it is
 // sent even if AI verdicts are switched off; automatic reviews pass { kind: "ai" } and follow that switch.
@@ -595,6 +664,7 @@ export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x
   `Chance: ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct >= 0 ? "+" : ""}${x.expectedValuePct}% per trade · ${x.confidence} confidence · setup ${x.setupScore}/10`,
   x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk} | hold ${x.plan.holdHours}h` : null,
   x.decision === "WAIT" && x.waitFor ? `Trigger: ${x.waitFor}` : null,
+  x.decision === "WAIT" && x.trigger ? `Watching: ${x.trigger.event === "breakout" ? `a ${x.trigger.timeframe} close above ${x.trigger.price}` : `a dip to ${x.trigger.price}`} for ${x.trigger.expiresMinutes} min; the AI checks again if it happens.` : null,
   x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
   x.committee?.news?.available && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
@@ -624,7 +694,7 @@ const reviewSummary = (out, tg) => {
 // Automatic review of a new screener alert (called by server.js): the full committee with the default models, a short
 // summary saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
 export async function reviewAlert(ai, symbol, tier = null) {
-  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, tier: tier === "ignition" ? "confirmed" : tier };
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, source: "alert", tier: tier === "ignition" ? "confirmed" : tier };
   const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
   const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
   return reviewSummary(out, tg);
@@ -661,7 +731,8 @@ Work through these steps in order and show them in your answer:
    at most 15 points each way, and say which items moved them.
 4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct. The code recomputes it.
 5. DECIDE. TAKE only with no hard stop, expected value of at least +0.5% per trade, reward:risk 1.5+ and price inside the
-   entry zone now. WAIT must name a price level, a condition and a time limit. SKIP for everything else.
+   entry zone now. WAIT must name a price level, a condition and a time limit, with the same price event in trigger
+   (breakout or pullback, timeframe, minutes): the code watches it and asks the committee again. SKIP for everything else.
 6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs.
    Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
 Be concise and concrete.`.trim();
@@ -710,7 +781,7 @@ export async function buildAlphaDossier(key, alert = null) {
     dataQuality: { demo: false, notes: [alert ? `Reviewed with the numbers at alert time (${new Date(alert.t).toISOString()}); candles are fresh.` : "Manual check with the latest scan."] },
     screener: { state: alert ? "ignited" : tok?.state || "quiet", tier: tier ? t : null, moved, movedWhy: moved ? [`up ${f.chg24}% in 24 hours`] : [], stillNeeds: alert ? [] : (tok?.fails || []).slice(0, 4) },
     alpha: {
-      token: { alphaId: id, symbol: token.symbol, name: token.name, chain: token.chain, contract: token.contract || null, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
+      token: { alphaId: id, symbol: token.symbol, name: token.name, chain: token.chain, contract: token.contract || null, quote, liquidityUsd: token.liquidity, holders: token.holders, marketCapUsd: token.mcap, fdvUsd: token.fdv,
         circulatingPct: token.circPct, daysOnAlpha: token.ageDays, volume24hUsd: token.vol24 },
       signal: { volumeVsNormal: [f.r1, f.r2], usdPer5m: [f.usd1, f.usd2], tradesPer5m: [f.trades1, f.trades2], move10mPct: f.move10, change1hPct: f.chg1h, change24hPct: f.chg24, volume24hUsd: f.qv24 },
       dex: dex ? { buys5m: dex.m5?.buys, sells5m: dex.m5?.sells, buyers5mPct: dex.buyShare5m, buyers1hPct: dex.buyShare1h, poolLiquidityUsd: dex.liquidity, dex: dex.dex } : { available: false },
@@ -723,7 +794,7 @@ export async function buildAlphaDossier(key, alert = null) {
     market: { btcChange24hPct: mctx.btcChange24hPct, btc1hPct: mctx.btc1hPct, btc4hPct: mctx.btc4hPct, marketWideSurge: false,
       altSeason: alert?.ctx?.altSeason ?? null, btcRegime: alert?.ctx?.btcRegime ?? null },
     livePerformance: { byTier: { confirmed: res.confirmed || null, early: res.early || null },
-      matchingGroups: alertMatching(alert || (tok ? { ...tok, token: tok } : null)) },
+      matchingGroups: alertMatching(alert || (tok ? { ...tok, token: tok } : null)), aiCommittee: tracker.trackRecord("alpha") },
     referencePlan: { entry: sig(price), entryZone: [sig(price * 0.995), sig(price)], stops: { screenerRule: sig(stopRule), belowSupport: sig(stopStructure) },
       targets: { screenerRule: sig(tRule), nearResistance: sig(tRes), twoR: sig(price + 2 * (price - stopRule)) },
       rewardRisk: { ruleTargetRuleStop: rr(stopRule, tRule), resistanceRuleStop: rr(stopRule, tRes) } },
@@ -746,7 +817,7 @@ async function analyzeAlpha(ai, key, opts) {
 // go to Telegram and AI verdicts are switched on.
 export async function reviewAlpha(ai, alert) {
   const telegramOn = telegramWants("ai") && telegramWants(alert.tier === "confirmed" ? "alpha" : "alphaEarly");
-  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, alert }));
+  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, source: "alert", alert }));
   const tg = telegramOn && !out.meta.cached
     ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`), { kind: "ai" }) : null;
   return reviewSummary(out, tg);
@@ -790,6 +861,12 @@ export async function handleAiRequest(req, res, url, ai) {
   try {
     if (url.pathname === "/api/ai/candidates" && req.method === "GET") jsonResponse(res, 200, candidatesView(ai));
     else if (url.pathname === "/api/ai/dossier" && req.method === "GET") jsonResponse(res, 200, await buildDossier(normSymbol(url.searchParams.get("symbol"))));
+    else if (url.pathname === "/api/ai/record" && req.method === "GET") { await tracker.ready; jsonResponse(res, 200, tracker.view()); }
+    else if (url.pathname === "/api/ai/triggers/cancel" && req.method === "POST") {
+      if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "Only this site can change the AI desk" }), true;
+      const body = await readJsonBody(req);
+      jsonResponse(res, tracker.cancel(String(body.id || "")) ? 200 : 404, tracker.view());
+    }
     else if (url.pathname === "/api/ai/alpha-dossier" && req.method === "GET") jsonResponse(res, 200, await buildAlphaDossier(String(url.searchParams.get("key") || "").slice(0, 40)));
     else if (url.pathname === "/api/ai/alpha" && req.method === "POST") {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;

@@ -181,7 +181,9 @@ Ignition alerts are rare (often a few a day across all coins), so a quiet phone 
 
 Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works, and every new ignition alert gets an automatic AI verdict. To control cost: `AI_REVIEWS_PER_HOUR=12` (the default) caps automatic reviews; `AI_AUTO_REVIEW=0` turns them off.
 
-**Cost per analysis:** the AI committee makes 5 Gemini requests (data analyst, news researcher, bull, bear, trader), and a 6th with the stronger model only when the trader says TAKE. The trader and the final boss think deeply (more "thinking" tokens, billed as output); the others think quickly. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. To spend less: `AI_DEBATE=0` (no bull and bear, 2 requests fewer), `AI_NEWS=0` (no web search, 1 fewer), `AI_DEEP_THINKING=0` (everyone thinks quickly). The page shows the requests and tokens of each analysis.
+**Cost per analysis:** the AI committee makes 5 Gemini requests (data analyst, news researcher, bull, bear, trader), and a 6th with the stronger model only when the trader says TAKE. The trader and the final boss think deeply (more "thinking" tokens, billed as output); the others think quickly. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. To spend less: `AI_DEBATE=0` (no bull and bear, 2 requests fewer), `AI_NEWS=0` (no web search, 1 fewer), `AI_DEEP_THINKING=0` (everyone thinks quickly). The page shows the requests and tokens of each analysis and of the day.
+
+**Daily limit:** `AI_DAILY_REQUESTS=400` (the default) caps Gemini requests per day (UTC). Telegram warns at 80% and at 100%. At the limit, automatic alert reviews and WAIT-trigger re-checks pause until midnight UTC; your own analyses still run. `AI_DAILY_REQUESTS=0` = no limit.
 
 ---
 
@@ -348,6 +350,16 @@ Members 1 and 2 work at the same time; then the bull, the bear, the trader and t
 4. **Expected value** after costs. The code recomputes it: TAKE needs +0.5% or more per trade and reward:risk of 1.5+.
 5. **Final YES / NO:** a TAKE that passes the code goes to the final boss. YES = take it as planned; NO = no trade, with the reason and what would have to change.
 
+**WAIT triggers (watching):** a WAIT comes with one price event: a **breakout** (a 5m / 15m / 1h candle closes above a level) or a **pullback** (the price dips to a level), with a time limit of 10 minutes to 6 hours. The code watches it every minute. When it happens, the full committee checks the coin again with fresh data and Telegram gets "⏰ AI TRIGGER HIT" with the new YES / NO. The **Watching** list on the AI desk shows what is being watched, with a "Stop watching" button. One watched event per coin (the newest), up to 30 at a time; a re-check can set one more trigger, not an endless chain.
+
+**AI track record:** every AI answer (your analyses, automatic alert reviews, Alpha checks, trigger re-checks) is followed like a trade with its own plan: bought at the price of the answer, closed at its stop or target (the stop counts first if a candle touches both) or at the end of its holding time, after costs. NO answers are followed too, "if bought anyway". The same coin is counted once per 30 minutes. The **AI track record** section shows:
+- **Final YES** vs **Final NO, if bought** and the **edge** between them: above 0 means the committee picks better than what it rejects.
+- **Boss blocked:** how the trades the final boss said NO to would have done (below 0 = the boss saved money).
+- Results by member: trader TAKE / WAIT / NO TRADE, bull or bear won, news risk, data quality, your analyses vs alert reviews vs trigger re-checks, spot vs Alpha.
+- **Said vs real chance** of the target (calibration), and the latest answers with their results.
+
+**It learns from its own record:** the committee sees a summary of it in every analysis (groups with 5+ resolved calls): if its YES calls have been losing, or its target chances ran above what happened, the trader and the final boss are told to be stricter; if its NO calls did better than its YES calls, to weigh the data more than vague doubts; and if a recent losing YES looks like the new setup, to name the difference or not take it. Saved in `ai_calls.json`.
+
 Long only, no leverage, risk at most 1% of your account per trade.
 
 ### 6.8 Learning from your live results
@@ -505,6 +517,7 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the final boss (AI desk) and the risk review (Market Flow brief) |
 | `AI_NEWS` | on | `0` = no web news search by the AI committee |
 | `AI_DEBATE` | on | `0` = no bull vs bear debate (2 requests fewer per analysis) |
+| `AI_DAILY_REQUESTS` | `400` | Gemini requests per day (UTC) for automatic reviews and trigger re-checks; `0` = no limit |
 | `AI_DEEP_THINKING` | on | `0` = the trader and the final boss think quickly too (faster, cheaper) |
 | `AI_AUTO_REVIEW` | on | `0` = no automatic verdict on new alerts |
 | `AI_REVIEWS_PER_HOUR` | `12` | Cost cap for automatic verdicts |
@@ -710,7 +723,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, when the final boss can say no, news hard stops), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, when the final boss can say no, news hard stops), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -728,13 +741,13 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
-| `ai-trade.js`, `ai-committee.js`, `agent.js` | AI desk (data, the four-member committee's prompts, code checks) and the AI market brief (Gemini) |
+| `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `ai_calls.json`) are kept out of git.
 
 ---
 

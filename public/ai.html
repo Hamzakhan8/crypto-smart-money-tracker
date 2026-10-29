@@ -27,10 +27,11 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.facts .stat strong{font-size:13px}details{margin-top:14px}summary{cursor:pointer;color:var(--blue);font-size:12px}pre{white-space:pre-wrap;word-break:break-word;background:#0b1118;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:11px;max-height:420px;overflow:auto}
 .meta{color:var(--muted);font-size:11px;margin-top:14px;line-height:1.7}.foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
 .btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.chip.amber{color:var(--amber);border-color:#6d5621}.chip.red{color:var(--red);border-color:#6e2c3a}.recgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 4px}
 .crew{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.member{background:#151f2b;border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
 .member h4{margin:0;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}.member .role{display:block;color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
 .member p{margin:7px 0 0;font-size:12.5px;line-height:1.6}.member ul{margin:6px 0 0;padding-left:17px;line-height:1.55;font-size:12px}.member li{margin:2px 0}.member a{color:var(--blue);word-break:break-word}.member details{margin-top:8px}
-@media(max-width:1000px){.grid{grid-template-columns:1fr}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.plan,.cols,.crew{grid-template-columns:1fr}.wrap{padding:18px 12px}.table th,.table td{padding:9px 8px}}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.recgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.plan,.cols,.crew{grid-template-columns:1fr}.wrap{padding:18px 12px}.table th,.table td{padding:9px 8px}}
 
 /* app bar: the same on every page */
 .appbar{position:sticky;top:0;z-index:30;background:rgba(10,15,22,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid #253243}
@@ -97,6 +98,10 @@ details.notice div{margin-top:8px}
   <div class="result" id="result"><div class="empty">No analysis yet.<br>Each analysis is an AI committee: 5 Gemini requests with the debate (3 without), one more when the trader says TAKE (the final boss). Results are kept for 3 minutes.</div></div>
  </section>
 </div>
+<section class="panel" data-sec="record" id="recordPanel" style="margin-top:14px">
+ <div class="section-head"><div><h2>AI track record</h2><p>Every AI answer is followed like a trade with its own plan: bought at the price of the answer, closed at its stop, its target or the end of its holding time, after costs. NO answers are followed too ("if bought anyway"), so you can see whose no was right. The committee sees this record in its prompts.</p></div><span class="chip" id="usageChip">AI today: …</span></div>
+ <div class="result" id="record"><div class="empty">Loading…</div></div>
+</section>
 <div class="foot" data-sec="">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Then the AI members work in turn: the data analyst reports data quality, evidence and red flags; the news researcher searches the web for delistings, hacks, unlocks and listings (with sources); the bull makes the case for the trade and the bear attacks it; the trader decides as the referee, with deep thinking, under rules that include how often this kind of signal won in the past; and a TAKE goes to the final boss (a stronger model), who says YES only if every test passes. Before the boss, code enforces: TAKE only for coins that are igniting now, with expected value of +0.5% or more per trade and reward:risk of at least 1.5, never for coins that already ran or with a hard stop (also a confirmed bad news item); plans must fit the levels; confidence is capped for early signals, demo data and weak markets. If the boss cannot answer, there is no TAKE. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
 </main>
 <script>
@@ -169,7 +174,7 @@ details.notice div{margin-top:8px}
   selected=symbol;loading(symbol,"The committee is working: the data analyst"+($("#news").checked?" and the news researcher":"")+" first,"+($("#debate").checked?" then the bull vs bear debate,":"")+" then the trader, then the final boss if it is a TAKE (about 1-2 minutes)…");
   try{drawResult(await post("/api/ai/analyze",{symbol,...opts()}));}
   catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
-  finally{done();loadCandidates();}
+  finally{done();loadCandidates();loadRecord();}
  }
  async function analyzeAll(){
   selected=null;loading("All ignition coins","Gathering data for each coin and triaging them in one Gemini request…");
@@ -223,7 +228,7 @@ details.notice div{margin-top:8px}
    ${committeeHtml(x)}
    <div class="thesis">${esc(x.thesis)}</div>
    ${(x.guardNotes||[]).length?`<div class="callout">${x.guardNotes.map(esc).join("<br>")}</div>`:""}
-   ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>Wait for:</b> ${esc(x.waitFor)}</div>`:""}
+   ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>Wait for:</b> ${esc(x.waitFor)}${x.trigger?`<br><b>Watching:</b> ${evLabel(x.trigger)} for ${x.trigger.expiresMinutes} min. When it happens, the committee checks the coin again and Telegram gets the answer (see "Watching" below).`:""}</div>`:""}
    <div class="sec">${take?"Trade plan":"Plan if it triggers (not a signal now)"}</div>
    <div class="plan ${take?"":"dim"}">${stat("Entry zone",price(p.entryLow)+" – "+price(p.entryHigh))+stat("Stop loss",price(p.stop),pct(p.stopPct)+" from entry","red")+stat("Target 1",price(p.target1),pct(p.target1Pct),"green")+
     stat("Target 2",price(p.target2))+stat("Reward : risk",num(p.rewardRisk)+" : 1","",p.rewardRisk>=1.5?"green":p.rewardRisk<1.2?"red":"")+stat("Hold",num(p.holdHours,0)+"h","then exit if neither hit")}</div>
@@ -237,7 +242,7 @@ details.notice div{margin-top:8px}
  // The four committee members, one card each: what they found and how they voted.
  const tone={good:"TAKE",partial:"WAIT",poor:"SKIP",none:"TAKE",low:"TAKE",medium:"WAIT",high:"SKIP",YES:"TAKE",NO:"SKIP"};
  const pill=(txt,t)=>`<span class="dec ${t||"WAIT"}">${esc(txt)}</span>`;
- const kTok=v=>v==null?"—":v>=1000?(v/1000).toFixed(1)+"k":String(v);
+ const kTok=v=>v==null?"—":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1000?(v/1000).toFixed(1)+"k":String(v);
  const safeUrl=u=>/^https?:\/\//i.test(String(u||""))?esc(u):"#";
  function committeeHtml(x){
   const c=x.committee;if(!c)return "";
@@ -290,16 +295,57 @@ details.notice div{margin-top:8px}
    <div class="meta">Quick triage on the most important facts per coin, in one request. Open "Full analysis" for a trade plan with entry, stop and targets.${b.telegram?(b.telegram.sent?' · <span class="green">TAKE calls sent to Telegram</span>':" · Telegram: "+esc((b.telegram.skipped||b.telegram.error||"")+(b.telegram.queued?" (not sent yet, it will keep retrying)":""))):""}</div>`;
  }
 
+ // ---------- track record, watched WAIT triggers, today's Gemini use ----------
+ let rec=null;
+ async function loadRecord(){try{rec=await getJson("/api/ai/record");drawRecord();}catch(e){$("#record").innerHTML=`<div class="callout red">Cannot load the AI track record: ${esc(e.message)}</div>`;}}
+ function evLabel(t){return t.event==="breakout"?`a ${esc(t.timeframe)} close above ${price(t.price)}`:`a dip to ${price(t.price)}`;}
+ const left=ms=>ms<=0?"ending":ms<3600000?Math.round(ms/60000)+" min left":(ms/3600000).toFixed(1)+" h left";
+ const SRC={manual:"you",alert:"alert review",trigger:"trigger re-check"};
+ function drawRecord(){
+  const u=rec.usage||{},tk=u.tokens||{},sc=rec.scorecard||{},tr=rec.triggers||{armed:[],past:[]};
+  $("#usageChip").textContent=`AI today: ${u.requests||0}${u.limit?" / "+u.limit:""} requests · ${kTok((tk.in||0)+(tk.out||0)+(tk.think||0))} tokens`;
+  $("#usageChip").className="chip"+(u.limit&&u.requests>=u.limit?" red":u.limit&&u.requests>=0.8*u.limit?" amber":"");
+  $("#usageChip").title=u.limit?`${u.left} requests left today (UTC). At the limit, automatic reviews and trigger re-checks pause; your own analyses still run. AI_DAILY_REQUESTS in .env.`:"No daily limit (AI_DAILY_REQUESTS=0).";
+  const g=(s,k)=>(sc.groups||[]).find(x=>x.section===s&&x.key===k)||{n:0};
+  const yes=g("final","yes"),no=g("final","no"),blocked=g("boss","no");
+  const avgTxt=x=>x.n?`<b class="${col(x.avgNetPct)}">${pct(x.avgNetPct,2)}</b>`:"—";
+  const watch=`<div class="sec">Watching (WAIT triggers)</div>`+(tr.armed.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Waiting for</th><th>Time</th><th>The AI said</th><th></th></tr></thead><tbody>${tr.armed.map(t=>`<tr>
+    <td><b>${esc(t.symbol.replace(/USDT$/,""))}</b>${t.kind==="alpha"?' <span class="badge early">Alpha</span>':""}<span class="sub">at the call ${price(t.priceAtCall)}</span></td>
+    <td>${evLabel(t)}<span class="sub">${pct(t.distPct,2)} from the call</span></td><td class="mono">${esc(left(t.expiresAt-Date.now()))}</td>
+    <td class="muted">${esc(t.waitFor)}</td><td><button class="btn sm" data-cancel="${esc(t.id)}">Stop watching</button></td></tr>`).join("")}</tbody></table></div>`
+   :`<p class="meta">Nothing to watch right now. When the AI says WAIT with a clear price event, it is watched here and the committee checks again when it happens.</p>`)+
+   (tr.past.length?`<details><summary>Recent triggers (${tr.past.length})</summary><ul>${tr.past.map(t=>`<li><b>${esc(t.symbol.replace(/USDT$/,""))}</b> ${evLabel(t)}: <span class="${t.status==="hit"?"green":"muted"}">${esc(t.status)}</span>${t.hitAt?" "+esc(ago(t.hitAt)):""}${t.result?(t.result.checked?` → ${esc(LBL[t.result.decision]||t.result.decision)} (${esc(t.result.final)}): ${esc(t.result.headline||"")}`:` → no AI check (${esc(t.result.reason||t.result.error||"")})`):""}</li>`).join("")}</ul></details>`:"");
+  const head=`<div class="recgrid">${stat("Final YES",yes.n?avgTxt(yes)+" per trade":"no results yet",yes.n?`${yes.n} trades · ${yes.hitTargetPct}% hit target`:"each call is followed for its holding time")+
+   stat("Final NO, if bought",no.n?avgTxt(no)+" per trade":"—",no.n?`${no.n} calls · ${no.hitTargetPct}% would have hit target`:"")+
+   stat("Edge: YES − NO",sc.edgePct==null?"—":`<b class="${col(sc.edgePct)}">${pct(sc.edgePct,2)}</b>`,"above 0 = the committee picks better than its rejects")+
+   stat("Boss blocked",blocked.n?avgTxt(blocked)+" per trade":"—",blocked.n?`${blocked.n} trades; below 0 = the boss saved money`:"trades the final boss said NO to")}</div>`;
+  const groups=(sc.groups||[]).length?`<details ${sc.resolved>=10?"open":""}><summary>Results by committee member (${sc.resolved} resolved)</summary><div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Calls</th><th>Hit target</th><th>Hit stop</th><th>In profit</th><th>Avg after costs</th></tr></thead><tbody>${sc.groups.map(x=>`<tr><td>${esc(x.label)}</td><td class="mono">${x.n}</td><td class="mono">${x.hitTargetPct}%</td><td class="mono">${x.hitStopPct}%</td><td class="mono">${x.inProfitPct}%</td><td class="mono ${col(x.avgNetPct)}">${pct(x.avgNetPct,2)}</td></tr>`).join("")}</tbody></table></div>
+   ${(sc.calibration||[]).length?`<p class="meta"><b>Said vs real chance of the target:</b> ${sc.calibration.map(b=>`said ${esc(b.band)} (avg ${num(b.saidPct,0)}%) → hit ${b.hitPct}% of ${b.n}`).join(" · ")}</p>`:""}</details>`:"";
+  const outcome=c=>{const t=c.track||{};if(t.status==="open")return `<span class="muted">open</span><span class="sub">now ${pct((t.last/c.entry-1)*100)} · ${esc(left(c.at+c.holdHours*3600000-Date.now()))}</span>`;
+   if(t.status==="nodata")return '<span class="muted">no data</span>';
+   return `<span class="${t.netPct>0?"green":"red"}">${t.status==="win"?"target":t.status==="loss"?"stop":"time up"} ${pct(t.netPct,2)}</span>`;};
+  const calls=(rec.calls||[]).length?`<div class="sec">Latest AI answers</div><div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Answer</th><th>Members</th><th>Plan</th><th>Result (if bought)</th></tr></thead><tbody>${rec.calls.slice(0,25).map(c=>`<tr>
+    <td><b>${esc(c.symbol.replace(/USDT$/,""))}</b>${c.kind==="alpha"?' <span class="badge early">Alpha</span>':""}<span class="sub">${esc(ago(c.at))} · ${esc(SRC[c.source]||c.source)}</span></td>
+    <td><span class="dec ${esc(c.decision)}">${esc(c.final)}</span><span class="sub">${esc(LBL[c.decision]||c.decision)}</span></td>
+    <td class="muted" style="font-size:11px">trader ${esc(LBL[c.trader]||c.trader||"?")}${c.boss?" · boss "+esc(c.boss):""}${c.debate&&c.debate.winner?" · "+esc(c.debate.winner)+" won":""}${c.news?" · news "+esc(c.news):""}${c.data?" · data "+esc(c.data):""}</td>
+    <td class="mono">${pct(c.targetPct)} / ${pct(c.stopPct)}<span class="sub">${num(c.holdHours,0)}h · from ${price(c.entry)}</span></td><td class="mono">${outcome(c)}</td></tr>`).join("")}</tbody></table></div>`
+   :`<p class="meta">No AI answers recorded yet. Each analysis from now on is followed here.</p>`;
+  $("#record").innerHTML=watch+head+groups+calls;
+ }
+ document.addEventListener("click",async e=>{const b=e.target.closest("[data-cancel]");if(!b)return;b.disabled=true;
+  try{rec=await post("/api/ai/triggers/cancel",{id:b.dataset.cancel});drawRecord();}catch(err){b.disabled=false;alert(err.message);}});
+
  document.addEventListener("click",e=>{const b=e.target.closest("[data-an]");if(b&&!busy){if(!cand.configured){dataOnly(b.dataset.an);return;}analyze(b.dataset.an);}});
  $("#allBtn").onclick=()=>{if(!busy)analyzeAll();};
  $("#anyForm").onsubmit=e=>{e.preventDefault();const s=e.target.sym.value.trim().toUpperCase().replace(/USDT$/,"");if(!s||busy)return;if(!cand.configured){dataOnly(s+"USDT");return;}analyze(s+"USDT");};
  $("#dataBtn").onclick=()=>{const s=$("#anyForm").sym.value.trim().toUpperCase().replace(/USDT$/,"");if(s&&!busy)dataOnly(s+"USDT");};
  loadCandidates();setInterval(()=>{if(!busy)loadCandidates();},20000);
+ loadRecord();setInterval(loadRecord,60000);
 })();
 
 // Section tags: one button per part of the page; a click shows only that part (All shows everything), remembered in this browser.
 (function(){
- const SECTIONS=[["coins","Ignition coins"],["analysis","Analysis"]],root=document.querySelector("main"),bar=document.getElementById("secTags"),KEY="sec:ai";
+ const SECTIONS=[["coins","Ignition coins"],["analysis","Analysis"],["record","Track record"]],root=document.querySelector("main"),bar=document.getElementById("secTags"),KEY="sec:ai";
  const get=()=>{try{return localStorage.getItem(KEY)||"all";}catch{return "all";}},put=v=>{try{localStorage.setItem(KEY,v);}catch{}};
  window.applySec=function(key){
   if(key!=="all"&&!SECTIONS.some(x=>x[0]===key))key="all";put(key);

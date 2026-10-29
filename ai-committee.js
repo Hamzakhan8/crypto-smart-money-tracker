@@ -64,7 +64,9 @@ export const DESKS = {
 - dexFlows: DEX buying and selling of the token (only for followed pools).
 - market: BTC 1h / 4h / 24h, share of coins surging, taker-flow breadth, BTC regime and narrative ranks.
 - livePerformance: live results of this tier, of past AI calls, and matchingGroups (past alerts with the same
-  conditions, with older / newer halves).
+  conditions, with older / newer halves). aiCommittee: this committee's own past answers, each followed with its own
+  plan (final YES, final NO if bought anyway, trades the boss blocked, debate winners, said vs real target chances,
+  recent losing YES calls).
 - referencePlan: entries, stops, targets and reward:risk computed by code. dataQuality: demo / missing-data notes.`.trim(),
   },
   alpha: {
@@ -79,7 +81,8 @@ export const DESKS = {
   big a normal order is next to the pool.
 - chart: trend1h / trend4h, returnsPct, atrPct. levels: resistance / support and distances, 24h / 3d / 7d highs and lows.
 - market: BTC moves, alt season meter, BTC regime. No order book, no futures data for these tokens.
-- livePerformance: live results by tier and matchingGroups (past Alpha alerts with the same conditions).
+- livePerformance: live results by tier and matchingGroups (past Alpha alerts with the same conditions). aiCommittee:
+  this committee's own past answers, each followed with its own plan.
 - referencePlan: entries, stops, targets and reward:risk computed by code.`.trim(),
   },
 };
@@ -328,7 +331,16 @@ HOW TO USE YOUR COLLEAGUES' WORK
   themselves. The bear spoke last; that is not a reason to agree with it. If the bear's path to the stop is more likely
   than the bull's path to the target, there is no TAKE. Fill "debate" with the winner (bull, bear or even) and the
   argument that decided it, and let the unanswered points move your probabilities. A side marked unavailable did not
-  argue: judge from the dossier.` : ""}`;
+  argue: judge from the dossier.` : ""}
+
+THE COMMITTEE'S OWN RECORD (dossier livePerformance.aiCommittee: this committee's past answers, each followed with its
+own plan; ignore it while it says there are too few calls)
+- If final YES calls have lost money on average, or the calibration shows your target chances ran well above what
+  really happened, be stricter: move the target chance toward what happened and demand clearer evidence for TAKE.
+- If final NO calls (bought anyway) did clearly better than final YES calls over 10+ each, the committee's own doubts
+  are costing trades: weigh the base rate and the data more, and vague worries less.
+- If one of the recent losing YES calls looks like this setup, name the difference that makes this one better, or do
+  not take it.`;
 
 const DEBATE_VERDICT = { type: Type.OBJECT, properties: { winner: { type: Type.STRING, enum: ["bull", "bear", "even"] }, reason: { type: Type.STRING, description: "The argument that decided it" } }, required: ["winner", "reason"] };
 export async function traderDecision(ai, { desk, rules, schema, dossier, data, news, debate: dbt, model }) {
@@ -357,7 +369,8 @@ YOU RECEIVE
 - NEWS REPORT: what the web search found (or that it was unavailable).
 - DEBATE: the bull's case for, the bear's case against (it saw the bull's case first), and who the trader said won.
   It may be missing (switched off).
-- KEY FACTS: the dossier numbers that matter most.
+- KEY FACTS: the dossier numbers that matter most, and aiCommittee: this committee's own record (its past YES calls,
+  trades you blocked, said vs real target chances).
 
 RUN THESE TESTS (pass or fail, with the number behind it)
 1. Data: quality is not "poor", and no number the decision depends on is missing or contradictory.
@@ -367,7 +380,8 @@ RUN THESE TESTS (pass or fail, with the number behind it)
 3. News: risk is not high, and no medium-negative item falls inside the holding time unpriced. Unavailable news is
    acceptable only when everything else is strong.
 4. Probabilities: moved from the base rate only for named evidence; the expected value is at least +0.5% per trade
-   without an optimistic target (e.g. a target beyond nearby resistance with little room).
+   without an optimistic target (e.g. a target beyond nearby resistance with little room); and when the committee's
+   record shows its target chances running above what really happened, the chance here is not just as high.
 5. Stop: at a level that proves the idea wrong, and not inside normal noise (at least about 1x the 1h ATR away).
 6. Market: BTC and the market backdrop do not fight the trade.
 YES only if all six pass. Otherwise NO, and say exactly what would have to be true for a YES.

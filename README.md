@@ -21,6 +21,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 6. [The tools, one by one](#6-the-tools-one-by-one)
    - [Learning from your live results](#68-learning-from-your-live-results)
    - [Trade journal](#69-trade-journal)
+   - [Perps swing signals (futures)](#610-perps-swing-signals-futures)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -38,6 +39,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers) |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
+| **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
 | **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
 | **AI desk** | http://localhost:3000/ai | Gemini analyses a coin and answers **TAKE / WAIT / NO TRADE** with entry, stop, targets and expected value |
@@ -149,6 +151,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
 | Binance Alpha confirmed alerts | **On** | about 8 a day |
 | Early 2x high-priority candidates | **On** | a few a day |
+| Perps swing signals (TAKE and WAIT) | **On** | a few a day, after 4h closes |
 | AI verdict on each new ignition and confirmed Alpha alert | **On** (needs Gemini) | one per alert |
 | Startup message and daily check-in | **On** | one a day |
 | AI desk results you choose to send | On request | tick "send to Telegram" on the AI desk |
@@ -187,6 +190,7 @@ Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works,
 | Once a day | **BTC rotation** | Is BTC in a downtrend (the rules hold cash)? Is the alt season meter "Alts leading" or "BTC leading"? This tells you whether hunting altcoins makes sense today. |
 | When an alert arrives | **Ignition** → **AI desk** | Read the alert and the AI's TAKE / WAIT / NO TRADE. Check the chart yourself. Never chase coins marked "Already moved". If you trade it, press **"I took it"** and enter your real fill. |
 | A few times a day | **Market Flow Radar** | Which coins have aggressive buyers right now, and is the whole market buying or selling? |
+| After a 4h close (00, 04, 08, 12, 16, 20 UTC) | **Perps** | New swing signals with TAKE / WAIT / SKIP. Before any futures trade of your own, use **Check a trade**. Take at most your maximum open positions, size from your risk, and press **"I took it"**. |
 | For research | **Alpha**, **Early 2x**, **Whales** | Early on-chain tokens, possible 2x candidates, and where big money is moving. |
 | Once a week | Performance panels + **Journal** | How the alerts really did (hit target, stopped, after costs), which exit and which conditions paid, whether the AI helped, and how your own trades compare. Trust live results over replays. |
 
@@ -345,12 +349,44 @@ Alerts are also faster now: the Ignition screener runs an extra scan 4 seconds a
 
 **Open:** http://localhost:3000/screener#journal
 
-1. Press **"I took it"** on an alert (Ignition alert history, or the Alpha alerts table). The journal opens with the coin, the alert price, the stop and the target filled in.
+1. Press **"I took it"** on an alert (Ignition alert history, the Alpha alerts table, or a Perps signal card). The journal opens with the coin, the side (long or short), the alert price, the stop and the target filled in.
 2. Change the entry to **your real fill price**, add your size in $ (and fees if you like), and save.
 3. While it is open, the journal shows the live price and your unrealized result.
 4. When you sell, type your exit price and press **Close**.
 
-The top of the page shows your closed trades, win rate, total profit or loss in $, average per trade, R multiple (when you set a stop), and **you vs the alerts**: your average result next to the same alerts' tracked results, plus how much above the alert price you usually buy. You can also add trades by hand. Saved in `journal.json` on your PC; nothing is sent to an exchange.
+The top of the page shows your closed trades, win rate, total profit or loss in $, average per trade, R multiple (when you set a stop), and **you vs the alerts**: your average result next to the same alerts' tracked results, plus how much worse (or better) than the alert price you usually get filled. Short trades (Perps) count as profit when the price falls. You can also add trades by hand. Saved in `journal.json` on your PC; nothing is sent to an exchange.
+
+### 6.10 Perps swing signals (futures)
+
+**Open:** http://localhost:3000/screener#perps (no API key; uses Binance's futures data, fapi.binance.com)
+
+Swing trades (held up to 10 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `node perps-backtest.js` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
+
+**First, once:** run `node perps-backtest.js` in a second terminal (1-2 hours the first time). It gives every setup its tested record; until then every signal says WAIT ("no backtest report yet"). The tab reloads the report by itself; re-run it every month or so.
+
+- **Signals:** after every 4h close (00, 04, 08, 12, 16, 20 UTC), the 50 most liquid perpetuals (by 30-day volume, without stablecoins or perpetuals on stocks, ETFs and commodities) are checked for the two setups worth watching:
+  - **20-day breakout / breakdown on volume**, long and short;
+  - **crowded fade**: funding at an extreme while open interest piles in and price stalls.
+- **TAKE / WAIT / SKIP** for every signal:
+  - **TAKE:** the setup made money before 2025 and in 2025-26, and a condition that helped it in both periods (by 0.05R or more) is met now, with none that hurt. Example: a breakdown short in a daily downtrend, or while BTC itself is going up.
+  - **WAIT:** the setup made money, but nothing extra speaks for this one.
+  - **SKIP:** it lost money in the test, or two conditions that hurt are met.
+- **Signal card** (click a row):
+  - entry, stop and target (2.5x the risk), max hold 10 days;
+  - **position size** for your account and risk, **margin**, the **liquidation price** at your leverage (flagged when it is not well beyond the stop, with the safe leverage);
+  - the **funding** you would pay or receive over 10 days;
+  - the setup's tested record and its last tested trades;
+  - an **"I took it"** button.
+- **Check a trade:** type any coin, long or short, and optionally your entry and stop. You get:
+  - **TAKE / WAIT** if a tested setup fired now or in the last 12 hours;
+  - **SKIP** if it is a kind of trade that lost money in the test (buying a dip in an uptrend, or buying right after a crash);
+  - **WAIT** with what to wait for (e.g. "a 4h close above 94.58 on 1.5x volume") when nothing tested applies.
+- **Your risk settings** (account, risk per trade, leverage, maintenance margin, maximum open positions) are saved in your browser only.
+- **Coins scanned:** price, funding (and where it sits in the coin's own 90 days), open interest change, top traders vs everyone, daily trend, strength vs BTC, distance to the 20-day high and low, and which setups fired, marked when they lost money in the test.
+- **Live results:** every signal is followed with the tested exit after fees and funding, by setup and by verdict, next to the backtest average. That is the real test; give it 4-8 weeks before trading size.
+- **Telegram:** TAKE and WAIT signals (switch "Perps swing signals" in Ignition › Telegram).
+
+Leverage can lose you more than a spot trade, fast. Use isolated margin, size from your risk, and keep the liquidation price well beyond the stop. Research signals, not financial advice.
 
 ---
 
@@ -498,6 +534,18 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 </details>
 
 <details>
+<summary><b>Perps (futures swing signals)</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PERPS` | on | `0` = turn the Perps tab's live scan off |
+| `PERPS_TOP` | `50` | How many of the most liquid perpetuals are scanned (the backtest used 50) |
+| `PERPS_COST_PCT` | `0.08` | Fee + slippage per side, in %, for the tracked results |
+| `PERPS_TELEGRAM` | on | `0` = Perps signals off on Telegram by default |
+| `BINANCE_FUTURES_URL` | `https://fapi.binance.com` | Another address for Binance's futures data (e.g. a proxy you run) |
+</details>
+
+<details>
 <summary><b>Early 2x</b></summary>
 
 | Setting | Default | Meaning |
@@ -568,6 +616,16 @@ The Whales tab reads Ethereum from free public nodes. Open **Whales › Data hea
   WHALES_RPC=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY,https://eth-mainnet.public.blastapi.io,https://rpc.mevblocker.io,https://eth.drpc.org
   ```
   Restart the app. Your key is never shown on the page or in the terminal. If the key's free monthly allowance runs out, the free nodes take over.
+</details>
+
+<details>
+<summary><b>Perps tab: "HTTP 451" or "access blocked"</b></summary>
+
+Binance blocks its futures API in some countries. The Perps tab then shows the error and no signals, but the backtest table still works (it uses Binance's public archive, which is not blocked).
+
+- Use a VPN on the computer that runs the app, then restart it.
+- Or point `BINANCE_FUTURES_URL` in `.env` to a proxy you run in an allowed country.
+- Spot-based tabs (Ignition, Early 2x…) are not affected.
 </details>
 
 <details>
@@ -647,14 +705,15 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `early2x.js` | Early 2x movers |
 | `whales.js`, `flows.js` | Whale tracker (transfers, names, learned exchange addresses, Ethereum DEX swaps) and DEX flows |
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
-| `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding (shared with the backtest), and the Binance archive downloader |
+| `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
+| `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
 | `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`) are kept out of git.
 
 ---
 

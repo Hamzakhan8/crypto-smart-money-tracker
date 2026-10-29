@@ -26,6 +26,8 @@ alpha_cache/
 alpha_report.json
 perps_cache/
 perps_report.json
+perps_state.json
+perps_state.demo.json
 alpha_state.json
 journal.json
 telegram_state.json

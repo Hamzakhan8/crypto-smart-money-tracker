@@ -136,3 +136,29 @@ test("archive: zip reading, candles, metrics per 4h bar and joining day files", 
   const days = (weekendVol) => Array.from({ length: 35 }, (_, k) => { const t = T0 + k * DAY, d = new Date(t).getUTCDay(); return [t, 1, 1.1, 0.9, 1, d === 0 || d === 6 ? weekendVol : 100]; });
   assert.equal(Hs.isTradFi(days(15)), true); assert.equal(Hs.isTradFi(days(55)), false); assert.equal(Hs.isTradFi(days(15).slice(0, 10)), false); // too short to tell
 });
+
+test("verdicts: TAKE / WAIT / SKIP from the tested record and the conditions met now", () => {
+  const rec = (older, newer, groups) => ({ all: { trades: 2000, avgR: 0.15, winRatePct: 41 }, older: { avgR: older }, newer: { avgR: newer }, groups });
+  const g = (name, olderR, newerR, holds) => ({ name, olderR, newerR, holds, trades: 500 });
+  const down = { btc: "down", dTrend: "down", oi24h: null, fund8h: null, fundPct: null, topVsAcc: null, vol: 1, rs: null };
+  const helps = g("Daily trend with the trade", 0.31, 0.12, "better in both");
+  assert.equal(P.judge("breakout", -1, down, rec(0.2, 0.07, [helps])).verdict, "TAKE"); // +0.05 in the newer period counts (rounding)
+  assert.equal(P.judge("breakout", -1, { ...down, dTrend: "mixed" }, rec(0.2, 0.07, [helps])).verdict, "WAIT"); // condition not met
+  assert.equal(P.judge("breakout", -1, down, rec(0.2, 0.07, [g("Daily trend with the trade", 0.22, 0.08, "better in both")])).verdict, "WAIT"); // too small to count
+  assert.equal(P.judge("breakout", -1, down, rec(-0.06, 0.07, [helps])).verdict, "SKIP"); // lost money before 2025
+  const hurts = [g("BTC trend with the trade", 0.0, -0.1, "worse in both"), g("Daily trend with the trade", 0.0, -0.1, "worse in both")];
+  assert.equal(P.judge("breakout", -1, down, rec(0.2, 0.07, hurts)).verdict, "SKIP"); // two conditions that hurt
+  assert.equal(P.judge("breakout", -1, down, null).verdict, "WAIT"); // no report yet
+  assert.deepEqual(P.conditionsMet(-1, down), ["BTC trend with the trade", "Daily trend with the trade"]);
+});
+
+test("journal: a short gains when price falls; R needs the stop above the entry", async () => {
+  const { tradeResult, cleanTrade } = await import("../journal.js");
+  const short = { side: "short", entryPrice: 100, exitPrice: 90, stopPrice: 105, sizeUsd: 1000, feesUsd: 1 };
+  const r = tradeResult(short);
+  assert.equal(r.pnlUsd, 99); assert.equal(r.r, 2);
+  assert.equal(tradeResult({ ...short, stopPrice: 95 }).r, null); // a stop below the entry is not a short's stop
+  assert.equal(tradeResult({ ...short, side: "long" }).pnlUsd, -101);
+  assert.equal(cleanTrade({ symbol: "DOT", entryPrice: 1, side: "short", tool: "perps" }).trade.side, "short");
+  assert.equal(cleanTrade({ symbol: "DOT", entryPrice: 1, tool: "perps" }).trade.side, "long");
+});

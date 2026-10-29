@@ -53,6 +53,15 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .sectags button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
 .sectags button:hover{color:var(--ink);border-color:#58718d}.sectags button.on{color:#06140f;background:var(--green);border-color:var(--green)}
 [data-sec-hidden]{display:none!important}
+/* Perps tab */
+.vd{display:inline-block;font-size:11px;font-weight:800;border-radius:7px;padding:4px 8px;border:1px solid var(--line);letter-spacing:.03em}.vd.TAKE{color:var(--green);border-color:#236a53;background:#102a25}.vd.WAIT{color:var(--amber);border-color:#6d5621;background:#2b2414}.vd.SKIP{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.side{font-size:10px;font-weight:800;border-radius:6px;padding:3px 6px}.side.long{color:var(--green);background:#102a25}.side.short{color:var(--red);background:#2d1720}
+.pcard{margin:0 18px 16px;border:1px solid var(--line);border-radius:14px;background:#121c28;padding:16px}.pcard h3{margin:0 0 4px;font-size:17px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.pcard .head{color:var(--muted);font-size:13px;margin-bottom:12px}
+.pgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:10px 0}.pgrid div{background:#0f1720;border:1px solid var(--line);border-radius:10px;padding:9px 11px}.pgrid span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pgrid b{font-family:"DM Mono",monospace;font-size:14px}
+.pcard ul{margin:6px 0;padding-left:18px;font-size:13px;line-height:1.55}.pcard li.plus{color:var(--green)}.pcard li.minus{color:var(--red)}.pcard .note{font-size:12px;color:var(--muted);margin-top:8px}
+.pform{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:0 18px 14px}.pform label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}.pform input,.pform select{width:130px}
+tr.sel td{background:#162232}
+@media(max-width:900px){.pgrid{grid-template-columns:1fr 1fr}}
 /* Telegram panel */
 .tgkinds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:0 18px 14px}.tgkinds label{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;cursor:pointer;background:#151f2b}
 .tgkinds label.on{border-color:#236a53;background:#102a25}.tgkinds input{margin-top:2px;accent-color:var(--green)}.tgkinds small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
@@ -132,7 +141,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -258,6 +267,57 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table"><thead><tr><th>Week of</th><th>BTC regime</th><th>Narratives held</th><th>Their return</th><th>Coins held</th><th>Their return</th><th>BTC return</th></tr></thead><tbody id="rRecent"></tbody></table></div>
  </section>
  <div class="foot" data-sec="">How it works: every day BTC's daily price action is put into one of six regimes (breaking out, calm uptrend, uptrend, sideways, downtrend, falling hard). Each narrative is an equal-weight index of the largest coins carrying one of Binance's sector tags (AI, Meme, RWA, Gaming and so on). For every past day the screener records how each narrative did over the next week compared with BTC, grouped by the regime BTC was in. The ranking blends that history with current price action, and the backtest replays the same ranking week by week with fees, using only weeks that had already finished. Run <span class="mono">node rotation-backtest.js</span> for the full report in a terminal.</div>
+</div>
+<div id="view-perps" role="tabpanel" aria-labelledby="tabPerps" hidden>
+ <details class="notice"><summary><b>Read this first:</b> perpetual futures use leverage, and a wrong trade can cost far more than on spot, fast. These signals come from setups tested on 4.8 years of Binance history after fees and every funding payment; none has passed every test yet, so start tiny and let the live results below build up.</summary><div><b>TAKE</b> = the setup made money before 2025 and in 2025-26, and a condition that helped it in both periods (by 0.05R or more) is met now, with none that hurt. <b>WAIT</b> = the setup made money but nothing extra speaks for this one, or one condition hurts. <b>SKIP</b> = the setup (or this kind of trade) lost money in the test, or two conditions that hurt are met. Signals are judged on closed 4h candles; the tested exit is the target at 2.5x the risk, or the stop, or 10 days. Size every trade from your risk (settings below), use isolated margin, and keep the liquidation price well beyond the stop. Several signals at once usually means one market move: take at most your maximum open positions. Research, not financial advice.</div></details>
+ <div class="error" id="pErrors"></div>
+ <div class="kpis" data-sec="signals">
+  <div class="kpi"><div class="label">Open signals</div><div class="value" id="pkOpen">—</div><div class="hint" id="pkOpenHint">being followed</div></div>
+  <div class="kpi"><div class="label">TAKE now</div><div class="value green" id="pkTake">—</div><div class="hint" id="pkTakeHint">open signals with TAKE</div></div>
+  <div class="kpi"><div class="label">BTC trend</div><div class="value" id="pkBtc">—</div><div class="hint">daily close vs 50-day average</div></div>
+  <div class="kpi"><div class="label">Last scan</div><div class="value" id="pkScan">—</div><div class="hint" id="pkScanHint">after each 4h close</div></div>
+ </div>
+ <section data-sec="signals" class="panel">
+  <div class="section-head"><div><h2>Signals</h2><p>Found on each closed 4h candle with the tested rules: 20-day breakouts (long and short) and crowded fades. Click a row for its card.</p></div><span class="chip" id="pSigChip">—</span></div>
+  <div class="sttabs" id="pTabs"></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Coin</th><th>Setup</th><th>Verdict</th><th>Entry · stop · target</th><th>Now</th><th>Result</th></tr></thead><tbody id="pSig"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
+  <div id="pCard"></div>
+ </section>
+ <section data-sec="check" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Check a trade</h2><p>Your own idea on any Binance USDⓈ-M perpetual, judged with the same tested rules: a tested setup now (or in the last 12 hours), a kind of trade that lost money in the test, or nothing tested yet and what to wait for.</p></div></div>
+  <form class="pform" id="pCheckForm" autocomplete="off">
+   <label>Coin<input id="pcSym" placeholder="e.g. SOL" required></label>
+   <label>Side<select id="pcSide"><option value="long">Long</option><option value="short">Short</option></select></label>
+   <label>Entry (optional)<input id="pcEntry" type="number" step="any" min="0" placeholder="market"></label>
+   <label>Stop (optional)<input id="pcStop" type="number" step="any" min="0" placeholder="suggested"></label>
+   <button class="btn" type="submit" id="pcGo">Check</button><span class="red" id="pcErr" style="font-size:12px"></span>
+  </form>
+  <div id="pCheck"></div>
+ </section>
+ <section data-sec="risk" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Your risk settings</h2><p>Used for the size, margin and liquidation price on every card. Saved in this browser only.</p></div></div>
+  <form class="pform" id="pRiskForm" autocomplete="off">
+   <label>Account ($)<input id="prAcct" type="number" step="any" min="0" value="1000"></label>
+   <label>Risk per trade (%)<input id="prRisk" type="number" step="0.1" min="0.1" max="10" value="1"></label>
+   <label>Leverage (x)<input id="prLev" type="number" step="1" min="1" max="125" value="5"></label>
+   <label>Maintenance margin (%)<input id="prMmr" type="number" step="0.1" min="0" max="10" value="0.5"></label>
+   <label>Max open positions<input id="prMax" type="number" step="1" min="1" max="20" value="5"></label>
+  </form>
+ </section>
+ <section data-sec="coins" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Coins scanned</h2><p>The most liquid USDⓈ-M perpetuals by 30-day volume (no stablecoins, no perpetuals on stocks, ETFs or commodities). Funding is per 8 hours, with where it sits in the coin's own last 90 days.</p></div><span class="chip" id="pCoinChip">—</span></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Price · 24h</th><th>Funding (8h)</th><th>Open interest 24h · 3d</th><th>Top traders vs all</th><th>Daily trend</th><th>vs BTC (30d)</th><th>To 20-day high · low</th><th>Fired now</th></tr></thead><tbody id="pCoins"></tbody></table></div>
+ </section>
+ <section data-sec="live" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Live results</h2><p>Every signal since the tab started, followed with the tested exit after fees and funding. This is the real test: compare it with the backtest below after 4-8 weeks.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Closed</th><th>Won</th><th>Average</th><th>Total</th><th>Backtest average</th></tr></thead><tbody id="pLive"></tbody></table></div>
+ </section>
+ <section data-sec="tested" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Backtest</h2><p id="pTestedHint">From perps_report.json (node perps-backtest.js).</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Setup</th><th>Trades</th><th>Won</th><th>Average</th><th>Before 2025 · 2025-26</th><th>One account, 5 open</th><th>Verdict</th></tr></thead><tbody id="pTested"></tbody></table></div>
+  <div class="note" id="pLeads" style="padding:0 18px 16px;font-size:13px"></div>
+ </section>
+ <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Binance futures data, no API key.</p></div></div><div class="source-list" id="pHealth"></div></section>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
  <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it. Names come from ~10,000 public labels (exchanges, funds, issuers, bridges; a June 2023 snapshot), from Blockscout for newer contracts, Safe multisigs and ENS names, from exchange addresses the tracker learns by itself, and from your own labels.</summary><div>Exchange addresses are learned the way Arkham does it: an unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address, so later deposits into it count at once (shown as "address (learned)"). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
@@ -405,7 +465,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </div>
  <section data-sec="add" class="panel"><div class="section-head"><div><h2 id="jFormTitle">Add a trade</h2><p id="jFormNote">Your real fill. Size and fees are optional but give you dollar results.</p></div></div>
   <form class="jform" id="jForm" autocomplete="off">
-   <label>Tool<select id="jTool"><option value="ignition">Confirmed ignition</option><option value="early">Early ignition</option><option value="bigmove">Big move</option><option value="alpha">Alpha</option><option value="early2x">Early 2x</option><option value="other">Other</option></select></label>
+   <label>Tool<select id="jTool"><option value="ignition">Confirmed ignition</option><option value="early">Early ignition</option><option value="bigmove">Big move</option><option value="alpha">Alpha</option><option value="early2x">Early 2x</option><option value="perps">Perps (futures)</option><option value="other">Other</option></select></label>
+   <label>Side<select id="jSide"><option value="long">Long</option><option value="short">Short</option></select></label>
    <label>Coin<input id="jSymbol" placeholder="e.g. SUI or EVAA" required></label>
    <label>Entry price<input id="jEntry" type="number" step="any" min="0" required></label>
    <label>Size ($)<input id="jSize" type="number" step="any" min="0" placeholder="optional"></label>
@@ -731,8 +792,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   draw();
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
- const TG_ORDER=["ignition","bigmove","alpha","alphaEarly","early2x","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_ORDER=["ignition","bigmove","alpha","alphaEarly","early2x","perps","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"a few a day, after 4h closes",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){
@@ -834,17 +895,19 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // ---------- tabs ----------
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
+ LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null;
- const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
   ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
+  perps:[["signals","Signals"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
   journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
@@ -864,12 +927,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);
+  if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
@@ -1177,7 +1241,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 
  // ---------- trade journal ----------
  let jd={};
- const TOOLN={ignition:"Confirmed ignition",early:"Early ignition",bigmove:"Big move",alpha:"Alpha",early2x:"Early 2x",other:"Other"};
+ const TOOLN={ignition:"Confirmed ignition",early:"Early ignition",bigmove:"Big move",alpha:"Alpha",early2x:"Early 2x",perps:"Perps",other:"Other"};
+ const sideTag=x=>x.side==="short"?' <span class="kind deposit">SHORT</span>':"";
  async function loadJ(){try{const r=await fetch("/api/journal",{cache:"no-store"});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);jd=j;drawJ();$("#jErrors").style.display="none";}
   catch(e){$("#jErrors").style.display="block";$("#jErrors").textContent="Cannot load the journal: "+e.message;}}
  async function jPost(path,body){const r=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);jd=j;drawJ();}
@@ -1192,16 +1257,16 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#jAvg").textContent=S.avgPnlPct==null?"—":pct(S.avgPnlPct);$("#jAvg").className="value "+col(S.avgPnlPct);
   $("#jAvgHint").textContent=S.closed?`best ${pct(S.bestPct)} · worst ${pct(S.worstPct)}${S.avgR!=null?` · ${S.avgR}R average`:""}`:"best · worst";
   const v=S.vsAlerts||{};$("#jVs").textContent=v.trades?`${pct(v.yourAvgPct)} vs ${pct(v.alertAvgPct)}`:"—";
-  $("#jVsHint").textContent=(v.trades?`you vs the same ${v.trades} alerts`:"needs closed trades from alerts")+(S.avgEntryVsAlertPct!=null?` · you bought ${pct(S.avgEntryVsAlertPct)} vs the alert price`:"");
+  $("#jVsHint").textContent=(v.trades?`you vs the same ${v.trades} alerts`:"needs closed trades from alerts")+(S.avgEntryVsAlertPct!=null?` · your fills ${pct(S.avgEntryVsAlertPct)} ${S.avgEntryVsAlertPct>0?"worse":"better"} than the alert price`:"");
   const open=T.filter(x=>x.result&&x.result.open),done=T.filter(x=>x.result&&!x.result.open);
   $("#jOpenChip").textContent=open.length+" open";$("#jClosedChip").textContent=done.length+" closed";
-  $("#jOpen").innerHTML=open.length?open.map(x=>`<tr><td class="mono">${jWhen(x.entryTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}</span></td><td><b>${esc(x.symbol)}</b>${x.note?`<span class="sub">${esc(x.note)}</span>`:""}</td>
+  $("#jOpen").innerHTML=open.length?open.map(x=>`<tr><td class="mono">${jWhen(x.entryTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}</span></td><td><b>${esc(x.symbol)}</b>${sideTag(x)}${x.note?`<span class="sub">${esc(x.note)}</span>`:""}</td>
    <td class="mono">${jPx(x.entryPrice)}<span class="sub">${x.sizeUsd?jUsd(x.sizeUsd):"no size"}${x.alert&&x.alert.price?` · alert ${jPx(x.alert.price)}`:""}</span></td>
    <td class="mono">${jPx(x.stopPrice)} · ${jPx(x.targetPrice)}</td><td class="mono">${jPx(x.livePrice)}</td>
    <td class="mono">${x.result.pnlPct==null?"—":`<b class="${col(x.result.pnlPct)}">${pct(x.result.pnlPct)}</b>`}<span class="sub">${x.result.pnlUsd==null?"":jUsd(x.result.pnlUsd)}${x.result.r!=null?` · ${x.result.r}R`:""}</span></td>
    <td><input class="jexit" data-id="${esc(x.id)}" type="number" step="any" min="0" placeholder="exit price" value="${x.livePrice!=null?Number(Number(x.livePrice).toPrecision(6)):""}" style="width:110px"> <button class="btn xs" data-jclose="${esc(x.id)}">Close</button> <button class="btn xs" data-jdel="${esc(x.id)}" title="Delete">✕</button></td></tr>`).join("")
    :'<tr><td colspan="7" class="empty">No open trades. Press "I took it" on an alert, or add one above.</td></tr>';
-  $("#jDone").innerHTML=done.length?done.map(x=>{const a=x.alert;return `<tr><td class="mono">${jWhen(x.exitTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}${x.result.holdMin!=null?` · held ${x.result.holdMin<120?x.result.holdMin+" min":Math.round(x.result.holdMin/60)+" h"}`:""}</span></td><td><b>${esc(x.symbol)}</b></td>
+  $("#jDone").innerHTML=done.length?done.map(x=>{const a=x.alert;return `<tr><td class="mono">${jWhen(x.exitTime)}<span class="sub">${esc(TOOLN[x.tool]||x.tool)}${x.result.holdMin!=null?` · held ${x.result.holdMin<120?x.result.holdMin+" min":Math.round(x.result.holdMin/60)+" h"}`:""}</span></td><td><b>${esc(x.symbol)}</b>${sideTag(x)}</td>
    <td class="mono">${jPx(x.entryPrice)} → ${jPx(x.exitPrice)}</td><td class="mono"><b class="${col(x.result.pnlPct)}">${pct(x.result.pnlPct)}</b><span class="sub">${x.result.pnlUsd==null?"":jUsd(x.result.pnlUsd)}</span></td>
    <td class="mono">${x.result.r??"—"}</td><td class="mono">${a?(a.netPct==null?`<span class="muted">${esc(a.status)}</span>`:`<span class="${col(a.netPct)}">${pct(a.netPct)}</span>`)+`<span class="sub">${esc(a.label||"")}</span>`:'<span class="muted">no alert</span>'}</td>
    <td>${esc(x.note||"")}</td><td><button class="btn xs" data-jdel="${esc(x.id)}" title="Delete">✕</button></td></tr>`;}).join("")
@@ -1212,7 +1277,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // "I took it": open the journal with the alert's details filled in
  function tookIt(o){
   setTab("journal");if(!["all","add"].includes(store.get("sec:journal")||"all"))applySec("journal","all");jReset();
-  $("#jTool").value=o.tool||"other";$("#jSymbol").value=o.symbol||"";$("#jEntry").value=o.price?Number(Number(o.price).toPrecision(6)):"";
+  $("#jTool").value=o.tool||"other";$("#jSide").value=o.side==="short"?"short":"long";$("#jSymbol").value=o.symbol||"";$("#jEntry").value=o.price?Number(Number(o.price).toPrecision(6)):"";
   $("#jStop").value=o.stop?Number(Number(o.stop).toPrecision(6)):"";$("#jTarget").value=o.target?Number(Number(o.target).toPrecision(6)):"";
   $("#jAlert").value=o.alertId||"";$("#jAlpha").value=o.alphaId||"";
   $("#jFormTitle").textContent="I took it: "+(o.symbol||"");
@@ -1221,7 +1286,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
  $("#jForm").addEventListener("submit",async e=>{e.preventDefault();
   const num=id=>{const v=$(id).value;return v===""?null:Number(v);};
-  try{await jPost("/api/journal",{tool:$("#jTool").value,symbol:$("#jSymbol").value,entryPrice:num("#jEntry"),sizeUsd:num("#jSize"),stopPrice:num("#jStop"),targetPrice:num("#jTarget"),feesUsd:num("#jFees"),note:$("#jNote").value,alertId:$("#jAlert").value||null,alphaId:$("#jAlpha").value||null,entryTime:Date.now()});jReset();}
+  try{await jPost("/api/journal",{tool:$("#jTool").value,side:$("#jSide").value,symbol:$("#jSymbol").value,entryPrice:num("#jEntry"),sizeUsd:num("#jSize"),stopPrice:num("#jStop"),targetPrice:num("#jTarget"),feesUsd:num("#jFees"),note:$("#jNote").value,alertId:$("#jAlert").value||null,alphaId:$("#jAlpha").value||null,entryTime:Date.now()});jReset();}
   catch(err){$("#jErrors").style.display="block";$("#jErrors").textContent=err.message;}});
  $("#jClear").onclick=jReset;
  document.querySelector("#view-journal").addEventListener("click",async e=>{
@@ -1230,6 +1295,102 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    if(c){const inp=document.querySelector(`.jexit[data-id="${c.dataset.jclose}"]`),px=Number(inp&&inp.value);if(!(px>0)){inp&&inp.focus();return;}await jPost("/api/journal/update",{id:c.dataset.jclose,exitPrice:px,exitTime:Date.now()});}
    if(d&&confirm("Delete this trade from the journal?"))await jPost("/api/journal/delete",{id:d.dataset.jdel});
   }catch(err){$("#jErrors").style.display="block";$("#jErrors").textContent=err.message;}});
+
+ // ---------- Perps (USDⓈ-M futures swing signals) ----------
+ let pd={},pView=store.get("perps:view")||"all",pSel=null,pCheckRes=null;
+ const PSETUP={breakout:"20-day breakout",crowded:"Crowded fade",pullback:"Trend pullback",flush:"Flush reversal",strength:"Relative strength",trend:"Plain trend"};
+ const pPx=v=>!(v>0)?"—":v>=1000?Number(v).toFixed(1):v>=1?Number(v).toFixed(4):Number(v).toPrecision(4);
+ const pR=v=>v==null||!Number.isFinite(v)?"—":(v>0?"+":"")+Number(v).toFixed(2)+"R";
+ const pSide=x=>`<span class="side ${x}">${x==="short"?"SHORT":"LONG"}</span>`;
+ const pVd=v=>`<span class="vd ${esc(v)}">${esc(v)}</span>`;
+ // risk settings (this browser only)
+ const PR=[["prAcct","acct",1000],["prRisk","risk",1],["prLev","lev",5],["prMmr","mmr",0.5],["prMax","max",5]];
+ function pRisk(){const o={};for(const [id,k,d] of PR){const v=Number($("#"+id).value);o[k]=Number.isFinite(v)&&v>0?v:d;}return o;}
+ for(const [id,k] of PR){const v=store.get("perps:"+k);if(v!=null&&v!=="")$("#"+id).value=v;$("#"+id).addEventListener("input",()=>{store.set("perps:"+k,$("#"+id).value);drawPCard();drawPCheck();});}
+ // Size from the risk; isolated-margin liquidation (approximate: Binance's real tiers differ a little)
+ function pSize(dir,entry,stop,costPct){
+  const R=pRisk(),dist=Math.abs(entry-stop)/entry,cost=(costPct??0.16)/100,riskUsd=R.acct*R.risk/100,notional=riskUsd/(dist+cost),margin=notional/R.lev;
+  const liq=dir>0?entry*(1-1/R.lev+R.mmr/100):entry*(1+1/R.lev-R.mmr/100),liqDist=Math.abs(entry-liq)/entry,safeLev=Math.max(1,Math.floor(1/(2*dist+R.mmr/100)));
+  return {R,riskUsd,notional,qty:notional/entry,margin,liq,ok:dir*(stop-liq)>0&&liqDist>=1.5*dist,safeLev,tooBig:margin>R.acct};
+ }
+ function pCardHtml(c){
+  const dir=c.side==="short"?-1:1,r=c.risk,z=pSize(dir,r.entry,r.stop,r.costPct),rec=c.record;
+  const fund=r.funding10dPct!=null?`${r.funding10dPct>0?"+":""}${r.funding10dPct}% over 10 days (${r.funding10dR>0?"+":""}${r.funding10dR??"—"}R)${r.fund8h!=null?` · ${r.fund8h}% per 8h, ${dir*r.fund8h>0?"you pay":"you receive"}`:""}`:"—";
+  return `<div class="pcard"><h3>${pVd(c.verdict)} ${pSide(c.side)} ${esc(c.base)} <span class="muted" style="font-size:13px;font-weight:600">${esc(c.headline||"")}</span></h3>
+   <div class="head">${c.at?`as of ${time(c.at)} · `:""}price ${pPx(c.price)}${c.btc?` · BTC trend ${esc(c.btc)}`:""}</div>
+   <div class="pgrid"><div><span>Entry</span><b>${pPx(r.entry)}</b></div><div><span>Stop (${esc(r.stopSource||"signal")})</span><b>${pPx(r.stop)}</b> <small class="muted">${r.riskPct}%</small></div><div><span>Target 2.5R</span><b>${pPx(r.target)}</b></div><div><span>Max hold</span><b>10 days</b></div>
+   <div><span>Size for ${z.R.risk}% risk</span><b>$${Math.round(z.notional).toLocaleString()}</b> <small class="muted">${pPx(z.qty)} coins</small></div><div><span>Margin at ${z.R.lev}x</span><b class="${z.tooBig?"red":""}">$${Math.round(z.margin).toLocaleString()}</b></div>
+   <div><span>Liquidation (approx.)</span><b class="${z.ok?"green":"red"}">${pPx(z.liq)}</b> <small class="${z.ok?"muted":"red"}">${z.ok?"well beyond the stop":"too close: use "+z.safeLev+"x or less"}</small></div><div><span>Funding</span><b style="font-size:12px">${esc(fund)}</b></div></div>
+   <ul>${(c.reasons||[]).map(x=>`<li class="${/^Helps/.test(x)?"plus":/^Hurts|lost money|did not make|wider than|cost about|Not a crypto/.test(x)?"minus":""}">${esc(x)}</li>`).join("")}</ul>
+   ${(c.waitFor||[]).length?`<div class="note"><b>What would make it a tested trade:</b><ul>${c.waitFor.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
+   ${rec?`<div class="note">Backtest of ${esc(PSETUP[rec.setup]||rec.setup)} ${esc(rec.side)}: ${rec.all.trades} trades, ${rec.all.winRatePct}% won, ${pR(rec.all.avgR)} per trade, profit factor ${rec.all.profitFactor} · last tested trades: ${(rec.last||[]).slice(0,6).map(t=>`${esc(String(t[2]).replace(/USDT$/,""))} ${new Date(t[3]).toISOString().slice(0,10)} ${pR(t[8])}`).join(", ")||"—"}</div>`:""}
+   <div class="note">${z.tooBig?'<span class="red">The margin is larger than your account: lower the risk or raise the leverage carefully.</span> ':""}Conditions met now: ${(c.conditions||[]).map(esc).join(" · ")||"none"}.</div>
+   ${c.verdict!=="SKIP"?`<div style="margin-top:10px"><button class="btn xs" type="button" data-ptook="${esc(c.id||"")}" data-psym="${esc(c.base)}" data-pside="${esc(c.side)}" data-pentry="${r.entry}" data-pstop="${r.stop}" data-ptarget="${r.target}">I took it</button></div>`:""}</div>`;
+ }
+ const pRecord=(setup,side)=>(pd.report?.results||[]).find(x=>x.setup===setup&&x.side===side)||null;
+ function sigCard(x){
+  const dir=x.dir,f8=x.fund8h,perDay=f8!=null?-dir*f8*3:null,riskPct=x.riskPct;
+  return {...x,headline:`${PSETUP[x.setup]||x.setup} on the ${new Date(x.t+4*3600000).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})} 4h close`,at:x.at,btc:x.f?.btc,
+   risk:{entry:x.price,stop:x.stop,target:x.target,riskPct,stopSource:"signal",fund8h:f8!=null?+f8.toFixed(4):null,funding10dPct:perDay!=null?+(perDay*10).toFixed(2):null,funding10dR:perDay!=null&&riskPct?+(perDay*10/riskPct).toFixed(2):null,costPct:2*(pd.costPctPerSide??0.08)},
+   record:pRecord(x.setup,x.side)};
+ }
+ function drawPCard(){const x=(pd.signals||[]).find(y=>y.id===pSel);$("#pCard").innerHTML=x?pCardHtml(sigCard(x)):"";}
+ function drawPCheck(){$("#pCheck").innerHTML=pCheckRes?pCardHtml({...pCheckRes,record:pCheckRes.setup?pRecord(pCheckRes.setup,pCheckRes.side):null}):"";}
+ async function loadP(){
+  try{pd=await getJson("/api/perps");}catch(e){$("#pErrors").style.display="block";$("#pErrors").textContent="Perps: "+e.message;return;}
+  drawP();
+ }
+ function drawP(){
+  const d=pd,sig=d.signals||[],open=sig.filter(x=>x.track.status==="open");
+  $("#pErrors").style.display=d.error?"block":"none";$("#pErrors").textContent=d.error?("Perps: "+d.error+(/451|403|blocked/.test(d.error)?" · Binance futures is blocked on this connection: use a VPN or set BINANCE_FUTURES_URL (README: Troubleshooting).":"")):"";
+  $("#pkOpen").textContent=open.length;$("#pkOpenHint").textContent=`${sig.length} signals so far`;
+  $("#pkTake").textContent=open.filter(x=>x.verdict==="TAKE").length;$("#pkTakeHint").textContent=open.filter(x=>x.verdict==="TAKE").length>pRisk().max?`more than your ${pRisk().max} max positions: pick`:"open signals with TAKE";
+  $("#pkBtc").textContent=d.btc||"—";$("#pkBtc").className="value "+(d.btc==="up"?"green":d.btc==="down"?"red":"");
+  $("#pkScan").textContent=d.updatedAt?time(d.updatedAt):d.demo?"demo":"—";$("#pkScanHint").textContent=d.nextScanAt?`next ${time(d.nextScanAt)}`:"after each 4h close";
+  const tabs=[["all","All",sig.length],["TAKE","TAKE",sig.filter(x=>x.verdict==="TAKE").length],["WAIT","WAIT",sig.filter(x=>x.verdict==="WAIT").length],["SKIP","SKIP",sig.filter(x=>x.verdict==="SKIP").length],["open","Open",open.length],["closed","Closed",sig.length-open.length]];
+  $("#pTabs").innerHTML=tabs.map(([k,l,n])=>`<button type="button" data-pv="${k}" class="${k===pView?"on":""}">${l}<span>${n}</span></button>`).join("");
+  const rows=sig.filter(x=>pView==="all"||(pView==="open"?x.track.status==="open":pView==="closed"?x.track.status!=="open":x.verdict===pView));
+  $("#pSigChip").textContent=d.coins?`${d.coins} coins · ${d.liveSetups?.map(k=>PSETUP[k]).join(", ")}`:"—";
+  $("#pSig").innerHTML=rows.length?rows.slice(0,60).map(x=>{const t=x.track,res=t.status==="closed"?`<b class="${t.r>0?"green":"red"}">${pR(t.r)}</b><span class="sub">${esc(t.why||"")} · ${t.netPct>0?"+":""}${t.netPct}%</span>`:'<span class="muted">open</span>';
+   return `<tr class="${x.id===pSel?"sel":""}" data-psig="${esc(x.id)}" style="cursor:pointer"><td class="mono">${new Date(x.t+4*3600000).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td><td><b>${esc(x.base)}</b> ${pSide(x.side)}</td><td>${esc(PSETUP[x.setup]||x.setup)}</td><td>${pVd(x.verdict)}${x.plus?.length?`<span class="sub green">${esc(x.plus[0])}</span>`:""}</td>
+    <td class="mono">${pPx(x.price)} · ${pPx(x.stop)} · ${pPx(x.target)}<span class="sub">risk ${x.riskPct}%</span></td><td class="mono">${t.status==="open"&&t.last?`${pPx(t.last)}<span class="sub">${pR(t.r)} · ${t.days} d</span>`:"—"}</td><td class="mono">${res}</td></tr>`;}).join("")
+   :`<tr><td colspan="7" class="empty">${d.status==="starting"?"First scan in a moment…":d.demo?"Live signals need live Binance futures data (not in demo mode).":sig.length?"Nothing in this view.":"No signal yet. They come after 4h closes (00, 04, 08, 12, 16, 20 UTC); quiet days are normal."}</td></tr>`;
+  drawPCard();
+  // coins
+  const cr=d.rows||[];
+  $("#pCoinChip").textContent=cr.length?`${cr.length} coins${d.excluded?.tradfi?.length?` · ${d.excluded.tradfi.length} stock/ETF/commodity perps left out`:""}`:"—";
+  $("#pCoins").innerHTML=cr.length?cr.map(c=>`<tr><td><button type="button" class="coin-link" data-pcheck="${esc(c.base)}"><b>${esc(c.base)}</b></button></td><td class="mono">${pPx(c.price)}<span class="sub ${c.ch24>0?"green":c.ch24<0?"red":""}">${c.ch24>0?"+":""}${c.ch24??"—"}%</span></td>
+   <td class="mono ${c.fund8h<0?"green":c.fund8h>0.03?"red":""}">${c.fund8h!=null?c.fund8h.toFixed(4)+"%":"—"}<span class="sub">${c.fundPct!=null?c.fundPct+"th pct of 90d":""}</span></td><td class="mono">${c.oi24h!=null?(c.oi24h>0?"+":"")+c.oi24h+"%":"—"}<span class="sub">${c.oi3d!=null?(c.oi3d>0?"+":"")+c.oi3d+"% 3d":""}</span></td>
+   <td class="mono">${c.topVsAcc??"—"}</td><td>${esc(c.dTrend||"—")}</td><td class="mono">${c.rs?`#${c.rs.rank} of ${c.rs.n}`:"—"}</td><td class="mono">${c.toHi20>0?"+":""}${c.toHi20}% · ${c.toLo20}%</td>
+   <td>${(c.signals||[]).map(x=>`${pSide(x.side)} ${esc(PSETUP[x.setup]||x.setup)}${["pullback|long","flush|long"].includes(x.setup+"|"+x.side)?' <span class="muted">(lost money in test)</span>':""}`).join("<br>")||'<span class="muted">—</span>'}</td></tr>`).join(""):'<tr><td colspan="9" class="empty">Waiting for the first scan.</td></tr>';
+  // live vs backtest
+  const L=d.live||{},rec=(k)=>{const [st,sd]=k.split("|");return pRecord(st,sd);};
+  const lrow=(name,x,bt)=>`<tr><td>${name}</td><td class="mono">${x.trades||0}</td><td class="mono">${x.trades?x.winRatePct+"%":"—"}</td><td class="mono ${x.avgR>0?"green":x.avgR<0?"red":""}">${pR(x.avgR)}</td><td class="mono">${x.totalR!=null?pR(x.totalR):"—"}</td><td class="mono">${bt!=null?pR(bt):"—"}</td></tr>`;
+  $("#pLive").innerHTML=L.closed?[lrow("<b>All signals</b>",L.all,null),...Object.entries(L.byVerdict||{}).map(([k,x])=>lrow(pVd(k),x,null)),...Object.entries(L.bySetup||{}).map(([k,x])=>{const [st,sd]=k.split("|");return lrow(`${esc(PSETUP[st]||st)} ${pSide(sd)}`,x,rec(k)?.all?.avgR);})].join("")
+   :`<tr><td colspan="6" class="empty">${L.open?`${L.open} signal${L.open===1?"":"s"} still open; results appear as they close (up to 10 days).`:"No closed signal yet."}</td></tr>`;
+  // backtest
+  const R=d.report;
+  $("#pTestedHint").textContent=R?`${R.from} to ${R.to}, the ${R.top} most liquid perpetuals of each month (${R.coins} coins over time), ${R.costPctPerSide}% per side + every funding payment, target 2.5R / stop / 10 days. Run node perps-backtest.js monthly to refresh.`:"No report yet: run node perps-backtest.js once (about 1-2 hours the first time).";
+  $("#pTested").innerHTML=R?R.results.filter(x=>x.setup!=="trend"||true).map(x=>`<tr class="${(d.liveSetups||[]).includes(x.setup)?"":"faded"}"><td><b>${esc(PSETUP[x.setup]||x.setup)}</b> ${pSide(x.side)}${x.setup==="trend"?'<span class="sub">benchmark</span>':""}</td><td class="mono">${x.all.trades}</td><td class="mono">${x.all.winRatePct}%</td><td class="mono ${x.all.avgR>0?"green":"red"}">${pR(x.all.avgR)}</td><td class="mono">${pR(x.older.avgR)} · ${pR(x.newer.avgR)}</td><td class="mono">${x.portfolio?(x.portfolio.returnPct>0?"+":"")+x.portfolio.returnPct+"%":"—"}<span class="sub">max drawdown ${x.portfolio?.maxDrawdownPct??"—"}%</span></td><td>${esc(x.verdict)}</td></tr>`).join(""):'<tr><td colspan="7" class="empty">—</td></tr>';
+  const leads=R?R.results.filter(x=>(d.liveSetups||[]).includes(x.setup)).flatMap(x=>(x.groups||[]).filter(g=>g.holds==="better in both"&&g.olderR-x.older.avgR>=0.049&&g.newerR-x.newer.avgR>=0.049&&x.older.avgR>0&&x.newer.avgR>0).map(g=>`${PSETUP[x.setup]||x.setup} ${x.side} + ${g.name}: ${pR(g.olderR)} / ${pR(g.newerR)} (${g.trades} trades)`)):[];
+  $("#pLeads").innerHTML=leads.length?`<b>Conditions that helped in both periods (these turn WAIT into TAKE):</b><br>${leads.map(esc).join("<br>")}<br><span class="muted">Found after looking at both periods: the live results decide if they last.</span>`:"";
+  // health
+  $("#pHealth").innerHTML=[["Binance futures data",`${esc(d.source||"—")} · ${d.status==="ready"?'<span class="green">connected</span>':esc(d.status||"—")}`],["Last scan",d.updatedAt?`${time(d.updatedAt)}${d.scanMs!=null?" · "+(d.scanMs/1000).toFixed(1)+"s":""}`:"—"],["Next scan",d.nextScanAt?time(d.nextScanAt):"—"],
+   ["Coins scanned",`${d.coins||0} of the most liquid (PERPS_TOP=${d.top||50})`],["Left out",d.excluded?`${d.excluded.tradfi?.length||0} stock/ETF/commodity perps by their weekend volume${d.excluded.tradfi?.length?": "+esc(d.excluded.tradfi.slice(0,12).join(", "))+(d.excluded.tradfi.length>12?"…":""):""}`:"—"],
+   ["Costs used",`${d.costPctPerSide??0.08}% per side + real funding (PERPS_COST_PCT)`],["Backtest report",R?`${new Date(R.generatedAt).toLocaleDateString()} · ${R.from} to ${R.to}`:"none yet"],["Telegram",d.telegramOn?'<span class="green">on</span> (TAKE and WAIT signals)':'off · switch on "Perps swing signals" in Ignition › Telegram']]
+   .map(([k,v])=>`<div class="source-row"><span>${k}</span><b class="status-pill">${v}</b></div>`).join("");
+ }
+ $("#pTabs").addEventListener("click",e=>{const b=e.target.closest("[data-pv]");if(!b)return;pView=b.dataset.pv;store.set("perps:view",pView);drawP();});
+ $("#pSig").addEventListener("click",e=>{const r=e.target.closest("[data-psig]");if(!r)return;pSel=pSel===r.dataset.psig?null:r.dataset.psig;drawP();if(pSel)$("#pCard").scrollIntoView({behavior:"smooth",block:"nearest"});});
+ $("#pCoins").addEventListener("click",e=>{const b=e.target.closest("[data-pcheck]");if(!b)return;$("#pcSym").value=b.dataset.pcheck;$("#pCheckForm").requestSubmit();$("#pCheckForm").scrollIntoView({behavior:"smooth",block:"start"});});
+ $("#pCheckForm").addEventListener("submit",async e=>{e.preventDefault();
+  $("#pcErr").textContent="";$("#pcGo").disabled=true;$("#pcGo").textContent="Checking…";
+  try{const q=new URLSearchParams({sym:$("#pcSym").value,side:$("#pcSide").value});if($("#pcEntry").value)q.set("entry",$("#pcEntry").value);if($("#pcStop").value)q.set("stop",$("#pcStop").value);
+   pCheckRes=await getJson("/api/perps/check?"+q);if(pCheckRes.error)throw new Error(pCheckRes.error);drawPCheck();}
+  catch(err){pCheckRes=null;$("#pCheck").innerHTML="";$("#pcErr").textContent=err.message;}
+  finally{$("#pcGo").disabled=false;$("#pcGo").textContent="Check";}});
+ document.querySelector("#view-perps").addEventListener("click",e=>{const b=e.target.closest("[data-ptook]");if(!b)return;
+  tookIt({tool:"perps",side:b.dataset.pside,symbol:b.dataset.psym,price:+b.dataset.pentry,alertPrice:+b.dataset.pentry,stop:+b.dataset.pstop,target:+b.dataset.ptarget,alertId:b.dataset.ptook||""});});
 
  // ---------- BTC rotation ----------
  async function loadRot(){

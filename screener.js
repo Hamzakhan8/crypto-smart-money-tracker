@@ -73,6 +73,7 @@ import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 import { createAlpha } from "./alpha.js";
 import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
 import { createJournal } from "./journal.js";
+import { createPerps } from "./perps-live.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
 const env = process.env;
@@ -242,6 +243,12 @@ const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
   sendTelegram: (t, kind) => tgSend(t, { kind }), telegramConfigured: () => telegramStatus().configured, wantTelegram: telegramWants,
   context: () => marketContext(Date.now()), onAlert: (a) => { for (const h of alphaHooks) Promise.resolve().then(() => h(a)).catch(() => {}); },
 });
+// Perps tab: swing setups on Binance USDⓈ-M perpetuals, the ones tested by perps-backtest.js (perps-live.js)
+const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "perps_state.demo.json" : "perps_state.json"), reportFile: path.join(here, "perps_report.json"),
+  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured,
+  top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
+});
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
 export const onAlphaAlert = (fn) => { alphaHooks.push(fn); };
 export const annotateAlpha = (id, patch) => {
@@ -256,6 +263,7 @@ export const alphaMatchingFor = (a) => alpha?.matchingGroups(a) ?? [];
 const journal = createJournal({ file: path.join(here, DEMO ? "journal.demo.json" : "journal.json"),
   priceOf: async (j) => {
     if (j.tool === "alpha") return alpha?.tokenFor(j.alphaId || j.symbol)?.price ?? null;
+    if (j.tool === "perps" && perps?.priceOf(j.symbol)) return perps.priceOf(j.symbol);
     const base = String(j.symbol || "").toUpperCase().replace(/USDT$/, "");
     const c = state.candidates.find((x) => x.base === base);
     if (c?.price) return c.price;
@@ -265,7 +273,8 @@ const journal = createJournal({ file: path.join(here, DEMO ? "journal.demo.json"
     const e = state.events.find((x) => x.id === id);
     if (e) return { price: e.track?.entry ?? null, netPct: resolvedOk(e) ? round(resultOf(e) - COST_PCT, 2) : null, status: e.track?.outcome || "open", label: e.label, time: e.time };
     const a = alpha?.alertById(id);
-    return a ? { price: a.f.close, netPct: a.track.status !== "open" ? a.track.resultPct : null, status: a.track.status, label: `Alpha ${a.tier}`, time: a.t } : null;
+    if (a) return { price: a.f.close, netPct: a.track.status !== "open" ? a.track.resultPct : null, status: a.track.status, label: `Alpha ${a.tier}`, time: a.t };
+    return perps?.signalById(id) || null;
   } });
 
 // ───────────────────────────── utilities ─────────────────────────────
@@ -1563,6 +1572,14 @@ export async function handleScreenerRequest(req, res, url) {
     jsonResponse(res, 200, telegramStatus()); return true;
   }
   if (await journal.handle(req, res, url)) return true;
+  if (url.pathname === "/api/perps") { jsonResponse(res, 200, perps ? perps.api() : { status: "off", error: "The Perps tab is off (PERPS=0 in .env)" }); return true; }
+  if (url.pathname === "/api/perps/check") {
+    if (!perps) { jsonResponse(res, 200, { error: "The Perps tab is off (PERPS=0 in .env)" }); return true; }
+    const q = url.searchParams;
+    try { jsonResponse(res, 200, await perps.check({ sym: q.get("sym"), side: q.get("side"), entry: Number(q.get("entry")) || null, stop: Number(q.get("stop")) || null })); }
+    catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
+    return true;
+  }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;
@@ -1608,6 +1625,8 @@ export function startScreener(baseUrl = "") {
   else console.log("Early 2x Movers: off (EARLY2X=0)");
   if (alpha && !DEMO) alpha.start();
   else console.log(`Binance Alpha ignition: off (${DEMO ? "demo mode" : "ALPHA=0"})`);
+  if (perps) perps.start();
+  else console.log("Perps swing signals: off (PERPS=0)");
 }
 
 // Standalone: `node screener.js` serves the screener on its own port.

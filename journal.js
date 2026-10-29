@@ -5,16 +5,18 @@
 import { readFile, writeFile, rename } from "node:fs/promises";
 
 const r2 = (v, d = 2) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
-const TOOLS = ["ignition", "early", "bigmove", "alpha", "early2x", "other"];
+const TOOLS = ["ignition", "early", "bigmove", "alpha", "early2x", "perps", "other"];
+const dirOf = (j) => (j.side === "short" ? -1 : 1); // shorts (perps) gain when price falls
 const pos = (v) => { const x = Number(v); return Number.isFinite(x) && x > 0 ? x : null; };
 
-// One trade's result. P&L in $ after your fees; % of the position; R = result in units of the planned risk (needs a stop).
+// One trade's result. P&L in $ after your fees; % of the position; R = result in units of the planned risk (needs a stop
+// on the right side: below the entry for a long, above for a short).
 export function tradeResult(j, livePrice = null) {
-  const exit = j.exitPrice ?? livePrice, size = j.sizeUsd ?? null;
+  const exit = j.exitPrice ?? livePrice, size = j.sizeUsd ?? null, dir = dirOf(j);
   if (!(j.entryPrice > 0) || !(exit > 0)) return { open: j.exitPrice == null, pnlPct: null, pnlUsd: null, r: null };
-  const move = exit / j.entryPrice - 1, fees = j.feesUsd ?? 0;
+  const move = dir * (exit / j.entryPrice - 1), fees = j.feesUsd ?? 0;
   const pnlUsd = size ? size * move - fees : null, pnlPct = size ? (pnlUsd / size) * 100 : move * 100;
-  const risk = j.stopPrice > 0 && j.stopPrice < j.entryPrice ? (j.entryPrice - j.stopPrice) / j.entryPrice : null;
+  const risk = j.stopPrice > 0 && dir * (j.entryPrice - j.stopPrice) > 0 ? Math.abs(j.entryPrice - j.stopPrice) / j.entryPrice : null;
   return { open: j.exitPrice == null, pnlPct: r2(pnlPct), pnlUsd: r2(pnlUsd), r: risk ? r2(move / risk) : null,
     holdMin: j.exitTime && j.entryTime ? Math.round((j.exitTime - j.entryTime) / 60_000) : null };
 }
@@ -26,14 +28,14 @@ export function journalSummary(rows) {
   const pcts = closed.map((x) => x.result.pnlPct), rs = closed.map((x) => x.result.r).filter(Number.isFinite);
   const usd = closed.map((x) => x.result.pnlUsd).filter(Number.isFinite);
   const linked = closed.filter((x) => x.alert && Number.isFinite(x.alert.netPct));
-  const slip = rows.filter((x) => x.alert?.price > 0 && x.entryPrice > 0).map((x) => (x.entryPrice / x.alert.price - 1) * 100);
+  const slip = rows.filter((x) => x.alert?.price > 0 && x.entryPrice > 0).map((x) => dirOf(x) * (x.entryPrice / x.alert.price - 1) * 100);
   return {
     trades: rows.length, open: open.length, closed: closed.length, wins: closed.filter((x) => x.result.pnlPct > 0).length,
     winRatePct: closed.length ? Math.round((closed.filter((x) => x.result.pnlPct > 0).length / closed.length) * 100) : null,
     totalPnlUsd: usd.length ? r2(usd.reduce((s, v) => s + v, 0)) : null, avgPnlPct: avg(pcts), avgR: avg(rs),
     bestPct: pcts.length ? r2(Math.max(...pcts)) : null, worstPct: pcts.length ? r2(Math.min(...pcts)) : null,
     openPnlUsd: r2(open.map((x) => x.result.pnlUsd).filter(Number.isFinite).reduce((s, v) => s + v, 0)),
-    avgEntryVsAlertPct: avg(slip), // + = you bought above the alert price
+    avgEntryVsAlertPct: avg(slip), // + = a worse fill than the alert price (above it for a long, below it for a short)
     vsAlerts: { trades: linked.length, yourAvgPct: avg(linked.map((x) => x.result.pnlPct)), alertAvgPct: avg(linked.map((x) => x.alert.netPct)) },
     byTool: TOOLS.map((t) => { const g = closed.filter((x) => x.tool === t); return { tool: t, closed: g.length, avgPnlPct: avg(g.map((x) => x.result.pnlPct)),
       winRatePct: g.length ? Math.round((g.filter((x) => x.result.pnlPct > 0).length / g.length) * 100) : null }; }).filter((x) => x.closed),
@@ -45,6 +47,7 @@ export function cleanTrade(b, prev = null) {
   const t = { ...(prev || {}) };
   if (b.symbol !== undefined) { const s = String(b.symbol || "").trim().slice(0, 30); if (!s) return { error: "Symbol is missing" }; t.symbol = s; }
   if (b.tool !== undefined) t.tool = TOOLS.includes(b.tool) ? b.tool : "other";
+  if (b.side !== undefined) t.side = b.side === "short" ? "short" : "long";
   for (const k of ["entryPrice", "exitPrice", "sizeUsd", "stopPrice", "targetPrice"]) if (b[k] !== undefined) t[k] = b[k] === null || b[k] === "" ? null : pos(b[k]);
   if (b.feesUsd !== undefined) { const f = Number(b.feesUsd); t.feesUsd = Number.isFinite(f) && f >= 0 ? f : null; }
   for (const k of ["entryTime", "exitTime"]) if (b[k] !== undefined) { const v = Number(b[k]); t[k] = Number.isFinite(v) && v > 1e12 ? v : b[k] === null ? null : Date.now(); }
@@ -55,7 +58,7 @@ export function cleanTrade(b, prev = null) {
   if (!(t.entryPrice > 0)) return { error: "Entry price must be a positive number" };
   if (t.exitPrice != null && !t.exitTime) t.exitTime = Date.now();
   if (t.exitPrice == null) t.exitTime = null;
-  t.tool ||= "other"; t.entryTime ||= Date.now();
+  t.tool ||= "other"; t.side ||= "long"; t.entryTime ||= Date.now();
   return { trade: t };
 }
 

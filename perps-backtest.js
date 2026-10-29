@@ -87,18 +87,7 @@ for (const sym of hist.chosen) {
 
 // ───────────────────────────── report ─────────────────────────────
 const side = (d) => (d > 0 ? "long" : "short");
-const GROUPS = [
-  ["BTC trend with the trade", (t) => t.f.btc === (t.dir > 0 ? "up" : "down")],
-  ["BTC trend against the trade", (t) => t.f.btc === (t.dir > 0 ? "down" : "up")],
-  ["Daily trend with the trade", (t) => t.f.dTrend === (t.dir > 0 ? "up" : "down")],
-  ["Open interest rising (+3% in 24h)", (t) => t.f.oi24h >= 0.03],
-  ["Open interest falling (-3% in 24h)", (t) => t.f.oi24h != null && t.f.oi24h <= -0.03],
-  ["Crowd on the other side (funding against the trade)", (t) => t.f.fund8h != null && (t.dir > 0 ? t.f.fund8h < 0 : t.f.fund8h > 0.01)],
-  ["Crowd on the same side (funding in its top/bottom 20%)", (t) => t.f.fundPct != null && (t.dir > 0 ? t.f.fundPct >= 0.8 : t.f.fundPct <= 0.2)],
-  ["Top traders more on the trade's side than everyone", (t) => t.f.topVsAcc != null && (t.dir > 0 ? t.f.topVsAcc > 1.05 : t.f.topVsAcc < 0.95)],
-  ["Volume 2x its average", (t) => t.f.vol >= 2],
-  ["Coin strong vs BTC (top 10) / weak (bottom 10) for shorts", (t) => t.f.rs && (t.dir > 0 ? t.f.rs.rank <= 10 : t.f.rs.rank > t.f.rs.n - 10)],
-];
+const GROUPS = P.CONDITIONS; // shared with the live Perps tab (perps.js)
 const pick = (setup, dir, rule) => trades.filter((t) => t.setup === setup && t.dir === dir && t.rule === rule);
 const years = [...new Set(trades.map((t) => new Date(t.t).getUTCFullYear()))].sort();
 const report = { generatedAt: Date.now(), from: hist.from, to: hist.to, split: SPLIT, top: TOP, costPctPerSide: COST, maxOpen: MAX_OPEN,

@@ -161,7 +161,7 @@ const firstAfter = (rows, t) => { let lo = 0, hi = rows.length; while (lo < hi) 
 // ends: a coin whose candles stop earlier was delisted, and an open trade is closed at its last price (dropping it
 // would hide the losses of coins that crashed and were delisted).
 // Returns null when there is no next candle, or the trade is still open at the end of the history.
-export function simulate(s, sig, rule = EXITS.main, costPct = 0.08, dataEnd = Infinity) {
+export function simulate(s, sig, rule = EXITS.main, costPct = 0.08, dataEnd = null) {
   const bars = s.bars, e = sig.i + 1;
   if (e >= bars.length) return null;
   const dir = sig.dir, entry = bars[e].o, t0 = bars[e].t, risk = dir * (entry - sig.stop);
@@ -183,7 +183,7 @@ export function simulate(s, sig, rule = EXITS.main, costPct = 0.08, dataEnd = In
     if (rule.trail != null && gain >= rule.trailAfter && a0 > 0) stop = dir > 0 ? Math.max(stop, peak - rule.trail * a0) : Math.min(stop, peak + rule.trail * a0);
     if (j === bars.length - 1) {
       open = false;
-      if (b.t + H4 < dataEnd - DAY) { exit = b.c; why = "delisted"; at = b.t + H4; }
+      if (dataEnd != null && b.t + H4 < dataEnd - DAY) { exit = b.c; why = "delisted"; at = b.t + H4; }
     }
   }
   if (exit == null) return null; // still open at the end of the history
@@ -194,6 +194,53 @@ export function simulate(s, sig, rule = EXITS.main, costPct = 0.08, dataEnd = In
   return { sym: s.sym, dir, t: t0, exitT: at, entry, stop: sig.stop, exit, why, riskPct: +riskPct.toFixed(3), grossPct: +gross.toFixed(3),
     fundingPct: +funding.toFixed(3), netPct: +net.toFixed(3), r: +(net / riskPct).toFixed(3), mfeR: +mfe.toFixed(2), maeR: +mae.toFixed(2),
     days: +((at - t0) / DAY).toFixed(2) };
+}
+
+// ───────────────────────────── conditions and verdicts ─────────────────────────────
+// Conditions known when a signal fires. The backtest reports each setup's result with and without them, older and
+// newer period; the live tab uses the ones that helped (or hurt) in BOTH periods. t = { dir, f: features() }.
+export const CONDITIONS = [
+  ["BTC trend with the trade", (t) => t.f.btc === (t.dir > 0 ? "up" : "down")],
+  ["BTC trend against the trade", (t) => t.f.btc === (t.dir > 0 ? "down" : "up")],
+  ["Daily trend with the trade", (t) => t.f.dTrend === (t.dir > 0 ? "up" : "down")],
+  ["Open interest rising (+3% in 24h)", (t) => t.f.oi24h >= 0.03],
+  ["Open interest falling (-3% in 24h)", (t) => t.f.oi24h != null && t.f.oi24h <= -0.03],
+  ["Crowd on the other side (funding against the trade)", (t) => t.f.fund8h != null && (t.dir > 0 ? t.f.fund8h < 0 : t.f.fund8h > 0.01)],
+  ["Crowd on the same side (funding in its top/bottom 20%)", (t) => t.f.fundPct != null && (t.dir > 0 ? t.f.fundPct >= 0.8 : t.f.fundPct <= 0.2)],
+  ["Top traders more on the trade's side than everyone", (t) => t.f.topVsAcc != null && (t.dir > 0 ? t.f.topVsAcc > 1.05 : t.f.topVsAcc < 0.95)],
+  ["Volume 2x its average", (t) => t.f.vol >= 2],
+  ["Coin strong vs BTC (top 10) / weak (bottom 10) for shorts", (t) => t.f.rs && (t.dir > 0 ? t.f.rs.rank <= 10 : t.f.rs.rank > t.f.rs.n - 10)],
+];
+export const conditionsMet = (dir, f) => CONDITIONS.filter(([, fn]) => { try { return !!fn({ dir, f }); } catch { return false; } }).map(([name]) => name);
+
+// TAKE / WAIT / SKIP for one signal, from its setup's tested record (a perps_report.json result) and the conditions
+// met now. A condition counts only if it changed the setup's result by MARGIN R or more in both periods (smaller gaps
+// are noise). TAKE = the setup made money in both periods AND a condition that helped is met AND none that hurt.
+// SKIP = the setup lost money in either period, or 2+ conditions that hurt are met. Otherwise WAIT.
+export const MARGIN_R = 0.05;
+export function judge(setup, dir, f, record) {
+  const side = dir > 0 ? "long" : "short", met = new Set(conditionsMet(dir, f));
+  if (!record?.all?.trades) return { verdict: "WAIT", reasons: ["No backtest report yet: run node perps-backtest.js to give this setup a record"], plus: [], minus: [] };
+  const o = record.older?.avgR, n = record.newer?.avgR, both = o > 0 && n > 0;
+  const m = MARGIN_R - 1e-9; // R values are rounded to 0.01: 0.12 - 0.07 must count as 0.05
+  const plus = (record.groups || []).filter((g) => g.holds === "better in both" && met.has(g.name) && g.olderR - o >= m && g.newerR - n >= m);
+  const minus = (record.groups || []).filter((g) => g.holds === "worse in both" && met.has(g.name) && g.olderR - o <= -m && g.newerR - n <= -m);
+  const reasons = [`Tested: ${record.all.trades} ${setup} ${side} trades, ${record.all.avgR >= 0 ? "+" : ""}${record.all.avgR}R per trade (before 2025 ${o ?? "—"}R, 2025-26 ${n ?? "—"}R), ${record.all.winRatePct}% won`];
+  for (const g of plus) reasons.push(`Helps: ${g.name} (${g.olderR}R / ${g.newerR}R in those trades)`);
+  for (const g of minus) reasons.push(`Hurts: ${g.name} (${g.olderR}R / ${g.newerR}R in those trades)`);
+  let verdict;
+  if (!both) { verdict = "SKIP"; reasons.push("This setup did not make money in both periods"); }
+  else if (minus.length >= 2) verdict = "SKIP";
+  else if (plus.length && !minus.length) verdict = "TAKE";
+  else { verdict = "WAIT"; if (!plus.length) reasons.push("No condition that helped this setup in both periods is met now"); }
+  return { verdict, reasons, plus: plus.map((g) => g.name), minus: minus.map((g) => g.name) };
+}
+
+// Price levels at the close of bar i, for "check a trade": the 20-day high / low, distances, ATR and EMAs.
+export function levels(s, i) {
+  const b = s.bars[i], a = s.atr[i], hi20 = maxOf(s.bars, i - 120, i - 1, "h"), lo20 = minOf(s.bars, i - 120, i - 1, "l");
+  return { price: b.c, atr: a, atrPct: a ? +(a / b.c * 100).toFixed(2) : null, hi20, lo20, toHi20Pct: +((hi20 / b.c - 1) * 100).toFixed(2), toLo20Pct: +((lo20 / b.c - 1) * 100).toFixed(2),
+    ema20: s.ema20[i], ema50: s.ema50[i], volVsAvg: s.qvAvg[i] > 0 ? +(b.qv / s.qvAvg[i]).toFixed(2) : null };
 }
 
 // ───────────────────────────── results ─────────────────────────────

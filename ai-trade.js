@@ -60,23 +60,29 @@ export const BASE_RATES = {
   early: { ...REPLAY.early, source: REPLAY.source },
   bigmove: { hitTargetPct: 8.5, hitStopPct: 39, avgNetPct: 1.55, source: "90-day replay of every Binance USDT pair (bigmove-backtest.js)",
     note: "made money in the Aug-Sep altcoin rally and lost in October: it depends on the market" },
-  none: { hitTargetPct: 15, hitStopPct: 40, source: "no ignition signal: assumed below the early tier" },
+  none: { hitTargetPct: 13, hitStopPct: 33, avgNetPct: -0.25, source: "90-day replay, Aug 1 - Oct 29 2026: a random moment on 96 Binance coins (every 4 hours, no signal), same rule" },
 };
+// A coin that already ran (up 12%+ in 24h, 8%+ in 1h or 8%+ above its 20-day high: the screener's "Already moved") with
+// volume still surging: no alert, but measured. Used instead of BASE_RATES.none when the screener shows that state.
+export const ALREADY_RAN = { hitTargetPct: 31, hitStopPct: 60, avgNetPct: -0.16,
+  source: "90-day replay, Aug 1 - Oct 29 2026: 1,215 times a coin that had already run got a fresh 5m volume burst with buyers 58%+, same rule",
+  note: "chasing a coin that already ran: about 6 in 10 hit the stop first; the same in both halves of the period" };
 const ruleFor = (tier) => (tier === "bigmove" && CONFIG.bigmove
   ? { targetPct: CONFIG.bigmove.targetPct, stopPct: CONFIG.bigmove.stopPct, holdHours: CONFIG.bigmove.outcomeHours }
   : { targetPct: CONFIG.targetPct, stopPct: CONFIG.stopPct, holdHours: CONFIG.outcomeHours });
 // What the alert is tracked as and the starting probabilities for the AI.
-export function alertContext(tier, snap = {}) {
-  const t = BASE_RATES[tier] ? tier : "none", base = BASE_RATES[t];
+export function alertContext(tier, snap = {}, { ran = false } = {}) {
+  const t = BASE_RATES[tier] ? tier : "none", base = t === "none" && ran ? ALREADY_RAN : BASE_RATES[t];
   const live = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[t] ? snap.stats?.current?.byTier?.[{ confirmed: "ignition", early: "early", bigmove: "bigmove" }[t]] : null;
   const useLive = !!live && live.resolved >= 30;
   return {
-    tier: t, label: { confirmed: "confirmed ignition", early: "early ignition", bigmove: "big-move ignition (small coin waking up)", none: "no ignition signal" }[t],
+    tier: t, label: { confirmed: "confirmed ignition", early: "early ignition", bigmove: "big-move ignition (small coin waking up)",
+      none: ran ? "no ignition signal: the coin already ran (volume still surging)" : "no ignition signal" }[t],
     trackedAs: ruleFor(t), costPct: r(COST_PCT, 2), baseRate: base,
     live: live && live.resolved ? { resolved: live.resolved, hitTargetPct: live.winRatePct, hitStopPct: r((live.losses / live.resolved) * 100, 1), avgNetPct: live.netPct } : null,
     anchorProbTargetPct: Math.round(useLive ? live.winRatePct : base.hitTargetPct),
     anchorProbStopPct: Math.round(useLive ? (live.losses / live.resolved) * 100 : base.hitStopPct),
-    anchorFrom: useLive ? "live results" : t === "none" ? "an assumption: no replay exists for coins without a signal" : "replay",
+    anchorFrom: useLive ? "live results" : t === "none" ? (ran ? "replay of coins that had already run" : "replay of random moments (no signal)") : "replay",
   };
 }
 // Breadth of the screener's coins: is the market lifting most coins or few?
@@ -272,7 +278,7 @@ export async function buildDossier(symbol, tierHint = null) {
 
   // Reference plan from the alert's own exit rule plus structure / volatility alternatives (long only).
   const tier = tierHint || (cand?.ignition === "ignited" ? ((cand.igScore ?? 0) >= CONFIG.igniteMinScore ? "confirmed" : "early") : cand?.bigmove === "ignited" ? "bigmove" : null);
-  const alert = alertContext(tier, snap), rule = alert.trackedAs, liveKey = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[alert.tier] || null;
+  const alert = alertContext(tier, snap, { ran: !tier && cand?.ignition === "ran" }), rule = alert.trackedAs, liveKey = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[alert.tier] || null;
   alert.timeout = timeoutFor("spot", alert.tier, liveKey ? snap.stats?.current?.byTier?.[liveKey] : null);
   const stopRule = price * (1 - rule.stopPct / 100);
   const stopStructure = support && pct(support, price) > -8 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
@@ -360,8 +366,9 @@ Work through these steps in order and show them in your answer:
    or less than $20k of bids within 1% (you could not get out). List the ones that apply in hardStops (empty if none).
 2. CHECKLIST. For each item give pass / fail / unknown and the dossier number that decides it:
    trigger (alert.tier, volume vs normal, how many candles held it), executed buying (screener buyers %, marketFlow),
-   trend (1h and 4h direction vs the trade), room (distance to resistance vs distance to the stop: an ignition just under
-   a recent high is normal, but a 15d or 7d high right overhead caps the move), liquidity (spread, depth),
+   trend (1h and 4h direction vs the trade), room (levels.overhead: the screener already skips alerts less than 1% under
+   the 12h high or 1.5% under the 24h high; smaller levels above, such as 1h swing highs and EMAs, are hurdles an
+   ignition often breaks: in the replay they did not lower the result), liquidity (spread, depth),
    positioning (futures funding / open interest / long-short, whale exchange deposits, DEX net selling),
    market (BTC, market.regime breadth, market-wide surge), track record (livePerformance: THIS tier only; trust a
    matching group more when its older and newer halves agree; if it says "no track record for this tier", write that
@@ -376,8 +383,8 @@ Work through these steps in order and show them in your answer:
    code recomputes it.
 5. DECIDE.
    TAKE only if there is no hard stop, the expected value is at least +0.5% per trade, reward:risk is at least 1.5 and
-   the price is inside the entry zone now. The Final Boss then wants reward:risk of 2 or more with the target capped at
-   the nearest resistance (levels.resistance), so plan the target and stop with that in mind.
+   the price is inside the entry zone now. The Final Boss then wants reward:risk of 2 or more (target 1 at the tested
+   alert.trackedAs.targetPct, stop below real support), so plan the stop with that in mind.
    WAIT when the setup is close and one specific thing is missing: waitFor must name a price level, a condition and a
    time limit, e.g. "a 5m close above 0.0512 with buyers 55%+ within 30 minutes; otherwise no trade". Put the same
    price event in trigger (breakout = a candle closes above the price; pullback = the price trades down to it; the
@@ -385,9 +392,9 @@ Work through these steps in order and show them in your answer:
    happens. For TAKE and SKIP leave trigger empty.
    SKIP (no trade) for everything else, including when the data is too thin to judge.
 6. PLAN. Entry from dossier.price. Stop just below the nearest real support (levels.support or levels.low24h), never
-   a fixed percentage. Target 1 at or below the nearest resistance (levels.resistance): the code caps the target there
-   and moves the stop below support, so plan with that in mind. Holding time from alert.trackedAs. Risk at most 1% of
-   the account per trade.
+   a fixed percentage. Target 1 = alert.trackedAs.targetPct above the entry (the tested target: the code sets it there,
+   because capping it at the next resistance lowered the result in the replay); a higher target 2 is optional. Holding
+   time from alert.trackedAs. Risk at most 1% of the account per trade.
 Be concise and concrete.`.trim();
 
 const TRIAGE_SYSTEM = `You are a disciplined crypto spot trader triaging several setups from a volume-ignition screener at once.\n\n${RULES}
@@ -532,24 +539,31 @@ export function checkPlan(d, plan, { maxEntryPct = 3 } = {}) {
   };
 }
 
-// Reward:risk and the target % with the target capped at the nearest resistance above the entry (the Final Boss's rule).
+// Reward:risk and the target % of the plan as shown. Levels above the entry are hurdles, not caps: in the 90-day replay
+// of v7 alerts, capping the target at the next high cut the result from +0.36% to +0.13% per trade, and how close that
+// high was did not predict the result (the screener already skips alerts right under the 12h / 24h high).
+// hurdle = the nearest level between the entry and the target, for the committee to judge.
 export function realisticPlan(d, plan) {
-  const mid = (plan.entryLow + plan.entryHigh) / 2, res = Number(d.levels?.resistance);
-  const target = res > mid && res < plan.target1 ? res : plan.target1;
-  return { target: sig(target), targetPct: r(pct(target, mid)), rewardRisk: mid > plan.stop ? r((target - mid) / (mid - plan.stop)) : null, cappedAtResistance: target !== plan.target1 };
+  const mid = (plan.entryLow + plan.entryHigh) / 2, res = Number(d.levels?.resistance), target = plan.target1;
+  return { target: sig(target), targetPct: r(pct(target, mid)), rewardRisk: mid > plan.stop ? r((target - mid) / (mid - plan.stop)) : null,
+    hurdle: res > mid * 1.002 && res < target ? { price: sig(res), pct: r(pct(res, mid)), what: d.levels?.resistanceIs || "level" } : null };
 }
 
-// The plan rule: the target shown is the one used for reward:risk, capped at the nearest resistance above the entry; the
-// stop sits just below the nearest real support (levels.support or the 24h low) that is at least half a normal 1h move
-// (and 0.3%) under the entry, never at a fixed percentage. With no such support within 11%, the plan's stop stays.
+// The plan rule: target 1 is the alert's tested target (alert.trackedAs.targetPct above the entry, the one the replay and
+// the live results measure), and the target shown is the one used for reward:risk; a higher target from the plan is kept
+// as target 2. Levels above are hurdles, not caps (see realisticPlan). The stop sits just below the nearest real support
+// (levels.support or the 24h low) that is at least half a normal 1h move (and 0.3%) under the entry, never at a fixed
+// percentage. With no such support within 11%, the plan's stop stays.
 export function alignPlan(d, plan) {
   const lv = d.levels || {}, atr = Number(d.chart?.atrPct?.["1h"]) || 1, notes = [];
   let { stop, target1, target2 } = plan, stopAt = null;
-  const res = Number(lv.resistance);
-  if (res > plan.entryHigh * 1.002 && res < target1) {
-    notes.push(`Target set at the nearest resistance ${sig(res)} (${lv.resistanceIs || "level"}) instead of ${sig(target1)}.`);
-    target2 = target1; target1 = res;
+  const rulePct = Number(d.alert?.trackedAs?.targetPct), tRule = rulePct > 0 ? ((plan.entryLow + plan.entryHigh) / 2) * (1 + rulePct / 100) : null;
+  if (tRule && Math.abs(target1 / tRule - 1) > 0.003) { // within 0.3% = already the tested target
+    notes.push(`Target set to the tested +${rulePct}% (${sig(tRule)}) instead of ${sig(target1)}.`);
+    target2 = target1 > tRule ? target1 : target2 > tRule ? target2 : null; target1 = tRule;
   }
+  const res = Number(lv.resistance);
+  if (res > plan.entryHigh * 1.002 && res < target1) notes.push(`${sig(res)} (${lv.resistanceIs || "level"}, ${r(pct(res, plan.entryHigh))}% above) is a hurdle on the way, not a cap.`);
   const gap = Math.max(0.3, 0.5 * atr), level = [{ price: Number(lv.support), what: lv.supportIs || "support" }, { price: Number(lv.low24h), what: "24h low" }]
     .filter((x) => x.price > 0 && pct(x.price, plan.entryLow) <= -gap && pct(x.price, plan.entryLow) >= -11).sort((a, b) => b.price - a.price)[0];
   if (level) {
@@ -644,8 +658,8 @@ export function auditHints(d, { out, pc, dz, data, news, dbt, code }) {
   if (Number.isFinite(mT) && Number.isFinite(mS)) h.push(mT || mS ? `TRADER moved the chances from the base rate by ${sign(mT)} points (target) and ${sign(mS)} (stop): check the evidence for each (probReason)`
     : `TRADER kept the base-rate chances (${a.anchorProbTargetPct}% / ${a.anchorProbStopPct}%): check whether the evidence should move them`);
   const real = code.realisticRewardRisk;
-  if (real?.cappedAtResistance) h.push(`the plan's target ${pc.plan.target1} lies beyond the nearest resistance ${real.target} (${d.levels?.resistanceIs || "level"}): realistic R:R ${real.rewardRisk} instead of ${pc.plan.rewardRisk}`);
-  if (!(real?.rewardRisk >= 2)) h.push(`realistic reward:risk ${real?.rewardRisk ?? "n/a"} is under 2`);
+  if (real?.hurdle) h.push(`a ${real.hurdle.what} at ${real.hurdle.price} (+${real.hurdle.pct}%) sits below the target ${real.target}: judge whether this ignition can break it (volume, buyers); it is a hurdle, not a cap`);
+  if (!(real?.rewardRisk >= 2)) h.push(`reward:risk ${real?.rewardRisk ?? "n/a"} is under 2`);
   h.push(`the code's expected value ${dz.expectedValuePct}% counts time-outs as flat (p_timeout = ${Math.max(0, 100 - dz.probTargetPct - dz.probStopPct)}%): give your own time-out estimate`);
   if (pc.replaced) h.push("the trader's plan did not fit the price, so the reference plan was used");
   if (!data?.available) h.push("the data analyst did not answer: data quality is unknown");
@@ -959,7 +973,7 @@ Work through these steps in order and show them in your answer:
    1 hour); pool liquidity under $50k. List the ones that apply in hardStops (empty if none).
 2. CHECKLIST, each pass / fail / unknown with the dossier number that decides it: trigger (alert tier, volume vs normal,
    dollars and trades per candle, 24h volume), DEX buying (alpha.dex buys vs sells, 5 min and 1 hour), trend (1h and 4h),
-   room (distance to resistance vs distance to the stop), liquidity and holders (pool size vs a normal order, holders),
+   room (levels.overhead: hurdles to judge, not caps), liquidity and holders (pool size vs a normal order, holders),
    supply (circulating share, FDV vs market cap), market (BTC, alt season meter, BTC regime), track record
    (livePerformance: THIS tier only; if it says "no track record for this tier", write that and use the base rate only).
 3. PROBABILITY. Start from alert.anchorProbTargetPct and alert.anchorProbStopPct; move them only for checklist evidence,
@@ -967,10 +981,11 @@ Work through these steps in order and show them in your answer:
 4. EXPECTED VALUE per trade = P_target x target% - P_stop x stop% + P_timeout x alert.timeout.pct - alert.costPct
    (P_timeout = 100 - P_target - P_stop); write the full calculation in probReason. The code recomputes it.
 5. DECIDE. TAKE only with no hard stop, expected value of at least +0.5% per trade, reward:risk 1.5+ and price inside the
-   entry zone now (the Final Boss wants 2+ with the target capped at levels.resistance). WAIT must name a price level, a condition and a time limit, with the same price event in trigger
+   entry zone now (the Final Boss wants 2+ with target 1 at the tested alert.trackedAs.targetPct). WAIT must name a price level, a condition and a time limit, with the same price event in trigger
    (breakout or pullback, timeframe, minutes): the code watches it and asks the committee again. SKIP for everything else.
 6. PLAN. Entry from dossier.price; stop just below the nearest real support (levels.support or levels.low24h), never a
-   fixed percentage; target 1 at or below the nearest resistance (levels.resistance); holding time from alert.trackedAs.
+   fixed percentage; target 1 = alert.trackedAs.targetPct above the entry (the code sets it there; levels above are
+   hurdles, not caps); holding time from alert.trackedAs.
    Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
 Be concise and concrete.`.trim();
 

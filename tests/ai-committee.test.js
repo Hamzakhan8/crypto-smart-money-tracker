@@ -116,10 +116,14 @@ test("AI committee: the Final Boss overturns the trader either way; no answer me
   const silent = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": new Error("model not found") }));
   assert.equal(silent.decision, "WAIT"); assert.equal(silent.final, "WATCH"); assert.equal(silent.committee.boss.available, false);
   assert.ok(silent.guardNotes.some((n) => /could not answer[\s\S]*never a YES/.test(n)));
-  // a YES with the target past the nearest resistance: realistic reward:risk under 2 -> WATCH
-  const capped = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), levels: { resistance: 102, roomToResistancePct: 2 } });
-  assert.equal(capped.final, "WATCH"); assert.equal(capped.realistic.target, 102); assert.ok(capped.realistic.rewardRisk < 2);
-  assert.ok(capped.guardNotes.some((n) => /said YES, but the code made it WATCH: realistic reward:risk 0.72 is under 2/.test(n)), capped.guardNotes.join(" | "));
+  // a level just above is a hurdle, not a cap: the YES stands with the tested target, and the hurdle is reported
+  const hurdle = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), levels: { resistance: 101, resistanceIs: "1h swing high", roomToResistancePct: 1 } });
+  assert.equal(hurdle.final, "YES"); assert.equal(hurdle.realistic.target, 106); assert.equal(hurdle.realistic.target, hurdle.plan.target1);
+  assert.equal(hurdle.realistic.hurdle.price, 101); assert.equal(hurdle.realistic.hurdle.what, "1h swing high");
+  // the stop below a support far under the entry: reward:risk under 2 -> WATCH
+  const wide = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), levels: { roomToResistancePct: 8, support: 94, supportIs: "24h low", low24h: 94 } });
+  assert.equal(wide.final, "WATCH"); assert.ok(wide.realistic.rewardRisk < 2);
+  assert.ok(wide.guardNotes.some((n) => /said YES, but the code made it WATCH: realistic reward:risk 1\.01 is under 2/.test(n)), wide.guardNotes.join(" | "));
   // a YES while BTC is falling (a code hard stop) -> WATCH
   const btc = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), market: { btc1hPct: -1.6, btc4hPct: -2.5 } });
   assert.equal(btc.final, "WATCH"); assert.ok(btc.guardNotes.some((n) => /made it WATCH: hard stop \(BTC falling/.test(n)));
@@ -280,9 +284,10 @@ test("fixes: resistance includes swing highs and the EMAs above the price; suppo
   assert.match(lv.resistance.what, /1h EMA20/);
   assert.ok(lv.overhead.some((x) => x.what === "1h swing high" && x.price === 104));
   assert.equal(lv.support.what, "24h low"); // EMAs are never used as support
-  // with the resistance closer, the realistic reward:risk is capped there
-  const real = desk.realisticPlan({ levels: { resistance: lv.resistance.price } }, { entryLow: 100, entryHigh: 100.5, stop: 98, target1: 106 });
-  assert.equal(real.cappedAtResistance, true); assert.ok(real.rewardRisk < 2);
+  // a closer level is a hurdle on the way, not a cap: reward:risk is to the plan's target
+  const real = desk.realisticPlan({ levels: { resistance: lv.resistance.price, resistanceIs: lv.resistance.what } }, { entryLow: 100, entryHigh: 100.5, stop: 98, target1: 106 });
+  assert.equal(real.target, 106); assert.equal(real.rewardRisk, +((106 - 100.25) / (100.25 - 98)).toFixed(2));
+  assert.match(real.hurdle.what, /1h EMA20/); assert.equal(desk.realisticPlan({ levels: { resistance: 110 } }, { entryLow: 100, entryHigh: 100.5, stop: 98, target1: 106 }).hurdle, null);
 });
 
 test("fixes: fast NO (opt-in) for a coin with no alert signal; the full committee for alerts and by default", async () => {
@@ -343,22 +348,34 @@ test("fixes 2: a search counts when Google sends any search data (also no links)
   assert.match(ai.calls.find((c) => c.role === "Final Boss").params.contents, /news is unknown and nothing from the model's memory is used/);
 });
 
-test("fixes 2: a fast NO is said once; the base rate of a coin without a signal is called an assumption", async () => {
+test("fixes 2: a fast NO is said once; a coin without a signal (or one that already ran) gets its measured base rate", async () => {
   const none = { ...dossier("INITUSDT"), alert: desk.alertContext("none"), screener: { state: "ran", tier: null, moved: true } };
   const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("SKIP") }), none, { fastNo: true });
   assert.equal(x.fastNo, true); assert.equal(x.committee.boss.skipped, "fast");
   assert.ok(!x.guardNotes.some((n) => /fast NO/i.test(n))); // shown once at the top of the page, not again in the notes
   assert.match(desk.tgSingle({ ...x, symbol: "INITUSDT" }), /boss skipped \(fast NO\)/);
-  assert.match(desk.alertContext("none").anchorFrom, /assumption/); assert.equal(desk.alertContext("confirmed").anchorFrom, "replay");
+  assert.match(desk.alertContext("none").anchorFrom, /random moments/); assert.equal(desk.alertContext("confirmed").anchorFrom, "replay");
+  const noSig = desk.alertContext("none"), ran = desk.alertContext(null, {}, { ran: true });
+  assert.deepEqual([noSig.anchorProbTargetPct, noSig.anchorProbStopPct], [13, 33]);
+  assert.deepEqual([ran.tier, ran.anchorProbTargetPct, ran.anchorProbStopPct], ["none", 31, 60]); assert.match(ran.label, /already ran/); assert.match(ran.anchorFrom, /already run/);
+  assert.equal(desk.alertContext("confirmed", {}, { ran: true }).anchorProbTargetPct, desk.BASE_RATES.confirmed.hitTargetPct); // only for coins without a signal
 });
 
-test("rules: the PLAN rule (target shown = capped target; stop just below the nearest support) and the EV rule (full calculation)", async () => {
+test("rules: the PLAN rule (target 1 = the tested target, levels above are hurdles; stop just below the nearest support) and the EV rule (full calculation)", async () => {
   const d = { price: 100, chart: { atrPct: { "1h": 1 } }, levels: { resistance: 104, resistanceIs: "4h EMA20", support: 97.5, supportIs: "1h swing low", low24h: 96 } };
   const { plan, notes } = desk.alignPlan(d, { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 106, holdHours: 12 });
-  assert.equal(plan.target1, 104); assert.equal(plan.target2, 106);             // capped at resistance, the old target kept as target 2
+  assert.equal(plan.target1, 106); assert.equal(plan.target2, null);            // not capped at the 4h EMA20: a hurdle
   assert.equal(plan.stop, 97.3538); assert.deepEqual(plan.stopAt, { price: 97.5, what: "1h swing low" }); // 0.15 x ATR below the support
-  assert.equal(plan.rewardRisk, +((104 - 99.9) / (99.9 - 97.3538)).toFixed(2)); // R:R from the numbers shown
-  assert.ok(notes.some((n) => /Target set at the nearest resistance 104 \(4h EMA20\)/.test(n)) && notes.some((n) => /Stop set just below the nearest support 97.5/.test(n)));
+  assert.equal(plan.rewardRisk, +((106 - 99.9) / (99.9 - 97.3538)).toFixed(2)); // R:R from the numbers shown
+  assert.ok(notes.some((n) => /104 \(4h EMA20, 4% above\) is a hurdle on the way, not a cap/.test(n)) && notes.some((n) => /Stop set just below the nearest support 97.5/.test(n)));
+  // target 1 is the alert's tested target (+6% for an ignition): a lower target is raised to it, a higher one kept as target 2
+  const withRule = { ...d, alert: desk.alertContext("confirmed") };
+  const low = desk.alignPlan(withRule, { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 103, holdHours: 12 });
+  assert.equal(low.plan.target1, 105.894); assert.equal(low.plan.target1Pct, 6); assert.equal(low.plan.target2, null);
+  assert.ok(low.notes.some((n) => /Target set to the tested \+6% \(105.894\) instead of 103/.test(n)), low.notes.join(" | "));
+  const high = desk.alignPlan(withRule, { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 110, holdHours: 12 });
+  assert.equal(high.plan.target1, 105.894); assert.equal(high.plan.target2, 110);
+  assert.equal(desk.alignPlan(withRule, { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 106, holdHours: 12 }).plan.target1, 106); // within 0.3%: kept
   // a support too close to the entry (inside half a normal 1h move) is skipped for the next one, the 24h low
   const close = desk.alignPlan({ ...d, levels: { ...d.levels, support: 99.7 } }, { entryLow: 99.8, entryHigh: 100, stop: 97, target1: 103, holdHours: 12 });
   assert.equal(close.plan.stopAt.what, "24h low");
@@ -372,7 +389,8 @@ test("rules: the PLAN rule (target shown = capped target; stop just below the ne
   const dd = { ...dossier(), levels: { resistance: 105, resistanceIs: "7-day high", roomToResistancePct: 5, support: 98.5, supportIs: "24h low", low24h: 98.5 },
     alert: { ...alert, timeout: { pct: 0.5, from: "AI calls of this tier that timed out (6)" } } };
   const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), dd);
-  assert.equal(x.plan.target1, 105); assert.equal(x.realistic.target, x.plan.target1); assert.equal(x.realistic.rewardRisk, x.plan.rewardRisk);
+  assert.equal(x.plan.target1, 106); assert.equal(x.realistic.target, x.plan.target1); assert.equal(x.realistic.rewardRisk, x.plan.rewardRisk);
+  assert.equal(x.realistic.hurdle.what, "7-day high");
   assert.equal(x.plan.stopAt.price, 98.5);
   assert.equal(x.evCalc.timeoutPct, 0.5); assert.equal(x.evCalc.ev, x.expectedValuePct);
   assert.match(desk.tgSingle({ ...x, symbol: "ABCUSDT" }), /\nEV = 0\.\d\d × [\d.]+% − 0\.\d\d × [\d.]+% \+ 0\.\d\d × 0\.50% − [\d.]+% costs = [+-][\d.]+%/);

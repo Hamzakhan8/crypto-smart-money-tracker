@@ -11,7 +11,7 @@
 //   4. TRADER          decides TAKE / WAIT / SKIP with probabilities, expected value and a plan, from the dossier, both
 //                      reports and the debate, as its referee. Code then re-checks everything (hard stops, expected
 //                      value, reward:risk, the plan).
-//   5. FINAL BOSS      audits the whole committee on every analysis (hard stops, reward:risk to the nearest resistance,
+//   5. FINAL BOSS      audits the whole committee on every analysis (hard stops, reward:risk to the tested target,
 //                      expected value, probability adjustments, contradictions) and gives the final call: YES, WATCH
 //                      (with measurable triggers and an expiry) or NO, with a corrected plan and a position size. It can
 //                      overturn the trader either way; code still turns an unsafe YES into WATCH. A stronger model.
@@ -67,8 +67,9 @@ export const DESKS = {
 - marketFlow: aggressive buying on Binance spot in the last 1-5 minutes (flowScore, buyRatio5mPct, netFlow5mUsd). It is
   not "smart money"; smartMoneyWallets are separate on-chain wallet signals.
 - chart: trend1h / trend4h, returnsPct, atrPct (a normal move per candle), priceVsVwapTodayPct, last2hOf15m.
-- levels: resistance (resistanceIs = what it is: a high, a 1h swing high or a 1h / 4h EMA) and support with their
-  distances in %; overhead / underneath = the nearest levels above / below; 24h / 7d / 15d highs and lows.
+- levels: resistance (the nearest level above; resistanceIs = what it is: a high, a 1h swing high or a 1h / 4h EMA) and
+  support with their distances in %; overhead / underneath = the nearest levels above / below; 24h / 7d / 15d highs and
+  lows. Levels above are hurdles, not caps: the screener already skips alerts right under the 12h / 24h high.
 - orderBook: spreadBps and depth bands (bids and asks in USD within withinPct 0.1 / 0.25 / 0.5 / 1%, imbalance > 0 =
   more bids). A thin 0.1% band is normal for small coins and is NOT the liquidity test: orderBook.liquidityCheck is
   (bids within 1% under $20,000 or spread above 30 bps = hard stop).
@@ -377,7 +378,8 @@ METHOD
 1. REBUTTALS: for each bull point, say whether it holds, is overstated or is wrong, with the dossier number that shows it.
    A point that holds, holds: say so.
 2. POINTS: the 3-5 strongest reasons NOT to buy now, most important first, each with the exact dossier number(s). Think
-   of: a fake-out (volume without follow-through), sellers in the book or the flow, resistance overhead, BTC weakness,
+   of: a fake-out (volume without follow-through), sellers in the book or the flow, a major high right overhead (a small
+   1h swing high or EMA alone rarely stops an ignition: in the replay it did not lower the result), BTC weakness,
    crowded futures, thin liquidity, whale deposits to exchanges, the base rate (most alerts of this kind fail), news.
 3. PATH: the most likely way this trade ends at the stop within the holding time, step by step.
 4. WEAKEST POINT of your own case, and the one fact that would make you drop it.
@@ -491,8 +493,8 @@ export async function traderDecision(ai, { desk, rules, schema, dossier, data, n
 const stripMeta = (x) => { const { model, ms, at, cached, available, tokens, ...rest } = x; return rest; };
 
 // ───────────────────────────── 5. final boss ─────────────────────────────
-// Runs on every analysis, whatever the trader decided: audits the committee (hard stops, reward:risk to the nearest
-// resistance, expected value with timeouts, probability adjustments, contradictions, missing data, the bull's case) and
+// Runs on every analysis, whatever the trader decided: audits the committee (hard stops, reward:risk to the tested
+// target, expected value with timeouts, probability adjustments, contradictions, missing data, the bull's case) and
 // gives the final call YES / WATCH / NO with a corrected plan. The prompt is the owner's own text, followed by where each
 // number lives in this system's data and what the code checks after the boss.
 export const BOSS_CORE = `You are the Final Boss, the last reviewer in a crypto trading committee. You run on EVERY alert, whatever the Trader decided. Your job is to audit the committee and give the final call. You are not a tiebreaker and you have no bias toward trading or not trading: overturn the Trader in either direction when the evidence supports it.
@@ -505,7 +507,7 @@ List every hard-stop failure (liquidity, delisting/monitoring tag, high-severity
 
 STEP 2: CONSISTENCY AUDIT
 Check the report for errors and contradictions. At minimum:
-- Recompute reward:risk using the NEAREST resistance as the realistic target, not the screener's fixed target. If the plan's target lies beyond resistance, state the realistic R:R.
+- Recompute reward:risk with target 1 at the tested target (alert.trackedAs.targetPct) and the stop below real support. Levels above the entry (levels.overhead) are hurdles to judge, not caps: in a 90-day replay, capping the target at the next high lowered the result (+0.36% to +0.13% per trade), and how close that high was did not predict the result. Say whether this ignition can break the nearest hurdle (volume, buyers).
 - Recompute expected value: (P_target x target%) - (P_stop x stop%) + (P_timeout x expected timeout%). Flag any mismatch with the stated EV.
 - Check that probability adjustments from the base rate are justified with specific evidence. If not, give your own estimate and explain each adjustment.
 - Flag contradictions between agents and within an agent (e.g. news listed but "no search results").
@@ -522,7 +524,7 @@ Choose exactly one:
 - NO: structurally broken (e.g. delisting risk, project shutdown) or no plausible path to positive EV.
 
 STEP 5: CORRECTED PLAN
-If YES or WATCH, give a corrected plan: entry zone, stop below real support, target(s) at real resistance levels, R:R, max hold time, and position-size guidance as a % of normal size based on confidence.
+If YES or WATCH, give a corrected plan: entry zone, stop below real support, target 1 at the tested target (a higher target 2 is optional), R:R, max hold time, and position-size guidance as a % of normal size based on confidence.
 
 RULES
 - Use only data in the report. Never invent numbers. If data is missing, say so.
@@ -567,14 +569,15 @@ WHERE THINGS ARE IN THIS REPORT
 - The trade: ${DESKS[deskKey].what}. Long only.
 - TRADER: the trader's verdict (TAKE / WAIT / SKIP = no trade), probabilities, plan, trigger, checklist and reasoning.
 - CODE CHECKS: what the code computed from the trader's plan: hardStops (the code's own checks and confirmed news),
-  expectedValuePct, rewardRisk, realisticRewardRisk (target capped at levels.resistance), probabilities held near the
+  expectedValuePct, rewardRisk, realisticRewardRisk (to the tested target; hurdle = the nearest level on the way), probabilities held near the
   base rate, costPct, moved / igniting, the code's notes, and auditHints: issues the code found for you to audit.
 - DATA ANALYST REPORT, NEWS REPORT (sources = what Google really returned), DEBATE (bull, then bear who saw the bull's
   case, and who the trader said won), RAW DATA (the dossier).
 - In RAW DATA: base rates alert.anchorProbTargetPct / alert.anchorProbStopPct (the rest end at the time limit, so
   p_timeout = 100 - p_target - p_stop); the average time-out move alert.timeout.pct (source: alert.timeout.from);
   costs alert.costPct per trade (subtract them from the EV); holding time
-  alert.trackedAs.holdHours; nearest resistance levels.resistance (levels.roomToResistancePct away); support
+  alert.trackedAs.holdHours; tested target alert.trackedAs.targetPct; nearest level above levels.resistance
+  (levels.roomToResistancePct away, a hurdle); support
   levels.support; normal move per candle chart.atrPct; current price price; the track record of THIS tier only
   livePerformance (if it says "no track record for this tier", use the base rate only).
 - CODE CHECKS.evCalc: the code's expected value written out in full: P_target × target% − P_stop × stop% + P_timeout ×
@@ -596,7 +599,7 @@ HOW TO AUDIT
 WHAT THE CODE DOES WITH YOUR ANSWER
 - Your confidence is capped by the data rating as above, and lowered one step when you report no audit findings while
   auditHints lists issues.
-- Your probabilities are held within 15 points of the base rates. Your plan's target is capped at levels.resistance and
+- Your probabilities are held within 15 points of the base rates. Your plan's target 1 is set to the tested target and
   its stop is moved to just below the nearest real support (levels.support or levels.low24h); the target shown is the
   one used for reward:risk. The code recomputes the expected value in full (with alert.timeout.pct, costs subtracted).
 - A YES becomes WATCH when a hard stop fails, the coin already ran (screener.moved) or is not igniting now, your plan

@@ -74,7 +74,8 @@ export function alertContext(tier, snap = {}) {
     trackedAs: ruleFor(t), costPct: r(COST_PCT, 2), baseRate: base,
     live: live && live.resolved ? { resolved: live.resolved, hitTargetPct: live.winRatePct, hitStopPct: r((live.losses / live.resolved) * 100, 1), avgNetPct: live.netPct } : null,
     anchorProbTargetPct: Math.round(useLive ? live.winRatePct : base.hitTargetPct),
-    anchorProbStopPct: Math.round(useLive ? (live.losses / live.resolved) * 100 : base.hitStopPct), anchorFrom: useLive ? "live results" : "replay",
+    anchorProbStopPct: Math.round(useLive ? (live.losses / live.resolved) * 100 : base.hitStopPct),
+    anchorFrom: useLive ? "live results" : t === "none" ? "an assumption: no replay exists for coins without a signal" : "replay",
   };
 }
 // Breadth of the screener's coins: is the market lifting most coins or few?
@@ -516,7 +517,7 @@ export function realisticPlan(d, plan) {
 // costs with the boss's chances (held within 15 points of the base rate); otherwise it becomes WATCH. If the boss cannot
 // answer: the code's own call on the trader's plan, and never a YES.
 const VERDICT_DECISION = { YES: "TAKE", WATCH: "WAIT", NO: "SKIP" };
-export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, dataPoor = false, minEv = MIN_EV_PCT }) {
+export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, dataPoor = false, newsRedFlag = null, minEv = MIN_EV_PCT }) {
   const notes = [];
   if (!boss?.available) {
     const decision = code.decision === "TAKE" ? "WAIT" : code.decision;
@@ -551,6 +552,7 @@ export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, 
     if (!(real.rewardRisk >= 2)) why.push(`realistic reward:risk ${real.rewardRisk} is under 2`);
     if (!(ev >= minEv)) why.push(`expected value ${ev}% is under +${minEv}%`);
     if (dataPoor) why.push("the data was rated poor");
+    if (newsRedFlag) why.push(`unconfirmed bad news (${newsRedFlag}) must be confirmed or ruled out first`);
     if (why.length) { verdict = "WATCH"; notes.push(`The final boss said YES, but the code made it WATCH: ${why.join("; ")}.`); }
   }
   const decision = VERDICT_DECISION[verdict];
@@ -585,7 +587,8 @@ const CONF_CAP = { good: "high", partial: "medium", poor: "low" };
 // Issues the code can see in the committee's work, handed to the Final Boss to audit one by one.
 export function auditHints(d, { out, pc, dz, data, news, dbt, code }) {
   const h = [], a = d.alert || {}, sign = (v) => (v > 0 ? "+" : "") + v;
-  if (news?.available && news.verified === false) h.push("NEWS REPORT: no web search ran (asked twice); its items and risk level come from the model's memory and are unverified");
+  if (news?.available && news.verified === false) h.push(`NEWS REPORT: no web search ran${news.requests > 1 ? " (asked twice)" : ""}; its items and risk level come from the model's memory and are unverified`);
+  if (news?.unverifiedRedFlag) h.push(`NEWS REPORT claims, unverified, a serious problem (${news.unverifiedRedFlag}): no YES until it is confirmed or ruled out`);
   if (!news?.available && !news?.off) h.push(`NEWS REPORT unavailable (${news?.error || "no answer"}): the news is unknown`);
   const mT = Math.round(Number(out.probTargetPct) - a.anchorProbTargetPct), mS = Math.round(Number(out.probStopPct) - a.anchorProbStopPct);
   if (Number.isFinite(mT) && Number.isFinite(mS)) h.push(mT || mS ? `TRADER moved the chances from the base rate by ${sign(mT)} points (target) and ${sign(mS)} (stop): check the evidence for each (probReason)`
@@ -632,7 +635,7 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
     traderPlanReplaced: pc.replaced, notes: [...g.notes] };
   code.auditHints = auditHints(d, { out, pc, dz, data, news, dbt, code });
   const fastNo = fast && out.decision === "SKIP" && pre.decision === "SKIP";
-  const boss = fastNo ? { asked: false, verdict: null, reason: "Fast NO: no alert signal, and the trader and the code both say no trade, so the debate and the Final Boss were skipped (AI_FAST_NO=0 to always ask)." }
+  const boss = fastNo ? { asked: false, skipped: "fast", verdict: null, reason: "Skipped: fast NO (no alert signal, and the trader and the code both say no trade). AI_FAST_NO=0 always asks it." }
     : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, dossier: d, code,
     trader: { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, probTargetPct: out.probTargetPct, probStopPct: out.probStopPct,
       probReason: out.probReason, plan: pc.plan, waitFor: out.waitFor, trigger: out.trigger || null, hardStopsNamed: out.hardStops, checklist, headline: out.headline,
@@ -650,8 +653,9 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
     }
   }
   const fin = fastNo ? { decision: "SKIP", final: "NO", plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct,
-    realistic: realisticPlan(d, pc.plan), trigger: null, notes: [boss.reason] }
-    : finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor" });
+    realistic: realisticPlan(d, pc.plan), trigger: null, notes: [] }
+    : finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor",
+      newsRedFlag: news.unverifiedRedFlag || null });
   g.notes.push(...fin.notes);
   const confidence = boss.available ? LEVELS[Math.min(LEVELS.indexOf(g.confidence), Math.max(0, LEVELS.indexOf(boss.confidence)))] : lower(g.confidence);
   const watch = fin.final === "WATCH" && boss.available && boss.watchTriggers?.length ? { triggers: boss.watchTriggers, expiresHours: boss.watchExpiresHours } : null;
@@ -822,7 +826,7 @@ const debateLine = (dbt) => (!dbt || dbt.off ? null
   : `bull ${dbt.bull?.available ? dbt.bull.strength : "n/a"} vs bear ${dbt.bear?.available ? dbt.bear.strength : "n/a"}${dbt.verdict ? `, ${dbt.verdict.winner === "even" ? "even" : dbt.verdict.winner + " won"}` : ""}`);
 // One line on how each member voted (data quality, news risk, the debate, the trader, the Final Boss), then the boss's
 // summary and the factor that decided it.
-const bossVote = (b) => (!b?.asked ? (/^Fast NO/.test(b?.reason || "") ? "skipped (fast NO)" : "not asked") : !b.available ? "no answer" : `${b.verdict}${b.agreesWithTrader ? "" : " (overturned the trader)"}`);
+const bossVote = (b) => (!b?.asked ? (b?.skipped === "fast" ? "skipped (fast NO)" : "not asked") : !b.available ? "no answer" : `${b.verdict}${b.agreesWithTrader ? "" : " (overturned the trader)"}`);
 const tgCommittee = (x) => {
   const { data, news, debate: dbt, trader, boss } = x.committee;
   return [[`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}${x.fastNo ? " (fast NO)" : ""}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,

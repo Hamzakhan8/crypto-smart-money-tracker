@@ -215,25 +215,38 @@ ANSWER with ONLY one JSON object, no markdown, in exactly this shape:
  "upcoming": [{"date": "YYYY-MM-DD", "event": "", "impact": "positive|negative|neutral|unclear"}]}`;
 
 const NEWS_ENUMS = { overall: ["positive", "negative", "mixed", "none"], riskLevel: ["none", "low", "medium", "high"] };
+// Signs that Google Search really ran: any grounding field Google returns, or tokens the model spent reading tool
+// (search) results. Source links can be missing even when a search ran, so links alone are not the test.
+export function searchEvidence(grounding, usageMeta) {
+  const g = grounding || {};
+  const ev = { links: (g.groundingChunks || []).filter((c) => c?.web?.uri).length, queries: (g.webSearchQueries || []).length,
+    entryPoint: !!g.searchEntryPoint?.renderedContent, supports: (g.groundingSupports || []).length, toolTokens: Number(usageMeta?.toolUsePromptTokenCount) || 0,
+    fields: Object.keys(g).slice(0, 10) };
+  ev.searched = ev.links > 0 || ev.queries > 0 || ev.entryPoint || ev.supports > 0 || ev.toolTokens > 0;
+  return ev;
+}
 // Parses and cleans the researcher's JSON; sources come from Google's grounding data (what was actually searched).
-export function cleanNews(text, grounding) {
+export function cleanNews(text, grounding, usageMeta = null) {
   let j = null;
   const s = String(text || "").replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "").trim();
   try { j = JSON.parse(s); } catch { const m = s.match(/\{[\s\S]*\}/); if (m) { try { j = JSON.parse(m[0]); } catch { /* not JSON */ } } }
   if (!j || typeof j !== "object") return { available: false, error: "The news researcher did not return JSON" };
   const sources = [], seen = new Set();
   for (const c of grounding?.groundingChunks || []) { const u = c?.web?.uri; if (u && !seen.has(u)) { seen.add(u); sources.push({ title: String(c.web.title || "source").slice(0, 120), url: u }); } }
-  const searched = sources.length > 0 || (grounding?.webSearchQueries || []).length > 0;
+  const evidence = searchEvidence(grounding, usageMeta), searched = evidence.searched;
   const items = (Array.isArray(j.items) ? j.items : []).slice(0, 10).map((x) => ({ date: String(x.date || "").slice(0, 10), title: String(x.title || "").slice(0, 200),
     type: String(x.type || "other"), impact: ["positive", "negative", "neutral"].includes(x.impact) ? x.impact : "neutral",
     severity: ["low", "medium", "high"].includes(x.severity) ? x.severity : "low", pricedIn: ["yes", "no", "unclear"].includes(x.pricedIn) ? x.pricedIn : "unclear", source: String(x.source || "").slice(0, 80) }));
   return {
-    available: true, searched, verified: searched, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12),
-    note: searched ? null : "No web search ran: these items come from the model's memory and are unverified. Treat the news as unknown.",
+    available: true, searched, verified: searched, evidence, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12),
+    note: searched ? null : "No web search ran: these items come from the model's memory and are unverified. Treat the news as unknown, except that an unconfirmed hack, exploit, delisting or halt still means no buying until it is confirmed.",
     summary: String(j.summary || "").slice(0, 600), overall: NEWS_ENUMS.overall.includes(j.overall) ? j.overall : "none",
     riskLevel: NEWS_ENUMS.riskLevel.includes(j.riskLevel) ? j.riskLevel : "none",
     // a hard stop counts only when the answer is backed by an actual search
     hardStop: j.hardStop === true && searched, hardStopReason: String(j.hardStopReason || "").slice(0, 300), unverifiedHardStop: j.hardStop === true && !searched,
+    // an unconfirmed claim of serious trouble: not a hard stop, but never a YES until it is confirmed
+    unverifiedRedFlag: !searched && (j.hardStop === true || items.some((x) => x.impact === "negative" && x.severity === "high"))
+      ? String(j.hardStopReason || items.find((x) => x.impact === "negative" && x.severity === "high")?.title || "a high-severity negative item").slice(0, 200) : null,
     items, upcoming: (Array.isArray(j.upcoming) ? j.upcoming : []).slice(0, 6).map((x) => ({ date: String(x.date || "").slice(0, 10), event: String(x.event || "").slice(0, 200), impact: String(x.impact || "unclear") })),
   };
 }
@@ -246,7 +259,7 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
     const res = await generate(ai, { model, contents, config: { systemInstruction: newsResearcherPrompt(identity, holdHours), ...roleConfig(model, "news"), tools: [{ googleSearch: {} }] } }, callOpts("news"));
     const u = usage(res);
     for (const k in tokens) tokens[k] += u[k];
-    return cleanNews(res.text, res.candidates?.[0]?.groundingMetadata);
+    return cleanNews(res.text, res.candidates?.[0]?.groundingMetadata, res.usageMetadata);
   };
   try {
     let report = await ask(`Research the news for ${identity.symbol}${name} now.`), requests = 1;
@@ -257,6 +270,9 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
       if (again?.available) report = again;
     }
     const out = { ...report, model, ms: Date.now() - t0, at: Date.now(), tokens, requests };
+    // Recent dated items without any sign of a search are suspicious: log what Google sent back, to find out why.
+    const recent = (out.items || []).some((x) => Date.parse(x.date) > Date.now() - 10 * 86_400_000);
+    if (out.available && !out.verified && recent) console.warn(`AI news (${identity.symbol}): items dated in the last 10 days but no search evidence; grounding fields: [${out.evidence?.fields?.join(", ")}], tool tokens: ${out.evidence?.toolTokens}`);
     // only verified news is kept for 30 minutes; unverified news is asked again next time
     if (out.available && out.verified) { newsCache.set(key, { at: Date.now(), report: out }); if (newsCache.size > 200) newsCache.delete(newsCache.keys().next().value); }
     return out;
@@ -364,7 +380,9 @@ HOW TO USE YOUR COLLEAGUES' WORK
   is a HARD STOP. A medium negative item inside the holding time lowers the target chance (within the 15-point limit)
   or makes the call WAIT. Positive news that is already priced in does not raise the chance, and rumors do not count.
   "Unavailable", or verified: false (no web search ran, so the items come from the model's memory), means unknown:
-  say so; do not treat it as good or bad news, and its items do not count.
+  say so; do not treat it as good or bad news, and its items do not count. One exception, because capital comes
+  first: an unverified claim of a hack, exploit, delisting, halt or monitoring tag (unverifiedRedFlag) still means no
+  TAKE; WAIT at most until it is confirmed.
 - Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable / unverified".${debate ? `
 - THE DEBATE: the bull argued for buying; then the bear read the bull's case and attacked it. Judge it like a referee:
   only arguments backed by a dossier number count; a bull point the bear showed wrong with a number is gone; a bear
@@ -493,7 +511,9 @@ HOW TO AUDIT
 - Address every item of CODE CHECKS.auditHints in audit_findings: confirm it, correct it, or say why it does not matter.
 - corrected_numbers must be your own estimate: start from the base rate and explain every change in audit_findings. Do
   not copy the trader's numbers without checking them.
-- A NEWS REPORT with verified false (no web search ran) is unknown news: flag it, and do not use its items or risk level.
+- A NEWS REPORT with verified false (no web search ran) is unknown news: flag it, and do not use its items or risk level,
+  except unverifiedRedFlag (an unconfirmed hack, exploit, delisting or halt): then the verdict cannot be YES until it is
+  confirmed; WATCH at most, with "the news is confirmed false" as a trigger.
 - Confidence: at most "medium" when the DATA ANALYST REPORT rates the data partial or is missing, "low" when it is poor.
 
 WHAT THE CODE DOES WITH YOUR ANSWER
@@ -581,6 +601,7 @@ export function committeeChecks(decision, { news, data } = {}) {
   const notes = [];
   if (news?.hardStop && decision !== "SKIP") { notes.push(`News hard stop: ${news.hardStopReason || "a confirmed high-severity negative item"}. No trade.`); decision = "SKIP"; }
   if (decision === "TAKE" && data?.available && data.dataQuality?.rating === "poor") { notes.push("The data analyst rated the data poor, so there is no TAKE."); decision = "SKIP"; }
+  if (decision === "TAKE" && news?.unverifiedRedFlag) { notes.push(`Unconfirmed bad news (${news.unverifiedRedFlag}): no TAKE until it is confirmed or ruled out.`); decision = "WAIT"; }
   return { decision, notes };
 }
 export const _test = { newsCache };

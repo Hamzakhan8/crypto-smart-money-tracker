@@ -12,14 +12,14 @@ const desk = await import("../ai-trade.js");
 const ROLE = /^You are the (DATA ANALYST|NEWS RESEARCHER|BULL|BEAR|TRADER|Final Boss)/;
 const GROUNDING = { webSearchQueries: ["ABC token news"], groundingChunks: [{ web: { uri: "https://www.binance.com/en/support/announcement/x", title: "binance.com" } }] };
 // answers: { "DATA ANALYST": {...} | Error, "NEWS RESEARCHER": ..., TRADER: ..., "Final Boss": ... }
-function fakeAi(answers) {
+function fakeAi(answers, { grounding = GROUNDING } = {}) {
   const calls = [];
   return { calls, models: { generateContent: async (params) => {
     const role = (String(params.config.systemInstruction).match(ROLE) || [])[1] || "?";
     calls.push({ role, params });
     const a = answers[role];
     if (a instanceof Error) throw a;
-    return { text: typeof a === "string" ? a : JSON.stringify(a), candidates: [{ groundingMetadata: role === "NEWS RESEARCHER" ? GROUNDING : undefined }],
+    return { text: typeof a === "string" ? a : JSON.stringify(a), candidates: [{ groundingMetadata: role === "NEWS RESEARCHER" ? grounding : undefined }],
       usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: role === "TRADER" || role === "Final Boss" ? 500 : 10 } };
   } } };
 }
@@ -311,4 +311,36 @@ test("fixes: the boss's confidence is capped by the data rating, and it gets a l
   const hints = ai.calls.find((c) => c.role === "Final Boss").params.contents;
   assert.match(hints, /"auditHints":\[[^\]]*TRADER moved the chances[^\]]*data rated partial[^\]]*the bull rated its own case 2\/10[^\]]*not tracked for this coin: futures/);
   assert.match(cm.bossPrompt("spot"), /Address every item of CODE CHECKS\.auditHints[\s\S]*Do\s+not copy the trader's numbers/);
+});
+
+test("fixes 2: a search counts when Google sends any search data (also no links); unconfirmed bad news blocks a YES", async () => {
+  // Gemini searched (it read search results) but sent no source links: still a real search
+  assert.equal(cm.searchEvidence({}, { toolUsePromptTokenCount: 5400 }).searched, true);
+  assert.equal(cm.searchEvidence({ searchEntryPoint: { renderedContent: "<div/>" } }, {}).searched, true);
+  assert.equal(cm.searchEvidence({ groundingSupports: [{}] }, null).searched, true);
+  const none = cm.searchEvidence({ retrievalMetadata: {} }, { toolUsePromptTokenCount: 0 });
+  assert.equal(none.searched, false); assert.deepEqual(none.fields, ["retrievalMetadata"]);
+  const exploit = { ...NEWS, overall: "negative", riskLevel: "high", hardStop: true, hardStopReason: "MoveVM exploit, chain halted",
+    items: [{ date: "2026-10-23", title: "Initia halts chain after $2.7M exploit", type: "security", impact: "negative", severity: "high", pricedIn: "yes", source: "Cointelegraph" }] };
+  const searched = cm.cleanNews(JSON.stringify(exploit), {}, { toolUsePromptTokenCount: 3000 });
+  assert.deepEqual([searched.verified, searched.hardStop, searched.unverifiedRedFlag], [true, true, null]); // a real search: a hard stop
+  const memory = cm.cleanNews(JSON.stringify(exploit), {}, {});
+  assert.deepEqual([memory.verified, memory.hardStop, memory.unverifiedRedFlag], [false, false, "MoveVM exploit, chain halted"]);
+  // in a run: no search came back, the trader says TAKE and the boss YES -> WATCH until the news is confirmed
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": exploit, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }, { grounding: {} });
+  const x = await run(ai);
+  assert.equal(x.final, "WATCH"); assert.equal(x.committee.news.verified, false); assert.equal(x.committee.news.requests, 2);
+  assert.ok(x.guardNotes.some((n) => /Unconfirmed bad news \(MoveVM exploit, chain halted\): no TAKE/.test(n)));
+  assert.ok(x.guardNotes.some((n) => /made it WATCH: [\s\S]*unconfirmed bad news/.test(n)));
+  assert.match(ai.calls.find((c) => c.role === "Final Boss").params.contents, /claims, unverified, a serious problem \(MoveVM exploit/);
+  assert.match(cm.traderPrompt("spot", "R"), /unverified claim of a hack, exploit, delisting, halt or monitoring tag \(unverifiedRedFlag\) still means no\s+TAKE/);
+});
+
+test("fixes 2: a fast NO is said once; the base rate of a coin without a signal is called an assumption", async () => {
+  const none = { ...dossier("INITUSDT"), alert: desk.alertContext("none"), screener: { state: "ran", tier: null, moved: true } };
+  const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("SKIP") }), none);
+  assert.equal(x.fastNo, true); assert.equal(x.committee.boss.skipped, "fast");
+  assert.ok(!x.guardNotes.some((n) => /fast NO/i.test(n))); // shown once at the top of the page, not again in the notes
+  assert.match(desk.tgSingle({ ...x, symbol: "INITUSDT" }), /boss skipped \(fast NO\)/);
+  assert.match(desk.alertContext("none").anchorFrom, /assumption/); assert.equal(desk.alertContext("confirmed").anchorFrom, "replay");
 });

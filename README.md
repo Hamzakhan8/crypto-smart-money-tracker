@@ -385,8 +385,37 @@ Run these in a second terminal (the app can keep running). Each one caches its d
 | `node bigmove-backtest.js` | Big-move tier (+40% before -10%) on every Binance USDT pair, month by month | 30-60 minutes |
 | `node alpha-backtest.js` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
 | `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
+| `node perps-backtest.js` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
 
 Useful options: `--days 45`, `--end 2026-10-28T08` (repeat an earlier window), `--cost 2` (alpha). Re-run them every month: a rule that only worked in one kind of market shows up as one good month and one bad one.
+
+### Perpetual futures swing backtest
+
+`node perps-backtest.js` tests swing-trade setups (held 2-20 days) on Binance USDⓈ-M perpetuals, long and short. It reads Binance's public history archive (data.binance.vision), so no API key is needed, and it works even where the futures API is blocked.
+
+- **Data:**
+  - 4h and daily candles;
+  - every funding payment;
+  - open interest, top-trader and account long/short and taker buy/sell ratios, every 5 minutes since Dec 2021.
+
+  The live API keeps only 30 days of open interest.
+- **Coins:** the 50 most liquid perpetuals **at the start of each month** (by the 30 days before), delisted coins included, so today's winners don't flatter the past. Gold, silver, tokenized stocks and index contracts are left out.
+- **Setups:**
+  - trend pullback;
+  - 20-day breakout on volume;
+  - flush reversal (a fast drop or spike that cuts open interest);
+  - crowded fade (extreme funding while open interest piles in and price stalls);
+  - relative strength vs BTC.
+
+  A **plain-trend benchmark** shows what any trend entry would have made; a setup has to beat it.
+- **Honest rules:**
+  - signals on closed 4h candles, entry at the next candle's open;
+  - fees and slippage (0.08% per side by default) and every funding payment counted;
+  - a candle that touches both stop and target counts as a loss;
+  - a coin delisted while in a trade closes at its last price.
+- **Verdict:** each setup is judged on the years before 2025 and on 2025-2026 separately. It **holds** only if it made money in both, with 100+ trades, not mostly from 2-3 coins. Results are also shown by year, by BTC trend, for 5 exit rules, for conditions (open interest, funding, top traders vs everyone), and as one account with at most 5 positions at 1% risk each.
+
+Options: `--top 30` (fewer coins), `--cost 0.1` (fee + slippage per side in %), `--split 2025-01` (where the newer period starts), `--max-open 5`, `--no-oi` (a quick first look without open interest). The download is cached in `perps_cache/` and the result goes to `perps_report.json`.
 
 ---
 
@@ -614,6 +643,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the big-move tie
 | `early2x.js` | Early 2x movers |
 | `whales.js`, `flows.js` | Whale tracker (transfers, names, learned exchange addresses, Ethereum DEX swaps) and DEX flows |
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
+| `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding (shared with the backtest), and the Binance archive downloader |
 | `ai-trade.js`, `agent.js` | AI desk and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |

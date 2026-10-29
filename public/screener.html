@@ -1224,15 +1224,16 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // Ask Gemini about one Alpha token now (POST /api/ai/alpha)
  $("#aBody").addEventListener("click",async e=>{const b=e.target.closest("[data-askai]");if(!b)return;
   const row=(ad.rows||[]).find(r=>r.alphaId===b.dataset.askai);$("#aAiPanel").hidden=false;$("#aAiTitle").textContent="AI check · "+(row?row.symbol:b.dataset.askai);
-  $("#aAi").innerHTML='<div class="muted">The AI committee is working: data analyst and news researcher, then the trader, then the final boss for a TAKE (30-90 seconds)…</div>';$("#aAiPanel").scrollIntoView({behavior:"smooth",block:"center"});
+  $("#aAi").innerHTML='<div class="muted">The AI committee is working: data analyst and news researcher, then the bull vs bear debate, then the trader, then the final boss for a TAKE (about 1-2 minutes)…</div>';$("#aAiPanel").scrollIntoView({behavior:"smooth",block:"center"});
   try{const r=await fetch("/api/ai/alpha",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:b.dataset.askai})});const j=await r.json();if(!r.ok)throw new Error(j.error||"HTTP "+r.status);drawAiBox(j);}
   catch(err){$("#aAi").innerHTML=`<div class="red">${esc(err.message)}</div>`;}});
  $("#aAiClose").onclick=()=>{$("#aAiPanel").hidden=true;};
  function drawAiBox(x){
   const LBL={TAKE:"TAKE",WAIT:"WAIT",SKIP:"NO TRADE"},cls=x.decision==="TAKE"?"green":x.decision==="WAIT"?"amber":"red",p=x.plan||{};
-  const cm=x.committee||{},cd=cm.data||{},cn=cm.news||{},cb=cm.boss||{};
-  const crew=x.committee?`<div><b>Committee:</b> data ${cd.available?esc(cd.dataQuality&&cd.dataQuality.rating):"n/a"} · news ${cn.available?esc(cn.riskLevel)+" risk":cn.off?"off":"n/a"} · trader ${esc(LBL[cm.trader&&cm.trader.decision]||"?")} · final boss ${cb.asked?esc(cb.verdict||"no answer"):"not needed"}</div>
+  const cm=x.committee||{},cd=cm.data||{},cn=cm.news||{},cb=cm.boss||{},dbt=cm.debate||{off:true},side=v=>v&&v.available?v.strength+"/10":"n/a";
+  const crew=x.committee?`<div><b>Committee:</b> data ${cd.available?esc(cd.dataQuality&&cd.dataQuality.rating):"n/a"} · news ${cn.available?esc(cn.riskLevel)+" risk":cn.off?"off":"n/a"}${dbt.off?"":` · bull ${side(dbt.bull)} vs bear ${side(dbt.bear)}${dbt.verdict?" ("+(dbt.verdict.winner==="even"?"even":esc(dbt.verdict.winner)+" won")+")":""}`} · trader ${esc(LBL[cm.trader&&cm.trader.decision]||"?")} · final boss ${cb.asked?esc(cb.verdict||"no answer"):"not needed"}</div>
    ${cd.available&&(cd.redFlags||[]).length?`<div class="red"><b>Red flags:</b> ${esc(cd.redFlags.join("; "))}</div>`:""}
+   ${dbt.verdict&&dbt.verdict.reason?`<div><b>Debate:</b> ${esc(dbt.verdict.reason)}</div>`:""}${dbt.bear&&dbt.bear.available&&dbt.bear.path?`<div class="red"><b>Bear's path to the stop:</b> ${esc(dbt.bear.path)}</div>`:""}
    ${cn.available?`<div><b>News:</b> ${esc(cn.summary||"no relevant news")}${(cn.sources||[]).length?` <small>(${cn.sources.length} sources)</small>`:""}</div>`:""}
    ${cb.asked&&cb.reason?`<div class="${cb.verdict==="YES"?"green":"red"}"><b>Final boss:</b> ${esc(cb.reason)}</div>`:""}`:"";
   $("#aAi").innerHTML=`<div><div class="big ${cls}">${x.final?x.final+" · ":""}${LBL[x.decision]||esc(x.decision)}: ${esc(x.symbol)}</div><small>${esc(x.headline||"")}</small></div>${crew}

@@ -1,24 +1,46 @@
-// The AI committee: four Gemini roles, each with one job, so no single answer carries the whole decision.
+// The AI committee: Gemini roles, each with one job, so no single answer carries the whole decision.
 //
 //   1. DATA ANALYST    reads the dossier (live facts computed by code) and reports data quality, the evidence per area,
 //                      conflicts and red flags. It does not decide.
 //   2. NEWS RESEARCHER searches the web (Gemini's Google Search) for news and scheduled events that could move this coin
 //                      during the trade. Runs at the same time as the analyst. Sources come from Google's own grounding
 //                      data, not from the model's text.
-//   3. TRADER          decides TAKE / WAIT / SKIP with probabilities, expected value and a plan, from the dossier and both
-//                      reports. Code then re-checks everything (hard stops, expected value, reward:risk, the plan).
-//   4. FINAL BOSS      the chief risk officer, called only for a TAKE that passed the code checks: YES (take it now, as
+//   3. BULL and BEAR   the debate: the bull makes the strongest honest case for buying, then the bear sees that case,
+//                      tests every bull point and makes the case against, with the most likely path to the stop.
+//                      AI_DEBATE=0 (or the page's switch) leaves it out.
+//   4. TRADER          decides TAKE / WAIT / SKIP with probabilities, expected value and a plan, from the dossier, both
+//                      reports and the debate, as its referee. Code then re-checks everything (hard stops, expected
+//                      value, reward:risk, the plan).
+//   5. FINAL BOSS      the chief risk officer, called only for a TAKE that passed the code checks: YES (take it now, as
 //                      planned) or NO. A stronger model by default. It can only say no, never turn a WAIT into a TAKE.
 //
-// Every stage returns JSON in a fixed shape. If the analyst or the news search fails, the committee carries on and says
-// so (unknown, never "fine"); if the final boss cannot answer, there is no TAKE. Prompts are written for Gemini but are
-// plain text: each one names the role, the method, the rules and the exact answer shape. Not financial advice.
-import { Type } from "@google/genai";
+// Every stage returns JSON in a fixed shape. If a member fails, the committee carries on and says so (unknown, never
+// "fine"); if the final boss cannot answer, there is no TAKE. Each role has its own thinking depth (roleConfig): quick
+// for checking and arguing, deep for deciding and approving. Not financial advice.
+import { Type, ThinkingLevel } from "@google/genai";
 import { generate, jsonFrom, AgentError } from "./agent.js";
 
 const strArr = { type: Type.ARRAY, items: { type: Type.STRING } };
 const NEWS_TTL = 30 * 60_000;
 const newsCache = new Map(); // identity key -> { at, report }
+
+// ───────────────────────────── model settings per role ─────────────────────────────
+// How hard each member thinks. Gemini 3 models take a thinking level and keep their default temperature (Google advises
+// against lowering it on Gemini 3: it can make the model loop or reason worse); Gemini 2.5 takes a thinking budget and a
+// low temperature; other models get a low temperature only. Checking, searching and arguing are quick jobs (low);
+// deciding and approving get deep thinking (high), and more time. AI_DEEP_THINKING=0: every member thinks "low".
+export const THINKING = { data: "low", news: "low", bull: "low", bear: "low", triage: "low", trader: "high", boss: "high" };
+const LOW_TEMP = { data: 0.1, news: 0.1, bull: 0.4, bear: 0.4, triage: 0.2, trader: 0.2, boss: 0.1 };
+export function roleConfig(model, role, env = process.env) {
+  const deep = env.AI_DEEP_THINKING !== "0" && THINKING[role] === "high", m = String(model || "").toLowerCase();
+  if (/gemini-[3-9]/.test(m)) return { thinkingConfig: { thinkingLevel: deep ? ThinkingLevel.HIGH : ThinkingLevel.LOW } };
+  if (/gemini-2\.5/.test(m)) return { temperature: LOW_TEMP[role] ?? 0.2, thinkingConfig: { thinkingBudget: deep ? 8192 : 1024 } };
+  return { temperature: LOW_TEMP[role] ?? 0.2 };
+}
+// Deep thinking takes longer: one retry, a longer wait.
+const callOpts = (role) => (THINKING[role] === "high" ? { retries: 1, timeoutMs: 120_000 } : role === "news" ? { retries: 1, timeoutMs: 90_000 } : {});
+// Tokens used by one request (thinking tokens are billed as output).
+export const usage = (res) => { const u = res?.usageMetadata || {}; return { in: u.promptTokenCount || 0, out: u.candidatesTokenCount || 0, think: u.thoughtsTokenCount || 0 }; };
 
 // ───────────────────────────── what each desk is ─────────────────────────────
 // The trading desks the committee serves. glossary = what the dossier fields mean; areas = how the analyst groups them.
@@ -63,9 +85,9 @@ export const DESKS = {
 };
 
 // ───────────────────────────── 1. data analyst ─────────────────────────────
-export const dataAnalystPrompt = (desk) => `You are the DATA ANALYST on a four-member crypto trading committee. The trade under review: ${desk.what}.
+export const dataAnalystPrompt = (desk) => `You are the DATA ANALYST on a crypto trading committee. The trade under review: ${desk.what}.
 Your only job is to read the DOSSIER (live market data, every number computed by code) and turn it into a clean, honest
-evidence report for the trader who decides next. You do NOT decide whether to trade, and you do not give price
+evidence report for the debaters and the trader who decides. You do NOT decide whether to trade, and you do not give price
 predictions.
 
 WHAT THE DOSSIER FIELDS MEAN
@@ -121,15 +143,15 @@ export async function dataReview(ai, { desk, dossier, model }) {
   try {
     const res = await generate(ai, {
       model, contents: `DOSSIER (JSON)\n${JSON.stringify(dossier)}\n\nWrite the evidence report.`,
-      config: { systemInstruction: dataAnalystPrompt(DESKS[desk]), temperature: 0.1, responseMimeType: "application/json", responseSchema: DATA_SCHEMA },
-    });
-    return { available: true, ...jsonFrom(res, "Data analyst"), model, ms: Date.now() - t0 };
+      config: { systemInstruction: dataAnalystPrompt(DESKS[desk]), ...roleConfig(model, "data"), responseMimeType: "application/json", responseSchema: DATA_SCHEMA },
+    }, callOpts("data"));
+    return { available: true, ...jsonFrom(res, "Data analyst"), model, ms: Date.now() - t0, tokens: usage(res) };
   } catch (e) { return { available: false, error: e.message, model, ms: Date.now() - t0 }; }
 }
 
 // ───────────────────────────── 2. news researcher ─────────────────────────────
 // identity = { symbol, name, chain?, contract?, tags? } ; holdHours = how long the trade would be held.
-export const newsResearcherPrompt = (id, holdHours, now = new Date()) => `You are the NEWS RESEARCHER on a four-member crypto trading committee. Today is ${now.toISOString().slice(0, 16).replace("T", " ")} UTC.
+export const newsResearcherPrompt = (id, holdHours, now = new Date()) => `You are the NEWS RESEARCHER on a crypto trading committee. Today is ${now.toISOString().slice(0, 16).replace("T", " ")} UTC.
 The committee is considering BUYING ${id.symbol}${id.name ? ` (${id.name})` : ""}${id.chain ? ` on ${id.chain}` : ""}${id.contract ? `, contract ${id.contract}` : ""} and holding it for up to ${holdHours} hours.
 Use Google Search to find news from the LAST 7 DAYS, and events scheduled in the NEXT 14 DAYS, that could move this
 token's price during the trade.
@@ -195,23 +217,102 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
   const t0 = Date.now();
   try {
     const res = await generate(ai, { model, contents: `Research the news for ${identity.symbol}${identity.name ? ` (${identity.name})` : ""} now.`,
-      config: { systemInstruction: newsResearcherPrompt(identity, holdHours), temperature: 0.1, tools: [{ googleSearch: {} }] } }, { retries: 1, timeoutMs: 90_000 });
-    const report = { ...cleanNews(res.text, res.candidates?.[0]?.groundingMetadata), model, ms: Date.now() - t0, at: Date.now() };
+      config: { systemInstruction: newsResearcherPrompt(identity, holdHours), ...roleConfig(model, "news"), tools: [{ googleSearch: {} }] } }, callOpts("news"));
+    const report = { ...cleanNews(res.text, res.candidates?.[0]?.groundingMetadata), model, ms: Date.now() - t0, at: Date.now(), tokens: usage(res) };
     if (report.available) { newsCache.set(key, { at: Date.now(), report }); if (newsCache.size > 200) newsCache.delete(newsCache.keys().next().value); }
     return report;
   } catch (e) { return { available: false, error: e.message, model, ms: Date.now() - t0 }; }
 }
 
-// ───────────────────────────── 3. trader ─────────────────────────────
+// ───────────────────────────── 3. the debate: bull and bear ─────────────────────────────
+const debateIntro = (deskKey) => `The trade under review: ${DESKS[deskKey].what}.
+You receive the DOSSIER (live data, every number computed by code), the DATA ANALYST REPORT and the NEWS REPORT.`;
+
+export const bullPrompt = (deskKey) => `You are the BULL on a crypto trading committee. ${debateIntro(deskKey)}
+Your job: make the strongest HONEST case for buying now. A bear will read your case and attack every point, and the
+trader judges on evidence only, so an argument without a dossier number is worthless.
+
+METHOD
+1. POINTS: the 3-5 strongest reasons to buy now, most important first, each with the exact dossier number(s) behind it.
+2. RED FLAGS: answer every red flag and conflict in the analyst's report with a number, or admit that it stands.
+3. PATH: how the price reaches the target within the holding time, step by step (e.g. "holds above VWAP 1.02, breaks
+   the 7-day high 1.08 on volume, BTC flat or up").
+4. WEAKEST POINT of your own case, and the one fact that would make you drop it.
+5. STRENGTH 0-10: how strong the case for buying really is. Be honest: 5 is an average ignition, most are 3-6, and
+   overselling a weak setup costs the committee money.
+
+RULES
+- Quote numbers exactly. Never invent data or news. Unknown is not a reason to buy.
+- You argue; you do not decide. Short, concrete sentences.`;
+
+export const bearPrompt = (deskKey) => `You are the BEAR on a crypto trading committee. ${debateIntro(deskKey)}
+You also receive the BULL'S CASE. Your job: test every bull argument and make the strongest HONEST case AGAINST
+buying now. The trader judges on evidence only, so an argument without a dossier number is worthless.
+
+METHOD
+1. REBUTTALS: for each bull point, say whether it holds, is overstated or is wrong, with the dossier number that shows it.
+   A point that holds, holds: say so.
+2. POINTS: the 3-5 strongest reasons NOT to buy now, most important first, each with the exact dossier number(s). Think
+   of: a fake-out (volume without follow-through), sellers in the book or the flow, resistance overhead, BTC weakness,
+   crowded futures, thin liquidity, whale deposits to exchanges, the base rate (most alerts of this kind fail), news.
+3. PATH: the most likely way this trade ends at the stop within the holding time, step by step.
+4. WEAKEST POINT of your own case, and the one fact that would make you drop it.
+5. STRENGTH 0-10: how strong the case against buying really is. Be honest: inventing risks the data does not show costs
+   the committee good trades.
+
+RULES
+- Quote numbers exactly. Never invent data or news.
+- You argue; you do not decide. Short, concrete sentences.`;
+
+const point = { type: Type.OBJECT, properties: { point: { type: Type.STRING }, evidence: { type: Type.STRING, description: "field = value from the dossier" } }, required: ["point", "evidence"] };
+const caseProps = {
+  strength: { type: Type.INTEGER, description: "0-10, honest" }, thesis: { type: Type.STRING, description: "Two sentences" },
+  points: { type: Type.ARRAY, items: point }, weakestPoint: { type: Type.STRING }, wouldChangeMyMind: { type: Type.STRING },
+};
+export const BULL_SCHEMA = {
+  type: Type.OBJECT,
+  properties: { ...caseProps, path: { type: Type.STRING, description: "How the price reaches the target within the holding time" },
+    redFlagAnswers: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { flag: { type: Type.STRING }, answer: { type: Type.STRING }, stands: { type: Type.BOOLEAN } }, required: ["flag", "answer", "stands"] } } },
+  required: ["strength", "thesis", "points", "path", "redFlagAnswers", "weakestPoint", "wouldChangeMyMind"],
+};
+export const BEAR_SCHEMA = {
+  type: Type.OBJECT,
+  properties: { ...caseProps, path: { type: Type.STRING, description: "The most likely way the trade ends at the stop" },
+    rebuttals: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { bullPoint: { type: Type.STRING }, verdict: { type: Type.STRING, enum: ["holds", "overstated", "wrong"] }, evidence: { type: Type.STRING } }, required: ["bullPoint", "verdict", "evidence"] } } },
+  required: ["strength", "thesis", "rebuttals", "points", "path", "weakestPoint", "wouldChangeMyMind"],
+};
+const reportJson = (x, what) => JSON.stringify(x?.available ? stripMeta(x) : { available: false, note: x?.error || `${what} unavailable` });
+const caseJson = (x) => JSON.stringify(x?.available ? stripMeta(x) : { available: false, note: x?.error || "unavailable" });
+const evidenceText = (dossier, data, news) => `DOSSIER (JSON)\n${JSON.stringify(dossier)}\n\nDATA ANALYST REPORT (JSON)\n${reportJson(data, "data report")}\n\nNEWS REPORT (JSON)\n${reportJson(news, "news")}`;
+
+async function argue(ai, side, { desk, model, contents }) {
+  const t0 = Date.now();
+  try {
+    const res = await generate(ai, { model, contents,
+      config: { systemInstruction: (side === "bull" ? bullPrompt : bearPrompt)(desk), ...roleConfig(model, side), responseMimeType: "application/json", responseSchema: side === "bull" ? BULL_SCHEMA : BEAR_SCHEMA } }, callOpts(side));
+    const j = jsonFrom(res, side === "bull" ? "Bull" : "Bear");
+    return { available: true, ...j, strength: Math.max(0, Math.min(10, Math.round(Number(j.strength) || 0))), points: (j.points || []).slice(0, 6), model, ms: Date.now() - t0, tokens: usage(res) };
+  } catch (e) { return { available: false, error: e.message, model, ms: Date.now() - t0 }; }
+}
+// The bull argues first; the bear sees the bull's case and answers it. Never throws: a side that fails is "unavailable".
+export async function debate(ai, { desk, dossier, data, news, model, enabled = true }) {
+  if (!enabled) return { off: true, bull: null, bear: null };
+  const facts = evidenceText(dossier, data, news);
+  const bull = await argue(ai, "bull", { desk, model, contents: `${facts}\n\nMake the case for buying now.` });
+  const bear = await argue(ai, "bear", { desk, model, contents: `${facts}\n\nBULL'S CASE (JSON)\n${caseJson(bull)}\n\nTest the bull's case and make the case against buying now.` });
+  return { off: false, bull, bear };
+}
+
+// ───────────────────────────── 4. trader ─────────────────────────────
 // rules = the desk's decision rules (ai-trade.js RULES / ALPHA_RULES); schema = the decision schema.
-export const traderPrompt = (deskKey, rules) => `You are the TRADER on a four-member crypto trading committee. The trade under review: ${DESKS[deskKey].what}.
-A data analyst and a news researcher have prepared reports for you. You make the call. If you say TAKE, code re-checks
-your numbers and the chief risk officer (the final boss) gives the final YES or NO, so a TAKE must survive a skeptical
-reader: every claim needs a dossier number.
+export const traderPrompt = (deskKey, rules, { debate = false } = {}) => `You are the TRADER on a crypto trading committee. The trade under review: ${DESKS[deskKey].what}.
+A data analyst and a news researcher have prepared reports for you${debate ? ", and a bull and a bear have argued the trade" : ""}. You make the call. If you say
+TAKE, code re-checks your numbers and the chief risk officer (the final boss) gives the final YES or NO, so a TAKE must
+survive a skeptical reader: every claim needs a dossier number.
 
 ${rules}
 
-HOW TO USE YOUR COLLEAGUES' REPORTS
+HOW TO USE YOUR COLLEAGUES' WORK
 - DATA ANALYST REPORT: a structured reading of the dossier. Use it to work faster, but the DOSSIER is the source of
   truth: where they differ, use the dossier number and say so. Answer every red flag and conflict it lists in your
   checklist (confirmed, or shown wrong with a dossier number). If its data quality is "poor", the answer is SKIP.
@@ -220,20 +321,30 @@ HOW TO USE YOUR COLLEAGUES' REPORTS
   is a HARD STOP. A medium negative item inside the holding time lowers the target chance (within the 15-point limit)
   or makes the call WAIT. Positive news that is already priced in does not raise the chance, and rumors do not count.
   "Unavailable" means unknown: say so; do not treat it as good news.
-- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable".`;
+- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable".${debate ? `
+- THE DEBATE: the bull argued for buying; then the bear read the bull's case and attacked it. Judge it like a referee:
+  only arguments backed by a dossier number count; a bull point the bear showed wrong with a number is gone; a bear
+  point or red flag the bull could not answer stands. Ignore tone, confidence and the strength scores they gave
+  themselves. The bear spoke last; that is not a reason to agree with it. If the bear's path to the stop is more likely
+  than the bull's path to the target, there is no TAKE. Fill "debate" with the winner (bull, bear or even) and the
+  argument that decided it, and let the unanswered points move your probabilities. A side marked unavailable did not
+  argue: judge from the dossier.` : ""}`;
 
-export async function traderDecision(ai, { desk, rules, schema, dossier, data, news, model }) {
+const DEBATE_VERDICT = { type: Type.OBJECT, properties: { winner: { type: Type.STRING, enum: ["bull", "bear", "even"] }, reason: { type: Type.STRING, description: "The argument that decided it" } }, required: ["winner", "reason"] };
+export async function traderDecision(ai, { desk, rules, schema, dossier, data, news, debate: dbt, model }) {
+  const t0 = Date.now(), withDebate = !!dbt && !dbt.off;
+  const sch = withDebate ? { ...schema, properties: { ...schema.properties, debate: DEBATE_VERDICT }, required: [...schema.required, "debate"] } : schema;
   const res = await generate(ai, {
     model,
-    contents: `DOSSIER (JSON)\n${JSON.stringify(dossier)}\n\nDATA ANALYST REPORT (JSON)\n${JSON.stringify(data?.available ? stripMeta(data) : { available: false, note: data?.error || "unavailable" })}\n\n` +
-      `NEWS REPORT (JSON)\n${JSON.stringify(news?.available ? stripMeta(news) : { available: false, note: news?.error || "unavailable" })}\n\nWork through the steps, then decide: TAKE, WAIT or SKIP (no trade).`,
-    config: { systemInstruction: traderPrompt(desk, rules), temperature: 0.2, responseMimeType: "application/json", responseSchema: schema },
-  });
-  return jsonFrom(res, "Trader");
+    contents: `${evidenceText(dossier, data, news)}\n\n` + (withDebate ? `BULL'S CASE (JSON)\n${caseJson(dbt.bull)}\n\nBEAR'S CASE (JSON)\n${caseJson(dbt.bear)}\n\n` : "") +
+      "Work through the steps, then decide: TAKE, WAIT or SKIP (no trade).",
+    config: { systemInstruction: traderPrompt(desk, rules, { debate: withDebate }), ...roleConfig(model, "trader"), responseMimeType: "application/json", responseSchema: sch },
+  }, callOpts("trader"));
+  return { out: jsonFrom(res, "Trader"), ms: Date.now() - t0, tokens: usage(res) };
 }
-const stripMeta = (x) => { const { model, ms, at, cached, available, ...rest } = x; return rest; };
+const stripMeta = (x) => { const { model, ms, at, cached, available, tokens, ...rest } = x; return rest; };
 
-// ───────────────────────────── 4. final boss ─────────────────────────────
+// ───────────────────────────── 5. final boss ─────────────────────────────
 export const bossPrompt = (deskKey) => `You are the CHIEF RISK OFFICER and the final decision maker of a crypto trading committee. The trade: ${DESKS[deskKey].what}.
 The trader proposes to BUY now, and the code checks passed. You answer YES (we take this trade now, exactly as planned)
 or NO (we do not). Capital comes first: a missed trade costs nothing, a bad trade costs money. When in doubt, NO.
@@ -244,11 +355,15 @@ YOU RECEIVE
 - TRADER'S REASONING: checklist, thesis, points for and against, key risk.
 - DATA ANALYST REPORT: data quality, conflicts, red flags, key numbers.
 - NEWS REPORT: what the web search found (or that it was unavailable).
+- DEBATE: the bull's case for, the bear's case against (it saw the bull's case first), and who the trader said won.
+  It may be missing (switched off).
 - KEY FACTS: the dossier numbers that matter most.
 
 RUN THESE TESTS (pass or fail, with the number behind it)
 1. Data: quality is not "poor", and no number the decision depends on is missing or contradictory.
-2. Red flags: every red flag and conflict from the analyst was answered with evidence, not explained away.
+2. Red flags and the bear: every red flag and conflict from the analyst, and every bear point backed by a number, was
+   answered with evidence, not explained away; the bear's path to the stop is less likely than the bull's path to the
+   target.
 3. News: risk is not high, and no medium-negative item falls inside the holding time unpriced. Unavailable news is
    acceptable only when everything else is strong.
 4. Probabilities: moved from the base rate only for named evidence; the expected value is at least +0.5% per trade
@@ -270,17 +385,23 @@ export const BOSS_SCHEMA = {
   required: ["verdict", "reason", "biggestRisk", "mustBeTrue", "checks"],
 };
 
-export async function finalBoss(ai, { desk, trade, reasoning, data, news, keyFacts, model }) {
+const debateBrief = (d) => {
+  if (!d || d.off) return { off: true };
+  const side = (x, extra) => (x?.available ? { strength: x.strength, thesis: x.thesis, points: x.points, path: x.path, weakestPoint: x.weakestPoint, ...extra(x) } : { available: false });
+  return { bull: side(d.bull, (x) => ({ redFlagAnswers: x.redFlagAnswers })), bear: side(d.bear, (x) => ({ rebuttals: x.rebuttals })), traderVerdict: d.verdict || null };
+};
+export async function finalBoss(ai, { desk, trade, reasoning, data, news, debate: dbt, keyFacts, model }) {
   const t0 = Date.now();
   try {
     const res = await generate(ai, {
       model,
       contents: `TRADE (JSON)\n${JSON.stringify(trade)}\n\nTRADER'S REASONING (JSON)\n${JSON.stringify(reasoning)}\n\nDATA ANALYST REPORT (JSON)\n${JSON.stringify(data?.available ? stripMeta(data) : { available: false })}\n\n` +
-        `NEWS REPORT (JSON)\n${JSON.stringify(news?.available ? stripMeta(news) : { available: false, note: news?.error || "unavailable" })}\n\nKEY FACTS (JSON)\n${JSON.stringify(keyFacts)}\n\nRun the tests and answer YES or NO.`,
-      config: { systemInstruction: bossPrompt(desk), temperature: 0.1, responseMimeType: "application/json", responseSchema: BOSS_SCHEMA },
-    });
+        `NEWS REPORT (JSON)\n${JSON.stringify(news?.available ? stripMeta(news) : { available: false, note: news?.error || "unavailable" })}\n\nDEBATE (JSON)\n${JSON.stringify(debateBrief(dbt))}\n\n` +
+        `KEY FACTS (JSON)\n${JSON.stringify(keyFacts)}\n\nRun the tests and answer YES or NO.`,
+      config: { systemInstruction: bossPrompt(desk), ...roleConfig(model, "boss"), responseMimeType: "application/json", responseSchema: BOSS_SCHEMA },
+    }, callOpts("boss"));
     const b = jsonFrom(res, "Final boss");
-    return { available: true, verdict: b.verdict === "YES" ? "YES" : "NO", reason: b.reason, biggestRisk: b.biggestRisk, mustBeTrue: b.mustBeTrue, checks: Array.isArray(b.checks) ? b.checks.slice(0, 8) : [], model, ms: Date.now() - t0 };
+    return { available: true, verdict: b.verdict === "YES" ? "YES" : "NO", reason: b.reason, biggestRisk: b.biggestRisk, mustBeTrue: b.mustBeTrue, checks: Array.isArray(b.checks) ? b.checks.slice(0, 8) : [], model, ms: Date.now() - t0, tokens: usage(res) };
   } catch (e) { return { available: false, verdict: null, reason: e.message, model, ms: Date.now() - t0 }; }
 }
 

@@ -19,9 +19,9 @@
 // perpetual), large Ethereum transfers and exchange flows (whale tracker), DEX buying and selling (DEX tracker), BTC
 // and the market backdrop, and a reference plan from the screener's own +target / -stop rule.
 //
-// Single coin: POST /api/ai/analyze runs the four-member AI committee (ai-committee.js): a data analyst and a news
-// researcher (web search) report first, a trader decides, and for a TAKE that passes the code checks a final boss says
-// YES or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
+// Single coin: POST /api/ai/analyze runs the AI committee (ai-committee.js): a data analyst and a news researcher (web
+// search) report first, a bull and a bear argue the trade, a trader decides, and for a TAKE that passes the code checks
+// a final boss says YES or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
 // GET /api/ai/dossier?symbol=. Research tool, not financial advice.
 
 import { Type } from "@google/genai";
@@ -31,7 +31,7 @@ import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
 import { sendTelegram, telegramWants } from "./telegram.js";
-import { dataReview, newsResearch, traderDecision, finalBoss, committeeChecks, bossCall } from "./ai-committee.js";
+import { dataReview, newsResearch, debate, traderDecision, finalBoss, committeeChecks, bossCall, roleConfig } from "./ai-committee.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -460,16 +460,21 @@ const pickModel = (v, fallback) => {
 };
 
 // The AI committee (ai-committee.js) around the code's guards: the data analyst and the news researcher work at the same
-// time, the trader decides with both reports, the code checks the trader's numbers (guards, plan, expected value, hard
-// stops), and only a TAKE that survives goes to the final boss for YES or NO. 3 Gemini calls, 4 for a TAKE.
+// time, the bull and the bear argue with their reports, the trader decides as referee, the code checks the trader's
+// numbers (guards, plan, expected value, hard stops), and only a TAKE that survives goes to the final boss for YES or NO.
+// 3 Gemini requests without the debate, 5 with it, one more for a TAKE.
 const newsOn = (opts) => opts.news !== false && env.AI_NEWS !== "0";
+const debateOn = (opts) => opts.debate !== false && env.AI_DEBATE !== "0";
+const flags = (opts) => (newsOn(opts) ? "n" : "-") + (debateOn(opts) ? "d" : "-");
 export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, extraStops = () => [], opts }) {
   const hold = d.alert?.trackedAs?.holdHours || 24;
   const [data, news] = await Promise.all([
     dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
     newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts) }),
   ]);
-  const out = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, model: opts.model });
+  const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debateOn(opts) });
+  const tr = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, debate: dbt, model: opts.model }), out = tr.out;
+  if (!dbt.off) dbt.verdict = out.debate && ["bull", "bear", "even"].includes(out.debate.winner) ? { winner: out.debate.winner, reason: out.debate.reason } : null;
   const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
   if (pc.replaced) g.notes.push("The trader's plan did not fit the levels, so the reference plan is shown.");
   const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
@@ -480,7 +485,7 @@ export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, ext
   g.notes.push(...pre.notes);
   const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
   const boss = pre.decision !== "TAKE" ? { asked: false, verdict: null, reason: `Not asked: the call was ${LABEL[pre.decision]} before the final check.` }
-    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, keyFacts: keyFacts(d),
+    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, keyFacts: keyFacts(d),
       trade: { symbol: d.symbol, price: d.price, alert: { tier: d.alert.tier, label: d.alert.label, trackedAs: d.alert.trackedAs, anchorProbTargetPct: d.alert.anchorProbTargetPct,
         anchorProbStopPct: d.alert.anchorProbStopPct, costPct: d.alert.costPct }, plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
         expectedValuePct: dz.expectedValuePct, confidence: g.confidence, codeNotes: g.notes },
@@ -495,12 +500,19 @@ export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, ext
     hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : []), ...(out.hardStops || [])])], checklist,
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
     plan: pc.plan, waitFor: out.waitFor, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
-    committee: { data, news, trader: { decision: out.decision, model: opts.model }, boss },
+    committee: { data, news, debate: dbt, trader: { decision: out.decision, model: opts.model, ms: tr.ms, tokens: tr.tokens }, boss },
   };
 }
-const committeeMeta = (opts, c, t0) => ({ model: opts.model, dataModel: MODELS.analyst, newsModel: c.committee.news.off ? null : MODELS.analyst,
-  bossModel: c.committee.boss.asked ? opts.reviewModel || MODELS.reviewer : null, calls: 2 + (c.committee.news.off || c.committee.news.cached ? 0 : 1) + (c.committee.boss.asked ? 1 : 0),
-  durationMs: Date.now() - t0, at: Date.now(), cached: false });
+// Which models ran, how many requests were made and the tokens they used (news from the 30-minute cache costs nothing).
+function committeeMeta(opts, c, t0) {
+  const { data, news, debate: dbt, trader, boss } = c.committee, fresh = (x) => x && !x.cached && x.tokens;
+  const parts = [data, fresh(news) ? news : null, dbt.bull, dbt.bear, trader, boss.asked ? boss : null].filter((x) => x && x.tokens);
+  return { model: opts.model, dataModel: MODELS.analyst, newsModel: news.off ? null : MODELS.analyst, debateModel: dbt.off ? null : MODELS.analyst,
+    bossModel: boss.asked ? opts.reviewModel || MODELS.reviewer : null,
+    calls: 2 + (news.off || news.cached ? 0 : 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 : 0),
+    tokens: ["in", "out", "think"].reduce((o, k) => ({ ...o, [k]: parts.reduce((s, x) => s + (x.tokens[k] || 0), 0) }), {}),
+    deepThinking: env.AI_DEEP_THINKING !== "0", durationMs: Date.now() - t0, at: Date.now(), cached: false };
+}
 
 async function analyzeOne(ai, symbol, opts) {
   const t0 = Date.now();
@@ -537,7 +549,7 @@ async function analyzeMany(ai, symbols, opts) {
   const res = await generate(ai, {
     model: opts.model,
     contents: `MARKET (JSON)\n${JSON.stringify(first.market)}\n\nLIVE PERFORMANCE (JSON)\n${JSON.stringify(first.livePerformance)}\n\nCOST PER TRADE: ${first.alert.costPct}%\n\nCOINS (JSON)\n${JSON.stringify(dossiers.map(compact))}\n\nTriage every coin.`,
-    config: { systemInstruction: TRIAGE_SYSTEM, temperature: 0.2, responseMimeType: "application/json", responseSchema: TRIAGE_SCHEMA },
+    config: { systemInstruction: TRIAGE_SYSTEM, ...roleConfig(opts.model, "triage"), responseMimeType: "application/json", responseSchema: TRIAGE_SCHEMA },
   });
   const out = jsonFrom(res, "Triage");
   const bySym = new Map((out.coins || []).map((c) => [String(c.symbol).toUpperCase().replace(/USDT$/, "") + "USDT", c]));
@@ -587,12 +599,15 @@ export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x
   x.committee?.news?.available && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
-// One line on how each member voted: data quality, news risk, the trader's call, the final boss.
+// "bull 7 vs bear 5, bear won" (the strengths are the sides' own scores; the winner is the trader's call).
+const debateLine = (dbt) => (!dbt || dbt.off ? null
+  : `bull ${dbt.bull?.available ? dbt.bull.strength : "n/a"} vs bear ${dbt.bear?.available ? dbt.bear.strength : "n/a"}${dbt.verdict ? `, ${dbt.verdict.winner === "even" ? "even" : dbt.verdict.winner + " won"}` : ""}`);
+// One line on how each member voted: data quality, news risk, the debate, the trader's call, the final boss.
 const tgCommittee = (x) => {
-  const { data, news, trader, boss } = x.committee;
+  const { data, news, debate: dbt, trader, boss } = x.committee;
   return [`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
-    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, `trader ${LABEL[trader?.decision] || "?"}`,
-    `boss ${boss?.asked ? (boss.verdict || "no answer") : "not needed"}`].join(" · ") + (boss?.asked && boss.verdict === "NO" ? `\nBoss: ${boss.reason}` : "");
+    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`,
+    `boss ${boss?.asked ? (boss.verdict || "no answer") : "not needed"}`].filter(Boolean).join(" · ") + (boss?.asked && boss.verdict === "NO" ? `\nBoss: ${boss.reason}` : "");
 };
 
 // What is saved with an alert after its automatic review: the call, the numbers and how each committee member voted.
@@ -601,6 +616,7 @@ const reviewSummary = (out, tg) => {
   return { decision: out.decision, final: out.final, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
     committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? c.news.riskLevel : null, newsHardStop: !!c.news?.hardStop,
+      debate: debateLine(c.debate), debateWinner: c.debate?.verdict?.winner || null,
       trader: c.trader?.decision || null, boss: c.boss?.asked ? c.boss.verdict : null, bossReason: c.boss?.asked ? c.boss.reason : null },
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
 };
@@ -608,8 +624,8 @@ const reviewSummary = (out, tg) => {
 // Automatic review of a new screener alert (called by server.js): the full committee with the default models, a short
 // summary saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
 export async function reviewAlert(ai, symbol, tier = null) {
-  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, tier: tier === "ignition" ? "confirmed" : tier };
-  const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:n:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
+  const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, tier: tier === "ignition" ? "confirmed" : tier };
+  const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
   const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
   return reviewSummary(out, tg);
 }
@@ -730,7 +746,7 @@ async function analyzeAlpha(ai, key, opts) {
 // go to Telegram and AI verdicts are switched on.
 export async function reviewAlpha(ai, alert) {
   const telegramOn = telegramWants("ai") && telegramWants(alert.tier === "confirmed" ? "alpha" : "alphaEarly");
-  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, alert }));
+  const out = await cached(`alpha:${alert.id}`, RESULT_TTL, false, () => analyzeAlpha(ai, alert.alphaId, { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, alert }));
   const tg = telegramOn && !out.meta.cached
     ? await telegram(tgSingle({ ...out, symbol: out.symbol }, `(AI review of the new Alpha ${alert.tier} alert)`), { kind: "ai" }) : null;
   return reviewSummary(out, tg);
@@ -779,8 +795,8 @@ export async function handleAiRequest(req, res, url, ai) {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI." }), true;
       const body = await readJsonBody(req), key = String(body.key || "").slice(0, 40);
-      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false };
-      const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${newsOn(opts) ? "n" : "-"}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, opts));
+      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false, debate: body.debate !== false };
+      const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, opts));
       const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
       jsonResponse(res, 200, { ...out, telegram: tg });
     }
@@ -788,10 +804,10 @@ export async function handleAiRequest(req, res, url, ai) {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI trade desk." }), true;
       const body = await readJsonBody(req);
-      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false };
+      const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false, debate: body.debate !== false };
       if (url.pathname === "/api/ai/analyze") {
         const symbol = normSymbol(body.symbol);
-        const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${newsOn(opts) ? "n" : "-"}`, RESULT_TTL, body.refresh === true, () => analyzeOne(ai, symbol, opts));
+        const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true, () => analyzeOne(ai, symbol, opts));
         const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out)) : null;
         jsonResponse(res, 200, { ...out, telegram: tg });
       } else {

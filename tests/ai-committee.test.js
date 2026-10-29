@@ -437,3 +437,32 @@ test("Final Boss: if its model fails, the fallback model answers; it says which 
   const none = await cm.finalBoss(dead, { desk: "spot", trader: {}, code: {}, debate: { off: true }, dossier: {}, model: "pro-model", fallbackModel: "flash-model" });
   assert.equal(none.available, false); assert.match(none.reason, /pro-model: quota for pro-model \| flash-model: quota for flash-model/);
 });
+
+test("progress: each committee member reports working / done in order, and the answer streams as lines of JSON", async () => {
+  const steps = [];
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES });
+  await run(ai, dossier(), { onStep: (e) => steps.push(`${e.id}:${e.status}`) });
+  const done = steps.filter((x) => /:(done|failed|skipped)$/.test(x)).map((x) => x.split(":")[0]);
+  assert.deepEqual(done.slice(2), ["bull", "bear", "trader", "checks", "boss"]);              // in this order
+  assert.deepEqual(done.slice(0, 2).sort(), ["data", "news"]);                                // these two work at the same time
+  assert.ok(steps.indexOf("bull:working") < steps.indexOf("bull:done") && steps.indexOf("boss:working") < steps.indexOf("boss:done"));
+  assert.ok(steps.includes("news:working")); // "searching ..." then "... results found"
+  // news and debate switched off: shown as skipped, never as waiting forever
+  const off = [];
+  await run(fakeAi({ "DATA ANALYST": DATA, TRADER: trader("SKIP"), "Final Boss": boss("NO") }), dossier("OFFUSDT"), { news: false, debate: false, onStep: (e) => off.push(`${e.id}:${e.status}`) });
+  assert.ok(["news:skipped", "bull:skipped", "bear:skipped", "boss:done"].every((x) => off.includes(x)), off.join(" "));
+  // a broken listener never breaks the analysis
+  const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("SKIP"), "Final Boss": boss("NO") }), dossier("BRKUSDT"), { onStep: () => { throw new Error("page closed"); } });
+  assert.equal(x.final, "NO");
+  // the streamed answer: one JSON line per step, then the result (or the error)
+  const fakeRes = () => { const r = { lines: [], head: null, ended: false, writableEnded: false, destroyed: false, writeHead(c, h) { r.head = [c, h]; }, on() {},
+    write(t) { r.lines.push(...t.trim().split("\n").map((l) => JSON.parse(l))); }, end() { r.ended = true; r.writableEnded = true; } }; return r; };
+  const ok = fakeRes();
+  await desk.streamJob(ok, async (onStep) => { onStep({ id: "data", status: "working" }); onStep({ id: "data", status: "done", detail: "data good" }); return { final: "YES" }; });
+  assert.equal(ok.head[1]["content-type"], "application/x-ndjson; charset=utf-8");
+  assert.deepEqual(ok.lines.map((l) => l.type + (l.id ? ":" + l.id + ":" + l.status : "")), ["step:data:working", "step:data:done", "result"]);
+  assert.equal(ok.lines[2].data.final, "YES"); assert.equal(ok.ended, true);
+  const bad = fakeRes();
+  await desk.streamJob(bad, async () => { throw new Error("quota exceeded"); });
+  assert.deepEqual(bad.lines, [{ type: "error", error: "AI analysis failed: quota exceeded" }]);
+});

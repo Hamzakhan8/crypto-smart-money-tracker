@@ -313,12 +313,15 @@ export function cleanNews(text, grounding, usageMeta = null, found = null) {
       .map((x) => ({ date: String(x.date || "").slice(0, 10), event: String(x.event || "").slice(0, 200), impact: String(x.impact || "unclear"), ref: byRef.has(String(x.ref || "").trim()) ? String(x.ref).trim() : null })),
   };
 }
-export async function newsResearch(ai, { identity, holdHours, model, enabled = true, search = appSearch }) {
+// onStep({ id: "news", status, detail }): optional progress for the page while it runs.
+export async function newsResearch(ai, { identity, holdHours, model, enabled = true, search = appSearch, onStep = () => {} }) {
   if (!enabled) return { available: false, error: "News research is switched off (AI_NEWS=0)", off: true };
   const key = `${identity.symbol}|${identity.contract || ""}|${Math.round(holdHours)}`, hit = newsCache.get(key);
   if (hit && Date.now() - hit.at < NEWS_TTL) return { ...hit.report, cached: true };
   const t0 = Date.now(), name = identity.name ? ` (${identity.name})` : "", tokens = { in: 0, out: 0, think: 0 };
+  onStep({ id: "news", status: "working", detail: "searching Google News and Binance announcements" });
   const found = await search(identity).catch((e) => ({ ok: false, query: null, results: [], errors: [e.message] }));
+  onStep({ id: "news", status: "working", detail: found.ok ? `${found.results.length} results found; Gemini is judging them` : "the app's search failed; Gemini searches itself" });
   const given = found.ok ? `SEARCH RESULTS (fetched by the app just now: Google News for ${found.query}, and Binance announcements naming ${identity.symbol})\n` +
     `${JSON.stringify(found.results.map(({ id, title, source, date }) => ({ id, title, source, date })))}\n\n` : "";
   const ask = async (contents) => {
@@ -332,6 +335,7 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
     // Gemini decides itself whether to search. If it answered from memory, ask once more, insisting on a search.
     if (report.available && !report.searched) {
       requests++;
+      onStep({ id: "news", status: "working", detail: "no search came back; asking Gemini again" });
       const again = await ask(`Use Google Search now: look up "${identity.symbol}${identity.name ? ` ${identity.name}` : ""} crypto news" and its Binance status before you answer. Do not answer from memory.`).catch(() => null);
       if (again?.available) report = again;
     }
@@ -416,11 +420,15 @@ async function argue(ai, side, { desk, model, contents }) {
   } catch (e) { return { available: false, error: e.message, model, ms: Date.now() - t0 }; }
 }
 // The bull argues first; the bear sees the bull's case and answers it. Never throws: a side that fails is "unavailable".
-export async function debate(ai, { desk, dossier, data, news, model, enabled = true }) {
+export async function debate(ai, { desk, dossier, data, news, model, enabled = true, onStep = () => {} }) {
   if (!enabled) return { off: true, bull: null, bear: null };
-  const facts = evidenceText(dossier, data, news);
+  const facts = evidenceText(dossier, data, news), said = (x, w) => (x.available ? `${w} ${x.strength}/10` : `no answer (${x.error})`);
+  onStep({ id: "bull", status: "working", detail: "making the case for buying" });
   const bull = await argue(ai, "bull", { desk, model, contents: `${facts}\n\nMake the case for buying now.` });
+  onStep({ id: "bull", status: bull.available ? "done" : "failed", detail: said(bull, "for") });
+  onStep({ id: "bear", status: "working", detail: "testing the bull's case" });
   const bear = await argue(ai, "bear", { desk, model, contents: `${facts}\n\nBULL'S CASE (JSON)\n${caseJson(bull)}\n\nTest the bull's case and make the case against buying now.` });
+  onStep({ id: "bear", status: bear.available ? "done" : "failed", detail: said(bear, "against") });
   return { off: false, bull, bear };
 }
 
@@ -652,9 +660,10 @@ export function cleanBoss(j) {
 // trader = the trader's call and plan; code = what the code computed from it; dossier = the raw data. If the boss's model
 // fails (not available on this API key, over its quota, too slow), the fallback model answers instead, so there is
 // always a Final Boss answer when Gemini works at all; the answer says which model gave it and why.
-export async function finalBoss(ai, { desk, trader, code, data, news, debate: dbt, dossier, model, fallbackModel = null }) {
+export async function finalBoss(ai, { desk, trader, code, data, news, debate: dbt, dossier, model, fallbackModel = null, onStep = () => {} }) {
   const t0 = Date.now(), errors = [];
   for (const m of [...new Set([model, fallbackModel].filter(Boolean))]) {
+    if (errors.length) onStep({ id: "boss", status: "working", detail: `${model} failed; asking ${m}` });
     try { return { ...await askBoss(ai, { desk, trader, code, data, news, dbt, dossier, model: m }), ms: Date.now() - t0,
       fallbackFrom: m !== model ? { model, error: errors[0] } : null }; }
     catch (e) { errors.push(`${m}: ${e.message}`); }

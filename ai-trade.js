@@ -657,15 +657,31 @@ export function auditHints(d, { out, pc, dz, data, news, dbt, code }) {
   if (missing.length) h.push(`not tracked for this coin: ${missing.join(", ")}`);
   return h;
 }
+// Progress for the page while the committee works (opts.onStep): { id, status: working / done / failed / skipped, detail }.
+// ids: dossier, data, news, bull, bear, trader, checks, boss. A broken listener never breaks an analysis.
+const stepper = (opts) => (id, status, detail = "") => { try { opts.onStep?.({ id, status, detail: String(detail || "").slice(0, 200), at: Date.now() }); } catch { /* ignore */ } };
+const newsDone = (x) => (!x.available ? x.error : x.cached ? `saved news from the last 30 minutes: ${x.riskLevel || "unknown"} risk`
+  : x.status === "unknown" ? "unknown: no search came back" : `${x.riskLevel} risk · ${(x.items || []).length} relevant of ${x.evidence?.appResults ?? (x.sources || []).length} results`);
 export async function runCommittee(ai, d, { desk, rules, identity, extraStops = () => [], opts }) {
-  const hold = d.alert?.trackedAs?.holdHours || 24, fast = fastPath(d, opts);
+  const hold = d.alert?.trackedAs?.holdHours || 24, fast = fastPath(d, opts), step = stepper(opts), relay = (e) => step(e.id, e.status, e.detail);
+  step("data", "working", "checking the numbers");
+  if (!newsOn(opts)) step("news", "skipped", "news search switched off");
   const [data, news] = await Promise.all([
-    dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
-    newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts), ...(opts.newsSearch ? { search: opts.newsSearch } : {}) }),
+    dataReview(ai, { desk, dossier: d, model: MODELS.analyst })
+      .then((x) => (step("data", x.available ? "done" : "failed", x.available ? `data ${x.dataQuality?.rating} · ${(x.redFlags || []).length} red flags` : x.error), x)),
+    newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts), onStep: relay, ...(opts.newsSearch ? { search: opts.newsSearch } : {}) })
+      .then((x) => (newsOn(opts) && step("news", x.available ? "done" : "failed", newsDone(x)), x)),
   ]);
-  const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debateOn(opts) && !fast });
+  const debating = debateOn(opts) && !fast;
+  if (!debating) for (const id of ["bull", "bear"]) step(id, "skipped", fast ? "fast NO path: no alert signal" : "debate switched off");
+  const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debating, onStep: relay });
   if (fast && debateOn(opts)) dbt.skipped = "no alert signal: the fast path skips the debate";
-  const tr = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, debate: dbt, model: opts.model }), out = tr.out;
+  step("trader", "working", debating ? "judging the debate and deciding" : "deciding");
+  let tr;
+  try { tr = await traderDecision(ai, { desk, rules, schema: DECISION_SCHEMA, dossier: d, data, news, debate: dbt, model: opts.model }); }
+  catch (e) { step("trader", "failed", e.message); throw e; }
+  const out = tr.out;
+  step("trader", "done", LABEL[out.decision] || out.decision);
   out.headline = noTradeWords(out.headline); out.thesis = noTradeWords(out.thesis);
   if (!dbt.off) dbt.verdict = out.debate && ["bull", "bear", "even"].includes(out.debate.winner) ? { winner: out.debate.winner, reason: out.debate.reason } : null;
   const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
@@ -679,6 +695,7 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
   const pre = committeeChecks(dz.decision, { news, data });
   g.notes.push(...pre.notes);
   const hard = [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : [])])];
+  step("checks", "done", `EV ${dz.expectedValuePct > 0 ? "+" : ""}${dz.expectedValuePct}% · R:R ${pc.plan.rewardRisk}${hard.length ? ` · hard stop: ${hard[0]}` : " · no hard stop"}`);
   const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
   // The Final Boss audits everything, whatever the trader decided (fast path: only when the trader or the code is not a no).
   const code = { decision: pre.decision, hardStops: hard, expectedValuePct: dz.expectedValuePct, evCalc: dz.evCalc, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
@@ -686,11 +703,14 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
     traderPlanReplaced: pc.replaced, notes: [...g.notes] };
   code.auditHints = auditHints(d, { out, pc, dz, data, news, dbt, code });
   const fastNo = fast && out.decision === "SKIP" && pre.decision === "SKIP";
+  step("boss", fastNo ? "skipped" : "working", fastNo ? "fast NO: the trader and the code both say no trade" : "auditing the whole committee");
   const boss = fastNo ? { asked: false, skipped: "fast", verdict: null, reason: "Skipped: fast NO (no alert signal, and the trader and the code both say no trade; AI_FAST_NO=1 is on)." }
-    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, fallbackModel: MODELS.analyst, data, news, debate: dbt, dossier: d, code,
+    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, fallbackModel: MODELS.analyst, onStep: relay, data, news, debate: dbt, dossier: d, code,
     trader: { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, probTargetPct: out.probTargetPct, probStopPct: out.probStopPct,
       probReason: out.probReason, plan: pc.plan, waitFor: out.waitFor, trigger: out.trigger || null, hardStopsNamed: out.hardStops, checklist, headline: out.headline,
       thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk, invalidation: out.invalidation, debateWinner: dbt.verdict || null } }) };
+  if (boss.asked) step("boss", boss.available ? "done" : "failed", boss.available
+    ? `${boss.verdict}${boss.agreesWithTrader ? "" : " (overturned the trader)"}${boss.fallbackFrom ? ` · answered by ${boss.model}` : ""}` : boss.reason);
   // The boss's confidence is capped by the data rating, and lowered one step when it audited nothing the code had flagged.
   if (boss.available) {
     const capTo = data.available ? CONF_CAP[data.dataQuality?.rating] || "medium" : "medium";
@@ -732,8 +752,10 @@ function committeeMeta(opts, c, t0) {
 }
 
 async function analyzeOne(ai, symbol, opts) {
-  const t0 = Date.now();
-  const d = await buildDossier(symbol, opts.tier || null);
+  const t0 = Date.now(), step = stepper(opts);
+  step("dossier", "working", "prices, chart, order book, futures and flows");
+  const d = await buildDossier(symbol, opts.tier || null).catch((e) => { step("dossier", "failed", e.message); throw e; });
+  step("dossier", "done", `price ${d.price} · ${d.alert.label}`);
   const base = symbol.replace(/USDT$/, ""), info = assetInfo(base);
   const c = await runCommittee(ai, d, { desk: "spot", rules: RULES, identity: { symbol: base, name: info?.name || null }, opts });
   return { symbol, ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
@@ -791,14 +813,19 @@ function remember(result) {
   else if (result?.decision && result.symbol) noteAiVerdict(result.symbol, { ...result, at });
   for (const c of result?.coins || []) noteAiVerdict(c.symbol, { ...c, at });
 }
-function cached(key, ttl, refresh, run) {
+// run(emit) does the work and reports progress through emit; listener gets that progress. A second request for an
+// analysis that is already running joins it: it gets the steps so far, then the rest live.
+function cached(key, ttl, refresh, run, listener = null) {
   const hit = results.get(key);
   if (!refresh && hit && Date.now() - hit.at < ttl) return Promise.resolve({ ...hit.result, meta: { ...hit.result.meta, cached: true } });
-  if (inflight.has(key)) return inflight.get(key);
-  const p = run().then((result) => { results.set(key, { at: Date.now(), result }); if (results.size > 80) results.delete(results.keys().next().value); remember(result); return result; })
+  const live = inflight.get(key);
+  if (live) { if (listener) { live.history.forEach(listener); live.listeners.add(listener); } return live.promise; }
+  const job = { listeners: new Set(listener ? [listener] : []), history: [] };
+  const emit = (e) => { job.history.push(e); for (const l of job.listeners) { try { l(e); } catch { /* a closed page */ } } };
+  job.promise = run(emit).then((result) => { results.set(key, { at: Date.now(), result }); if (results.size > 80) results.delete(results.keys().next().value); remember(result); return result; })
     .finally(() => inflight.delete(key));
-  inflight.set(key, p);
-  return p;
+  inflight.set(key, job);
+  return job.promise;
 }
 
 // ───────────────────────────── track record, WAIT triggers, daily limit ─────────────────────────────
@@ -825,7 +852,7 @@ async function onTriggerHit(tr) {
     return { checked: false, reason: why, at: Date.now() };
   }
   const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, source: "trigger", depth: (tr.depth || 0) + 1, tier: tr.tier };
-  const out = await cached(`trig:${tr.id}`, RESULT_TTL, true, () => (tr.kind === "alpha" ? analyzeAlpha(aiClient, tr.alphaId, opts) : analyzeOne(aiClient, tr.symbol, opts)));
+  const out = await cached(`trig:${tr.id}`, RESULT_TTL, true, (emit) => (tr.kind === "alpha" ? analyzeAlpha(aiClient, tr.alphaId, { ...opts, onStep: emit }) : analyzeOne(aiClient, tr.symbol, { ...opts, onStep: emit })));
   await telegram(`${head}\n${tgSingle(out, "(fresh committee check)")}`, { kind: "ai" });
   return { checked: true, decision: out.decision, final: out.final, headline: out.headline, at: Date.now() };
 }
@@ -902,7 +929,7 @@ const reviewSummary = (out, tg) => {
 // summary saved with the alert, and a Telegram follow-up while "AI verdicts" are switched on (default; AI_REVIEW_TELEGRAM=0 = off).
 export async function reviewAlert(ai, symbol, tier = null) {
   const opts = { model: MODELS.analyst, reviewModel: MODELS.reviewer, news: true, debate: true, source: "alert", tier: tier === "ignition" ? "confirmed" : tier };
-  const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}:${opts.tier || ""}`, RESULT_TTL, false, () => analyzeOne(ai, symbol, opts));
+  const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}:${opts.tier || ""}`, RESULT_TTL, false, (emit) => analyzeOne(ai, symbol, { ...opts, onStep: emit }));
   const tg = telegramWants("ai") && !out.meta.cached ? await telegram(tgSingle(out, `(AI review of the new ${out.tier === "none" ? "" : out.tier + " "}alert)`), { kind: "ai" }) : null;
   return reviewSummary(out, tg);
 }
@@ -1017,8 +1044,10 @@ export function alphaHardStops(d) {
   return out;
 }
 async function analyzeAlpha(ai, key, opts) {
-  const t0 = Date.now();
-  const d = await buildAlphaDossier(key, opts.alert || null), t = d.alpha.token;
+  const t0 = Date.now(), step = stepper(opts);
+  step("dossier", "working", "Alpha candles, DEX buyers and sellers, pool, holders");
+  const d = await buildAlphaDossier(key, opts.alert || null).catch((e) => { step("dossier", "failed", e.message); throw e; }), t = d.alpha.token;
+  step("dossier", "done", `price ${d.price} · ${d.alert.label}`);
   const c = await runCommittee(ai, d, { desk: "alpha", rules: ALPHA_RULES, identity: { symbol: d.symbol, name: t.name, chain: t.chain, contract: t.contract }, opts,
     extraStops: alphaHardStops });
   return { symbol: d.symbol, alphaId: t.alphaId, kind: "alpha", ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
@@ -1038,6 +1067,21 @@ const jsonResponse = (res, code, data) => {
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(data));
 };
+// { "stream": true }: the answer comes as lines of JSON (application/x-ndjson) while the committee works:
+// { type: "step", id, status, detail, at } for each member, a ping every 15 seconds, then { type: "result", data } or
+// { type: "error", error }.
+export async function streamJob(res, work) {
+  res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no" });
+  res.on("error", () => {});
+  const send = (o) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
+  const ping = setInterval(() => send({ type: "ping", at: Date.now() }), 15_000);
+  try { send({ type: "result", data: await work((e) => send({ type: "step", ...e })) }); }
+  catch (e) {
+    const known = e instanceof AgentError;
+    if (!known) console.error("AI trade desk:", e);
+    send({ type: "error", error: known ? e.message : `AI analysis failed: ${e.message}` });
+  } finally { clearInterval(ping); res.end(); }
+}
 // Paid calls only from this site: JSON content type (blocks plain cross-site form posts) and a same-host Origin.
 const allowedWrite = (req) => String(req.headers["content-type"] || "").includes("application/json") &&
   (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
@@ -1083,9 +1127,14 @@ export async function handleAiRequest(req, res, url, ai) {
       if (!ai) return jsonResponse(res, 503, { error: "Add GEMINI_API_KEY to your .env file and restart the server to use the AI." }), true;
       const body = await readJsonBody(req), key = String(body.key || "").slice(0, 40);
       const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false, debate: body.debate !== false };
-      const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true, () => analyzeAlpha(ai, key, opts));
-      const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
-      jsonResponse(res, 200, { ...out, telegram: tg });
+      const work = async (onStep) => {
+        const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true,
+          (emit) => analyzeAlpha(ai, key, { ...opts, onStep: emit }), onStep);
+        const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
+        return { ...out, telegram: tg };
+      };
+      if (body.stream === true) await streamJob(res, work);
+      else jsonResponse(res, 200, await work(null));
     }
     else if ((url.pathname === "/api/ai/analyze" || url.pathname === "/api/ai/analyze-all") && req.method === "POST") {
       if (!allowedWrite(req)) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site" }), true;
@@ -1094,9 +1143,14 @@ export async function handleAiRequest(req, res, url, ai) {
       const opts = { model: pickModel(body.model, MODELS.analyst), reviewModel: pickModel(body.reviewModel, MODELS.reviewer), news: body.news !== false, debate: body.debate !== false };
       if (url.pathname === "/api/ai/analyze") {
         const symbol = normSymbol(body.symbol);
-        const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true, () => analyzeOne(ai, symbol, opts));
-        const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out)) : null;
-        jsonResponse(res, 200, { ...out, telegram: tg });
+        const work = async (onStep) => {
+          const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true,
+            (emit) => analyzeOne(ai, symbol, { ...opts, onStep: emit }), onStep);
+          const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out)) : null;
+          return { ...out, telegram: tg };
+        };
+        if (body.stream === true) await streamJob(res, work);
+        else jsonResponse(res, 200, await work(null));
       } else {
         const view = candidatesView(ai);
         const limit = clamp(Math.trunc(Number(body.limit) || 8), 1, BATCH_MAX);

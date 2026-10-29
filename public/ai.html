@@ -28,6 +28,9 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .meta{color:var(--muted);font-size:11px;margin-top:14px;line-height:1.7}.foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
 .btn:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .chip.amber{color:var(--amber);border-color:#6d5621}.chip.red{color:var(--red);border-color:#6e2c3a}.recgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 4px}
+.steps{list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.steps li{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 13px;border-bottom:1px solid rgba(37,50,67,.72)}.steps li:last-child{border-bottom:0}
+.steps .ic{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;border:1px solid var(--line);color:var(--muted)}.steps .working{background:#161d33}.steps .working .ic{border:2px solid var(--violet);border-top-color:transparent;animation:sp 1s linear infinite}
+.steps .done .ic{background:#0f3a2c;border-color:#236a53;color:var(--green)}.steps .failed .ic{background:#33171f;border-color:#6e2c3a;color:var(--red)}.steps .skipped{opacity:.55}.steps b{font-size:13px}.steps .dt{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}.steps .working .dt{color:#c4b5fd}.steps .tm{font-family:"DM Mono",monospace;font-size:11px;color:var(--muted)}
 .crew{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.member{background:#151f2b;border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
 .member h4{margin:0;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}.member .role{display:block;color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
 .member p{margin:7px 0 0;font-size:12.5px;line-height:1.6}.member ul{margin:6px 0 0;padding-left:17px;line-height:1.55;font-size:12px}.member li{margin:2px 0}.member a{color:var(--blue);word-break:break-word}.member details{margin-top:8px}
@@ -118,6 +121,44 @@ details.notice div{margin-top:8px}
 
  async function getJson(url,opt){const r=await fetch(url,{cache:"no-store",...opt});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"HTTP "+r.status);return j;}
  const post=(url,body)=>getJson(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ // POST with { stream: true }: the server sends one JSON line per committee step, then the result (or an error).
+ async function postStream(url,body,onStep){
+  const r=await fetch(url,{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,stream:true})});
+  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||"HTTP "+r.status);}
+  const reader=r.body.getReader(),dec=new TextDecoder();let buf="",result=null;
+  for(;;){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+   while((i=buf.indexOf("\n"))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;let m;try{m=JSON.parse(line);}catch{continue;}
+    if(m.type==="step")onStep(m);else if(m.type==="result")result=m.data;else if(m.type==="error")throw new Error(m.error);}}
+  if(!result)throw new Error("The analysis stopped without an answer (the connection closed). Try again.");
+  return result;
+ }
+ // ---------- live progress: which committee member is working ----------
+ const STEPS=[["dossier","Market data","prices, chart, order book, futures, flows"],["data","1 · Data analyst","checks the numbers"],["news","2 · News researcher","searches Google News and Binance, then judges"],
+  ["bull","3 · Bull","the case for"],["bear","4 · Bear","the case against"],["trader","5 · Trader","makes the call"],["checks","Code checks","hard stops, plan, expected value"],["boss","6 · Final Boss","audits it all: YES, WATCH or NO"]];
+ let prog=null;
+ const secs=ms=>ms<60000?Math.round(ms/1000)+"s":Math.floor(ms/60000)+"m "+String(Math.round(ms%60000/1000)).padStart(2,"0")+"s";
+ function startProgress(newsOn,debateOn){
+  prog={t0:Date.now(),st:{},timer:setInterval(()=>drawProgress(),1000)};
+  if(!newsOn)prog.st.news={status:"skipped",detail:"news search switched off"};
+  if(!debateOn)prog.st.bull=prog.st.bear={status:"skipped",detail:"debate switched off"};
+  drawProgress();
+ }
+ function onStep(e){
+  if(!prog)return;const cur=prog.st[e.id]||{},now=Date.now();
+  prog.st[e.id]={status:e.status,detail:e.detail||cur.detail||"",since:e.status==="working"?(cur.status==="working"?cur.since:now):cur.since,end:e.status==="working"?null:now};
+  drawProgress();
+ }
+ function progressHtml(){
+  if(!prog)return "";const now=Date.now();
+  const rows=STEPS.map(([id,name,role])=>{const x=prog.st[id]||{status:"waiting"};
+   const t=x.since?secs((x.end||now)-x.since):"",ic={done:"✓",failed:"✗",skipped:"–",working:"",waiting:""}[x.status];
+   return `<li class="${x.status}"><span class="ic">${ic}</span><div><b>${esc(name)}</b> <span class="muted" style="font-size:11.5px">${esc(role)}</span><span class="dt">${x.status==="waiting"?"waiting":esc(x.detail||x.status)}</span></div><span class="tm">${t}</span></li>`;}).join("");
+  const working=STEPS.filter(([id])=>(prog.st[id]||{}).status==="working").map(([,n])=>n.replace(/^\d+ · /,""));
+  const next=STEPS.find(([id])=>!prog.st[id]),started=Object.keys(prog.st).some(id=>prog.st[id].status!=="skipped");
+  return `<p class="meta" style="margin:0 0 6px">${working.length?`<b>Working now:</b> ${esc(working.join(" and "))}`:started&&next?`<b>Next:</b> ${esc(next[1].replace(/^\d+ · /,""))}`:"Starting…"} · ${secs(now-prog.t0)} so far</p><ul class="steps">${rows}</ul>`;
+ }
+ function drawProgress(){if(prog&&busy)$("#result").innerHTML=progressHtml();}
+ function stopProgress(){const html=progressHtml();if(prog)clearInterval(prog.timer);const total=prog?secs(Date.now()-prog.t0):"";prog=null;return {html,total};}
  const opts=()=>({model:$("#model").value||undefined,news:$("#news").checked,debate:$("#debate").checked,notify:$("#notify").checked&&!$("#notify").disabled});
 
  async function loadCandidates(){
@@ -171,10 +212,12 @@ details.notice div{margin-top:8px}
  function done(){busy=false;drawCandidates();}
 
  async function analyze(symbol){
-  selected=symbol;loading(symbol,"The committee is working: the data analyst"+($("#news").checked?" and the news researcher":"")+" first,"+($("#debate").checked?" then the bull vs bear debate,":"")+" then the trader, then the Final Boss's audit (about 1-2 minutes)…");
-  try{drawResult(await post("/api/ai/analyze",{symbol,...opts()}));}
-  catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
-  finally{done();loadCandidates();loadRecord();}
+  selected=symbol;loading(symbol,"The AI committee is working (about 1-2 minutes). Each member's progress is shown below.");
+  startProgress($("#news").checked,$("#debate").checked);
+  try{const x=await postStream("/api/ai/analyze",{symbol,...opts()},onStep),tl=stopProgress();drawResult(x);
+   if(!(x.meta&&x.meta.cached))$("#result").insertAdjacentHTML("beforeend",`<details><summary>Committee timeline (${esc(tl.total)})</summary>${tl.html}</details>`);}
+  catch(e){const tl=stopProgress();$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>${tl.html}`;}
+  finally{if(prog)stopProgress();done();loadCandidates();loadRecord();}
  }
  async function analyzeAll(){
   selected=null;loading("All ignition coins","Gathering data for each coin and triaging them in one Gemini request…");

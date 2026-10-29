@@ -45,10 +45,12 @@ const boss = (verdict, o = {}) => ({ verdict, agrees_with_trader: true, confiden
   plan: { entry_zone: [100, 99.8], stop: 97, targets: [106], max_hold_hours: 12, position_size_pct_of_normal: 75 }, watch_triggers: [], watch_expires_hours: null,
   agent_quality: { data_analyst: "ok", news: "ok", bull: "weak", bear: "ok", trader: "ok" }, ...o });
 const BOSS_YES = boss("YES");
+// The app's own news search, off in tests (no network): as if Google News and Binance did not answer.
+const NO_APP_SEARCH = async () => ({ ok: false, query: null, results: [], errors: ["no network in tests"] });
 const run = (ai, d = dossier(), opts = {}) => {
   cm._test.newsCache.clear();
   return desk.runCommittee(ai, d, { desk: "spot", rules: "RULES: decide carefully.", identity: { symbol: d.symbol.replace(/USDT$/, ""), name: "Abc Protocol" },
-    opts: { model: "trader-model", reviewModel: "boss-model", news: true, debate: true, ...opts } });
+    opts: { model: "trader-model", reviewModel: "boss-model", news: true, debate: true, newsSearch: NO_APP_SEARCH, ...opts } });
 };
 
 test("AI committee: every member gets its own prompt; the bear answers the bull; the Final Boss audits it all", async () => {
@@ -95,7 +97,7 @@ test("AI committee: model settings per role (Gemini 3 thinking levels, Gemini 2.
   const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES });
   cm._test.newsCache.clear();
   const x = await desk.runCommittee(ai, dossier(), { desk: "spot", rules: "R", identity: { symbol: "ABC" },
-    opts: { model: "gemini-3.5-flash", reviewModel: "gemini-3.1-pro-preview" } });
+    opts: { model: "gemini-3.5-flash", reviewModel: "gemini-3.1-pro-preview", newsSearch: NO_APP_SEARCH } });
   const lvl = Object.fromEntries(ai.calls.map((c) => [c.role, c.params.config.thinkingConfig?.thinkingLevel]));
   assert.deepEqual(lvl, { "DATA ANALYST": "LOW", "NEWS RESEARCHER": "LOW", BULL: "LOW", BEAR: "LOW", TRADER: "HIGH", "Final Boss": "HIGH" });
   assert.ok(ai.calls.every((c) => c.params.config.temperature === undefined));
@@ -154,7 +156,7 @@ test("AI committee: a confirmed bad news item is a hard stop; poor data is no TA
   assert.match(tc, /DATA ANALYST REPORT \(JSON\)\n\{"available":false,"note":"quota"\}/); assert.match(tc, /BULL'S CASE \(JSON\)\n\{"available":false,"note":"busy"\}/);
   assert.ok(!ai2.calls.some((c) => c.role === "NEWS RESEARCHER"));
   // the debate switched off: no bull or bear, and the trader is not asked to judge one
-  const ai3 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT") });
+  const ai3 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT"), "Final Boss": boss("NO") });
   const z = await run(ai3, dossier("QRSUSDT"), { debate: false });
   assert.deepEqual(ai3.calls.map((c) => c.role).sort(), ["DATA ANALYST", "Final Boss", "NEWS RESEARCHER", "TRADER"]); // the boss runs on every analysis
   const t3 = ai3.calls.find((c) => c.role === "TRADER").params;
@@ -165,7 +167,8 @@ test("AI committee: a confirmed bad news item is a hard stop; poor data is no TA
 test("AI committee: news report is cleaned; without a search the news is unknown and empty; news is cached per coin", async () => {
   const chunks = { webSearchQueries: ["q"], groundingChunks: [{ web: { uri: "https://a.com/x", title: "A" } }, { web: { uri: "https://a.com/x", title: "A" } }, { web: { uri: "https://b.com", title: "B" } }] };
   const n = cm.cleanNews(JSON.stringify({ ...NEWS, hardStop: true, hardStopReason: "exploit", items: [{ date: "2026-10-28T10:00", title: "t", impact: "awful", severity: "huge", pricedIn: "maybe" }] }), chunks);
-  assert.equal(n.available, true); assert.equal(n.sources.length, 2); assert.equal(n.hardStop, true);
+  assert.equal(n.available, true); assert.equal(n.sources.length, 2);
+  assert.equal(n.hardStop, false); // a hard stop needs a high-severity bad item, and this one's labels were invalid
   assert.deepEqual([n.items[0].date, n.items[0].impact, n.items[0].severity, n.items[0].pricedIn], ["2026-10-28", "neutral", "low", "unclear"]);
   const unbacked = cm.cleanNews(JSON.stringify({ hardStop: true, riskLevel: "extreme" }), {});
   assert.deepEqual([unbacked.status, unbacked.hardStop, unbacked.riskLevel, unbacked.items.length], ["unknown", false, null, 0]);
@@ -174,10 +177,10 @@ test("AI committee: news report is cleaned; without a search the news is unknown
   cm._test.newsCache.clear();
   const ai = fakeAi({ "NEWS RESEARCHER": NEWS });
   const id = { symbol: "QQQ", name: "Q coin" };
-  await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m" });
-  const again = await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m" });
+  await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m", search: NO_APP_SEARCH });
+  const again = await cm.newsResearch(ai, { identity: id, holdHours: 12, model: "m", search: NO_APP_SEARCH });
   assert.equal(again.cached, true); assert.equal(ai.calls.length, 1);
-  assert.equal((await cm.newsResearch(fakeAi({ "NEWS RESEARCHER": new Error("down") }), { identity: { symbol: "ZZZ" }, holdHours: 12, model: "m" })).available, false);
+  assert.equal((await cm.newsResearch(fakeAi({ "NEWS RESEARCHER": new Error("down") }), { identity: { symbol: "ZZZ" }, holdHours: 12, model: "m", search: NO_APP_SEARCH })).available, false);
 });
 
 test("AI committee: prompts name the coin, the time window and each member's job; Telegram shows the votes", () => {
@@ -235,15 +238,15 @@ function newsAi(searchedPerCall, answer = NEWS) {
 test("fixes: news that was not searched is retried once, then unknown with nothing from memory, and not cached", async () => {
   cm._test.newsCache.clear();
   const ok = newsAi([false, true]);
-  const a = await cm.newsResearch(ok, { identity: { symbol: "RRR" }, holdHours: 12, model: "m" });
+  const a = await cm.newsResearch(ok, { identity: { symbol: "RRR" }, holdHours: 12, model: "m", search: NO_APP_SEARCH });
   assert.equal(ok.calls.length, 2); assert.match(ok.calls[1].contents, /Use Google Search now/);
   assert.deepEqual([a.verified, a.requests, a.note], [true, 2, null]);
   const memory = { ...NEWS, riskLevel: "medium", items: [{ date: "2026-10-21", title: "Atomic swaps launch", impact: "positive", severity: "low", pricedIn: "yes", source: "Official" }] };
   const never = newsAi([false, false], memory);
-  const b = await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m" });
+  const b = await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m", search: NO_APP_SEARCH });
   assert.equal(b.verified, false); assert.equal(b.requests, 2); assert.equal(b.status, "unknown"); assert.match(b.note, /news is unknown\. Nothing from the model's memory is used/);
   assert.deepEqual([b.items, b.upcoming, b.summary, b.riskLevel, b.evidence.discardedItems], [[], [], "", null, 1]); // the NEWS RULE: no headlines, dates or sources
-  await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m" });
+  await cm.newsResearch(never, { identity: { symbol: "MARS" }, holdHours: 12, model: "m", search: NO_APP_SEARCH });
   assert.equal(never.calls.length, 4); // not cached: asked again next time
   // the trader and the boss are told; Telegram and the record say "unverified"
   assert.match(cm.traderPrompt("spot", "R"), /status "unknown" \(no web search ran, so it has no items\), means unknown/);
@@ -282,22 +285,26 @@ test("fixes: resistance includes swing highs and the EMAs above the price; suppo
   assert.equal(real.cappedAtResistance, true); assert.ok(real.rewardRisk < 2);
 });
 
-test("fixes: fast NO for a coin with no alert signal; the full committee for alerts", async () => {
+test("fixes: fast NO (opt-in) for a coin with no alert signal; the full committee for alerts and by default", async () => {
   const none = { ...dossier("MARSUSDT"), alert: desk.alertContext("none"), screener: { state: "heating", tier: null, moved: false } };
   const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: { ...trader("SKIP"), headline: "SKIP MARSUSDT: no signal" }, "Final Boss": BOSS_YES });
-  const x = await run(ai, none);
+  const x = await run(ai, none, { fastNo: true });
   assert.deepEqual(ai.calls.map((c) => c.role).sort(), ["DATA ANALYST", "NEWS RESEARCHER", "TRADER"]); // 3 requests, not 6
   assert.equal(x.final, "NO"); assert.equal(x.fastNo, true); assert.equal(x.committee.boss.asked, false); assert.match(x.committee.debate.skipped, /fast path/);
   assert.equal(x.headline, "NO TRADE MARSUSDT: no signal"); // "SKIP" is never shown as a word
   assert.match(desk.tgSingle({ ...x, symbol: "MARSUSDT" }), /Final: NO \(fast NO\)[\s\S]*boss skipped \(fast NO\)/);
   // the trader is not a no: the boss is asked (still no debate)
   const ai2 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT"), "Final Boss": boss("NO") });
-  const y = await run(ai2, none);
+  const y = await run(ai2, none, { fastNo: true });
   assert.deepEqual(ai2.calls.map((c) => c.role).sort(), ["DATA ANALYST", "Final Boss", "NEWS RESEARCHER", "TRADER"]);
   assert.equal(y.fastNo, false);
   // an alert review always gets the full committee
   const ai3 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("SKIP"), "Final Boss": boss("NO") });
-  await run(ai3, none, { source: "alert" });
+  await run(ai3, none, { source: "alert", fastNo: true });
+  // off by default: the Final Boss runs on every analysis
+  const ai4 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("SKIP"), "Final Boss": boss("NO") });
+  const z = await run(ai4, none);
+  assert.equal(z.fastNo, false); assert.ok(ai4.calls.some((c) => c.role === "Final Boss"));
   assert.equal(ai3.calls.length, 6);
 });
 
@@ -338,7 +345,7 @@ test("fixes 2: a search counts when Google sends any search data (also no links)
 
 test("fixes 2: a fast NO is said once; the base rate of a coin without a signal is called an assumption", async () => {
   const none = { ...dossier("INITUSDT"), alert: desk.alertContext("none"), screener: { state: "ran", tier: null, moved: true } };
-  const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("SKIP") }), none);
+  const x = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("SKIP") }), none, { fastNo: true });
   assert.equal(x.fastNo, true); assert.equal(x.committee.boss.skipped, "fast");
   assert.ok(!x.guardNotes.some((n) => /fast NO/i.test(n))); // shown once at the top of the page, not again in the notes
   assert.match(desk.tgSingle({ ...x, symbol: "INITUSDT" }), /boss skipped \(fast NO\)/);
@@ -377,4 +384,56 @@ test("rules: the TRACK RECORD rule (this tier only, else no track record for thi
   assert.deepEqual(p, { tier: "early", thisTier: { resolved: 40, hitTargetPct: 31, avgNetPct: 0.4 }, matchingGroups: [{ group: "BTC up", resolved: 12 }] }); // the committee's 3 calls are left out
   assert.match(cm.traderPrompt("spot", "R"), /TRACK RECORD RULE: use only performance numbers of this alert's tier[\s\S]*write exactly that in the "track record" checklist item and use the base rate only/);
   assert.match(cm.dataAnalystPrompt(cm.DESKS.spot), /livePerformance: THIS alert tier only/);
+});
+
+// Google News RSS and Binance's announcement list, as the app fetches them
+const RSS = `<?xml version="1.0"?><rss><channel><item><title>Initia halts L1 after $2.7M exploit - The Block</title><link>https://news.google.com/rss/articles/abc</link><pubDate>Fri, 23 Oct 2026 16:00:00 GMT</pubDate><source url="https://www.theblock.co">The Block</source></item>
+<item><title>Upbit flags INIT for trading caution &amp; more - TOKENPOST</title><link>https://news.google.com/rss/articles/def</link><pubDate>Mon, 26 Oct 2026 09:00:00 GMT</pubDate><source url="https://tokenpost.com">TOKENPOST</source></item></channel></rss>`;
+const ANN = (articles) => JSON.stringify({ data: { catalogs: [{ articles }] } });
+const fakeGet = (annArticles) => async (url) => (url.includes("news.google.com") ? RSS : ANN(annArticles));
+
+test("news: the app searches Google News and Binance itself; items must point to a fetched result", async () => {
+  const now = Date.parse("2026-10-29T12:00:00Z");
+  cm._test.annCache.at = 0;
+  const r = await cm.appSearch({ symbol: "INIT", name: "Initia" }, { now, get: fakeGet([{ title: "Binance Will Delist INIT, FOO on 2026-11-05", releaseDate: now - 86_400_000, code: "c1" },
+    { title: "Binance Adds INITIATIVE to Earn", releaseDate: now, code: "c2" }, { title: "Binance Will Delist INIT, BAR", releaseDate: now - 30 * 86_400_000, code: "c3" }]) });
+  assert.equal(r.ok, true); assert.equal(r.query, '"Initia" INIT when:7d');
+  assert.deepEqual(r.results.map((x) => [x.id, x.source, x.date]), [["R1", "The Block", "2026-10-23"], ["R2", "TOKENPOST", "2026-10-26"], ["R3", "Binance announcement", "2026-10-28"]]);
+  assert.equal(r.results[0].title, "Initia halts L1 after $2.7M exploit"); assert.equal(r.results[1].title, "Upbit flags INIT for trading caution & more");
+  assert.equal(r.results[2].url, "https://www.binance.com/en/support/announcement/detail/c1"); // INITIATIVE and the 30-day-old notice are left out
+  // Gemini judged the results without its own search: items keep only what points to a result, with the result's facts
+  const answer = { ...NEWS, overall: "negative", riskLevel: "high", hardStop: true, hardStopReason: "exploit and delisting",
+    items: [{ ref: "R1", date: "2026-10-01", title: "wrong title", impact: "negative", severity: "high", pricedIn: "no", source: "made up" },
+      { ref: "R3", impact: "negative", severity: "high", pricedIn: "no" }, { ref: "", date: "2026-10-20", title: "remembered rumor", impact: "negative", severity: "medium" }],
+    upcoming: [{ date: "2026-11-05", event: "delisting", impact: "negative", ref: "R3" }, { date: "2026-11-09", event: "remembered unlock", impact: "negative", ref: "" }] };
+  const n = cm.cleanNews(JSON.stringify(answer), {}, {}, r);
+  assert.equal(n.status, "searched"); assert.deepEqual(n.searchedBy, ["the app (Google News, Binance announcements)"]);
+  assert.deepEqual(n.items.map((x) => [x.ref, x.date, x.title, x.source]), [["R1", "2026-10-23", "Initia halts L1 after $2.7M exploit", "The Block"], ["R3", "2026-10-28", "Binance Will Delist INIT, FOO on 2026-11-05", "Binance announcement"]]);
+  assert.equal(n.evidence.droppedItems, 1); assert.deepEqual(n.upcoming.map((x) => x.event), ["delisting"]);
+  assert.equal(n.hardStop, true); assert.equal(n.sources.length, 3);
+  // in a run: the results go to the researcher, and the news counts as searched without Gemini's own search
+  cm._test.newsCache.clear();
+  const ai = fakeAi({ "NEWS RESEARCHER": answer }, { grounding: {} });
+  const rep = await cm.newsResearch(ai, { identity: { symbol: "INIT", name: "Initia" }, holdHours: 12, model: "m", search: async () => r });
+  assert.match(ai.calls[0].params.contents, /^SEARCH RESULTS \(fetched by the app just now[\s\S]*"id":"R1","title":"Initia halts L1/);
+  assert.equal(ai.calls.length, 1); assert.equal(rep.status, "searched"); assert.equal(rep.requests, 1); // no retry needed
+  // both sources down and no Gemini search: unknown, as before
+  cm._test.annCache.at = 0;
+  assert.equal((await cm.appSearch({ symbol: "X" }, { get: async () => { throw new Error("offline"); } })).ok, false);
+});
+
+test("Final Boss: if its model fails, the fallback model answers; it says which one and why", async () => {
+  const calls = [];
+  const ai = { models: { generateContent: async (p) => {
+    calls.push(p.model);
+    if (p.model === "pro-model") { const e = new Error("models/pro-model is not found for API version v1beta"); e.status = 404; throw e; }
+    return { text: JSON.stringify(boss("NO", { summary: "No edge." })), candidates: [{}], usageMetadata: {} };
+  } } };
+  const b = await cm.finalBoss(ai, { desk: "spot", trader: {}, code: {}, data: null, news: null, debate: { off: true }, dossier: {}, model: "pro-model", fallbackModel: "flash-model" });
+  assert.deepEqual(calls, ["pro-model", "flash-model"]);
+  assert.equal(b.available, true); assert.equal(b.verdict, "NO"); assert.equal(b.model, "flash-model");
+  assert.match(b.fallbackFrom.error, /pro-model: models\/pro-model is not found/);
+  const dead = { models: { generateContent: async (p) => { throw Object.assign(new Error(`quota for ${p.model}`), { status: 400 }); } } };
+  const none = await cm.finalBoss(dead, { desk: "spot", trader: {}, code: {}, debate: { off: true }, dossier: {}, model: "pro-model", fallbackModel: "flash-model" });
+  assert.equal(none.available, false); assert.match(none.reason, /pro-model: quota for pro-model \| flash-model: quota for flash-model/);
 });

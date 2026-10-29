@@ -626,11 +626,11 @@ const pickModel = (v, fallback) => {
 const newsOn = (opts) => opts.news !== false && env.AI_NEWS !== "0";
 const debateOn = (opts) => opts.debate !== false && env.AI_DEBATE !== "0";
 const flags = (opts) => (newsOn(opts) ? "n" : "-") + (debateOn(opts) ? "d" : "-");
-// No alert signal (no ignition tier): the fast path. The coin is checked without the debate, and when the trader and the
-// code both say no trade, without the Final Boss either (3 requests instead of 6). Alert reviews and trigger re-checks
-// always get the full committee. AI_FAST_NO=0 turns it off.
+// Fast path, OFF by default (the Final Boss runs on every analysis): with AI_FAST_NO=1, a coin checked by hand with no
+// alert signal skips the debate, and when the trader and the code both say no trade, the Final Boss too. Alert reviews
+// and trigger re-checks always get the full committee.
 const noSignal = (d) => d.alert?.tier === "none" || !d.screener?.tier;
-const fastPath = (d, opts) => env.AI_FAST_NO !== "0" && opts.fastNo !== false && !["alert", "trigger"].includes(opts.source) && noSignal(d);
+const fastPath = (d, opts) => (env.AI_FAST_NO === "1" || opts.fastNo === true) && opts.fastNo !== false && !["alert", "trigger"].includes(opts.source) && noSignal(d);
 const noTradeWords = (t) => (typeof t === "string" ? t.replace(/\bSKIP\b/g, "NO TRADE") : t);
 const CONF_CAP = { good: "high", partial: "medium", poor: "low" };
 
@@ -661,7 +661,7 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
   const hold = d.alert?.trackedAs?.holdHours || 24, fast = fastPath(d, opts);
   const [data, news] = await Promise.all([
     dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
-    newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts) }),
+    newsResearch(ai, { identity, holdHours: hold, model: MODELS.analyst, enabled: newsOn(opts), ...(opts.newsSearch ? { search: opts.newsSearch } : {}) }),
   ]);
   const dbt = await debate(ai, { desk, dossier: d, data, news, model: MODELS.analyst, enabled: debateOn(opts) && !fast });
   if (fast && debateOn(opts)) dbt.skipped = "no alert signal: the fast path skips the debate";
@@ -686,8 +686,8 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
     traderPlanReplaced: pc.replaced, notes: [...g.notes] };
   code.auditHints = auditHints(d, { out, pc, dz, data, news, dbt, code });
   const fastNo = fast && out.decision === "SKIP" && pre.decision === "SKIP";
-  const boss = fastNo ? { asked: false, skipped: "fast", verdict: null, reason: "Skipped: fast NO (no alert signal, and the trader and the code both say no trade). AI_FAST_NO=0 always asks it." }
-    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, dossier: d, code,
+  const boss = fastNo ? { asked: false, skipped: "fast", verdict: null, reason: "Skipped: fast NO (no alert signal, and the trader and the code both say no trade; AI_FAST_NO=1 is on)." }
+    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, fallbackModel: MODELS.analyst, data, news, debate: dbt, dossier: d, code,
     trader: { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, probTargetPct: out.probTargetPct, probStopPct: out.probStopPct,
       probReason: out.probReason, plan: pc.plan, waitFor: out.waitFor, trigger: out.trigger || null, hardStopsNamed: out.hardStops, checklist, headline: out.headline,
       thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk, invalidation: out.invalidation, debateWinner: dbt.verdict || null } }) };
@@ -725,8 +725,8 @@ function committeeMeta(opts, c, t0) {
   const { data, news, debate: dbt, trader, boss } = c.committee, fresh = (x) => x && !x.cached && x.tokens;
   const parts = [data, fresh(news) ? news : null, dbt.bull, dbt.bear, trader, boss.asked ? boss : null].filter((x) => x && x.tokens);
   return { model: opts.model, dataModel: MODELS.analyst, newsModel: news.off ? null : MODELS.analyst, debateModel: dbt.off ? null : MODELS.analyst,
-    bossModel: boss.asked ? opts.reviewModel || MODELS.reviewer : null,
-    calls: 2 + (news.off || news.cached ? 0 : news.requests || 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 : 0),
+    bossModel: boss.asked ? boss.model || opts.reviewModel || MODELS.reviewer : null,
+    calls: 2 + (news.off || news.cached ? 0 : news.requests || 1) + (dbt.off ? 0 : 2) + (boss.asked ? 1 + (boss.fallbackFrom ? 1 : 0) : 0),
     tokens: ["in", "out", "think"].reduce((o, k) => ({ ...o, [k]: parts.reduce((s, x) => s + (x.tokens[k] || 0), 0) }), {}),
     deepThinking: env.AI_DEEP_THINKING !== "0", source: opts.source || "manual", depth: opts.depth || 0, durationMs: Date.now() - t0, at: Date.now(), cached: false };
 }

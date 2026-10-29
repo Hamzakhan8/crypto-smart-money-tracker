@@ -175,11 +175,57 @@ export async function dataReview(ai, { desk, dossier, model }) {
 }
 
 // ───────────────────────────── 2. news researcher ─────────────────────────────
+// The app's own news search. Gemini decides by itself whether to use Google Search and often does not, so the app
+// searches first: Google News (RSS, last 7 days) for the coin's name and ticker, and Binance's own announcements
+// (delistings and Latest Binance News, last 14 days) that name the ticker. Gemini then judges these results, and every
+// item it reports must point to one of them (ref), so nothing comes from memory.
+const BINANCE_ANN = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&pageNo=1&pageSize=50&catalogId=";
+const annCache = { at: 0, list: [] };
+const unxml = (v) => String(v || "").replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+async function getText(url, timeoutMs = 10_000) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { "user-agent": "Mozilla/5.0 (smart-money-tracker)" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+// Google News RSS items: { title, source, date (YYYY-MM-DD), url }. The " - Source" ending of a title is cut off.
+export function parseNewsRss(xml, max = 12) {
+  return [...String(xml || "").matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, max).map((m) => {
+    const get = (tag) => unxml((m[1].match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`)) || [])[1]);
+    const title = get("title"), source = get("source"), cut = title.lastIndexOf(" - "), t = Date.parse(get("pubDate"));
+    return { title: source && cut > 0 && title.slice(cut + 3) === source ? title.slice(0, cut) : title, source: source || "Google News",
+      date: Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "", url: get("link"), from: "Google News" };
+  }).filter((x) => x.title && /^https?:\/\//.test(x.url));
+}
+// Returns { ok (at least one source answered), query, results: [{ id: "R1", title, source, date, url, from }], errors }.
+export async function appSearch(identity, { get = getText, now = Date.now() } = {}) {
+  const sym = String(identity.symbol || "").toUpperCase(), name = identity.name && identity.name.toUpperCase() !== sym ? identity.name : null;
+  const query = `${name ? `"${name}" ${sym}` : `${sym} crypto`} when:7d`, found = [], errors = [];
+  try { found.push(...parseNewsRss(await get(`https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`))); }
+  catch (e) { errors.push(`Google News: ${e.message}`); }
+  try {
+    if (now - annCache.at > 10 * 60_000) {
+      const lists = await Promise.all([161, 49].map(async (c) => JSON.parse(await get(BINANCE_ANN + c))?.data?.catalogs?.[0]?.articles || []));
+      annCache.at = now; annCache.list = [...new Map(lists.flat().map((a) => [a.code, a])).values()]; // one article can be in both lists
+    }
+    const named = new RegExp(`(^|[^A-Z0-9])${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Z0-9]|$)`);
+    found.push(...annCache.list.filter((a) => named.test(String(a.title || "")) && now - Number(a.releaseDate) < 14 * 86_400_000).slice(0, 6)
+      .map((a) => ({ title: String(a.title), source: "Binance announcement", date: new Date(Number(a.releaseDate)).toISOString().slice(0, 10),
+        url: `https://www.binance.com/en/support/announcement/detail/${a.code}`, from: "Binance" })));
+  } catch (e) { errors.push(`Binance announcements: ${e.message}`); }
+  return { ok: errors.length < 2, query, results: found.slice(0, 16).map((x, i) => ({ id: `R${i + 1}`, ...x })), errors };
+}
+
 // identity = { symbol, name, chain?, contract?, tags? } ; holdHours = how long the trade would be held.
 export const newsResearcherPrompt = (id, holdHours, now = new Date()) => `You are the NEWS RESEARCHER on a crypto trading committee. Today is ${now.toISOString().slice(0, 16).replace("T", " ")} UTC.
 The committee is considering BUYING ${id.symbol}${id.name ? ` (${id.name})` : ""}${id.chain ? ` on ${id.chain}` : ""}${id.contract ? `, contract ${id.contract}` : ""} and holding it for up to ${holdHours} hours.
-Use Google Search to find news from the LAST 7 DAYS, and events scheduled in the NEXT 14 DAYS, that could move this
-token's price during the trade.
+Find news from the LAST 7 DAYS, and events scheduled in the NEXT 14 DAYS, that could move this token's price during the
+trade.
+
+SEARCH RESULTS: the app has already searched Google News (last 7 days) and Binance's own announcements for this token.
+They arrive with ids R1, R2, ... Judge them first; use Google Search for anything they miss. Many results share the
+ticker by accident or are about something else: leave those out. Every item and upcoming event you report must give in
+"ref" the id of the search result it comes from, or "" only if it comes from your own Google Search.
 
 WHAT TO LOOK FOR, MOST IMPORTANT FIRST
 1. Exchange events: delisting, "monitoring" or "seed" tag, deposit / withdrawal suspension, new listings on major
@@ -192,7 +238,7 @@ WHAT TO LOOK FOR, MOST IMPORTANT FIRST
 6. Macro (FOMC, CPI, big market events) only when it falls inside the holding time.
 
 RULES
-- Report only what you found in the search results, with its date and source. Never rely on memory. If nothing
+- Report only what you found in the search results, with its date and source and its "ref". Never rely on memory. If nothing
   relevant turns up, say so: "no relevant news" is a valid and common answer. If you could not search, return
   items: [] and upcoming: [] with the summary "no search": never write headlines, dates, figures or sources from memory.
 - Make sure each item is about THIS token (ticker AND name${id.contract ? " or contract" : ""}), not another project with a similar ticker.
@@ -211,8 +257,8 @@ ANSWER with ONLY one JSON object, no markdown, in exactly this shape:
  "hardStop": false, "hardStopReason": "",
  "items": [{"date": "YYYY-MM-DD", "title": "", "type": "exchange|security|supply|legal|project|macro|other",
             "impact": "positive|negative|neutral", "severity": "low|medium|high", "pricedIn": "yes|no|unclear",
-            "source": "site or account name"}],
- "upcoming": [{"date": "YYYY-MM-DD", "event": "", "impact": "positive|negative|neutral|unclear"}]}`;
+            "source": "site or account name", "ref": "R1"}],
+ "upcoming": [{"date": "YYYY-MM-DD", "event": "", "impact": "positive|negative|neutral|unclear", "ref": "R2"}]}`;
 
 const NEWS_ENUMS = { overall: ["positive", "negative", "mixed", "none"], riskLevel: ["none", "low", "medium", "high"] };
 // Signs that Google Search really ran: any grounding field Google returns, or tokens the model spent reading tool
@@ -226,46 +272,63 @@ export function searchEvidence(grounding, usageMeta) {
   return ev;
 }
 // Parses and cleans the researcher's JSON; sources come from Google's grounding data (what was actually searched).
-export function cleanNews(text, grounding, usageMeta = null) {
+export function cleanNews(text, grounding, usageMeta = null, found = null) {
   let j = null;
   const s = String(text || "").replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "").trim();
   try { j = JSON.parse(s); } catch { const m = s.match(/\{[\s\S]*\}/); if (m) { try { j = JSON.parse(m[0]); } catch { /* not JSON */ } } }
   if (!j || typeof j !== "object") return { available: false, error: "The news researcher did not return JSON" };
   const sources = [], seen = new Set();
   for (const c of grounding?.groundingChunks || []) { const u = c?.web?.uri; if (u && !seen.has(u)) { seen.add(u); sources.push({ title: String(c.web.title || "source").slice(0, 120), url: u }); } }
-  const evidence = searchEvidence(grounding, usageMeta), searched = evidence.searched;
-  const items = (Array.isArray(j.items) ? j.items : []).slice(0, 10).map((x) => ({ date: String(x.date || "").slice(0, 10), title: String(x.title || "").slice(0, 200),
-    type: String(x.type || "other"), impact: ["positive", "negative", "neutral"].includes(x.impact) ? x.impact : "neutral",
-    severity: ["low", "medium", "high"].includes(x.severity) ? x.severity : "low", pricedIn: ["yes", "no", "unclear"].includes(x.pricedIn) ? x.pricedIn : "unclear", source: String(x.source || "").slice(0, 80) }));
+  const evidence = { ...searchEvidence(grounding, usageMeta), appResults: found?.ok ? found.results.length : null, appErrors: found?.errors || [] };
+  const geminiSearched = evidence.searched, appSearched = !!found?.ok, searched = geminiSearched || appSearched;
+  const byRef = new Map((found?.results || []).map((r) => [r.id, r]));
+  // An item counts only when it points to one of the app's results (its title, date, source and link are taken from that
+  // result, not from the model), or when Gemini's own Google Search really ran. Anything else came from memory.
+  const raw = (Array.isArray(j.items) ? j.items : []).slice(0, 12);
+  const items = raw.map((x) => {
+    const hit = byRef.get(String(x.ref || "").trim()), judged = { type: String(x.type || "other"), impact: ["positive", "negative", "neutral"].includes(x.impact) ? x.impact : "neutral",
+      severity: ["low", "medium", "high"].includes(x.severity) ? x.severity : "low", pricedIn: ["yes", "no", "unclear"].includes(x.pricedIn) ? x.pricedIn : "unclear" };
+    if (hit) return { ...judged, date: hit.date, title: hit.title.slice(0, 200), source: hit.source, url: hit.url, ref: hit.id };
+    if (geminiSearched) return { ...judged, date: String(x.date || "").slice(0, 10), title: String(x.title || "").slice(0, 200), source: String(x.source || "").slice(0, 80), ref: null };
+    return null;
+  }).filter(Boolean).slice(0, 10);
+  evidence.droppedItems = raw.length - items.length;
   // The news rule: without a web search the news is "unknown" and nothing from the model's memory is kept (no headlines,
   // dates, figures or sources). How many items were thrown away is kept, only to find out why no search showed.
   if (!searched) {
-    const recent = items.some((x) => Date.parse(x.date) > Date.now() - 10 * 86_400_000);
-    return { available: true, searched: false, verified: false, status: "unknown", evidence: { ...evidence, discardedItems: items.length, recentDiscarded: recent },
+    const recent = raw.some((x) => Date.parse(x.date) > Date.now() - 10 * 86_400_000);
+    return { available: true, searched: false, verified: false, status: "unknown", evidence: { ...evidence, discardedItems: raw.length, recentDiscarded: recent },
       queries: [], sources: [], summary: "", overall: null, riskLevel: null, hardStop: false, hardStopReason: "", items: [], upcoming: [],
       note: "No web search ran, so the news is unknown. Nothing from the model's memory is used." };
   }
   return {
-    available: true, searched, verified: searched, status: "searched", evidence, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12), note: null,
+    available: true, searched, verified: searched, status: "searched", searchedBy: [appSearched ? "the app (Google News, Binance announcements)" : null, geminiSearched ? "Gemini's Google Search" : null].filter(Boolean),
+    evidence, queries: [...(found?.ok ? [found.query] : []), ...(grounding?.webSearchQueries || [])].slice(0, 6),
+    sources: [...(found?.results || []).map((r) => ({ title: `${r.title} (${r.source}${r.date ? `, ${r.date}` : ""})`, url: r.url })), ...sources].slice(0, 20), note: null,
     summary: String(j.summary || "").slice(0, 600), overall: NEWS_ENUMS.overall.includes(j.overall) ? j.overall : "none",
     riskLevel: NEWS_ENUMS.riskLevel.includes(j.riskLevel) ? j.riskLevel : "none",
-    hardStop: j.hardStop === true, hardStopReason: String(j.hardStopReason || "").slice(0, 300),
-    items, upcoming: (Array.isArray(j.upcoming) ? j.upcoming : []).slice(0, 6).map((x) => ({ date: String(x.date || "").slice(0, 10), event: String(x.event || "").slice(0, 200), impact: String(x.impact || "unclear") })),
+    // a hard stop needs a high-severity bad item that survived the check above
+    hardStop: j.hardStop === true && items.some((x) => x.impact === "negative" && x.severity === "high"), hardStopReason: String(j.hardStopReason || "").slice(0, 300),
+    items, upcoming: (Array.isArray(j.upcoming) ? j.upcoming : []).filter((x) => byRef.has(String(x.ref || "").trim()) || geminiSearched).slice(0, 6)
+      .map((x) => ({ date: String(x.date || "").slice(0, 10), event: String(x.event || "").slice(0, 200), impact: String(x.impact || "unclear"), ref: byRef.has(String(x.ref || "").trim()) ? String(x.ref).trim() : null })),
   };
 }
-export async function newsResearch(ai, { identity, holdHours, model, enabled = true }) {
+export async function newsResearch(ai, { identity, holdHours, model, enabled = true, search = appSearch }) {
   if (!enabled) return { available: false, error: "News research is switched off (AI_NEWS=0)", off: true };
   const key = `${identity.symbol}|${identity.contract || ""}|${Math.round(holdHours)}`, hit = newsCache.get(key);
   if (hit && Date.now() - hit.at < NEWS_TTL) return { ...hit.report, cached: true };
   const t0 = Date.now(), name = identity.name ? ` (${identity.name})` : "", tokens = { in: 0, out: 0, think: 0 };
+  const found = await search(identity).catch((e) => ({ ok: false, query: null, results: [], errors: [e.message] }));
+  const given = found.ok ? `SEARCH RESULTS (fetched by the app just now: Google News for ${found.query}, and Binance announcements naming ${identity.symbol})\n` +
+    `${JSON.stringify(found.results.map(({ id, title, source, date }) => ({ id, title, source, date })))}\n\n` : "";
   const ask = async (contents) => {
     const res = await generate(ai, { model, contents, config: { systemInstruction: newsResearcherPrompt(identity, holdHours), ...roleConfig(model, "news"), tools: [{ googleSearch: {} }] } }, callOpts("news"));
     const u = usage(res);
     for (const k in tokens) tokens[k] += u[k];
-    return cleanNews(res.text, res.candidates?.[0]?.groundingMetadata, res.usageMetadata);
+    return cleanNews(res.text, res.candidates?.[0]?.groundingMetadata, res.usageMetadata, found);
   };
   try {
-    let report = await ask(`Research the news for ${identity.symbol}${name} now.`), requests = 1;
+    let report = await ask(`${given}Research the news for ${identity.symbol}${name} now.`), requests = 1;
     // Gemini decides itself whether to search. If it answered from memory, ask once more, insisting on a search.
     if (report.available && !report.searched) {
       requests++;
@@ -586,19 +649,29 @@ export function cleanBoss(j) {
   };
 }
 
-// trader = the trader's call and plan; code = what the code computed from it; dossier = the raw data.
-export async function finalBoss(ai, { desk, trader, code, data, news, debate: dbt, dossier, model }) {
-  const t0 = Date.now();
-  try {
+// trader = the trader's call and plan; code = what the code computed from it; dossier = the raw data. If the boss's model
+// fails (not available on this API key, over its quota, too slow), the fallback model answers instead, so there is
+// always a Final Boss answer when Gemini works at all; the answer says which model gave it and why.
+export async function finalBoss(ai, { desk, trader, code, data, news, debate: dbt, dossier, model, fallbackModel = null }) {
+  const t0 = Date.now(), errors = [];
+  for (const m of [...new Set([model, fallbackModel].filter(Boolean))]) {
+    try { return { ...await askBoss(ai, { desk, trader, code, data, news, dbt, dossier, model: m }), ms: Date.now() - t0,
+      fallbackFrom: m !== model ? { model, error: errors[0] } : null }; }
+    catch (e) { errors.push(`${m}: ${e.message}`); }
+  }
+  return { available: false, verdict: null, reason: errors.join(" | ") || "no model", model, ms: Date.now() - t0 };
+}
+async function askBoss(ai, { desk, trader, code, data, news, dbt, dossier, model }) {
+  {
     const res = await generate(ai, {
       model,
       contents: `TRADER (JSON)\n${JSON.stringify(trader)}\n\nCODE CHECKS (JSON)\n${JSON.stringify(code)}\n\nDATA ANALYST REPORT (JSON)\n${reportJson(data, "data report")}\n\n` +
         `NEWS REPORT (JSON)\n${reportJson(news, "news")}\n\nDEBATE (JSON)\n${JSON.stringify(dbt && !dbt.off ? { bull: caseObj(dbt.bull), bear: caseObj(dbt.bear), traderSaidWinner: dbt.verdict || null } : { off: true })}\n\n` +
         `RAW DATA (JSON)\n${JSON.stringify(dossier)}\n\nAudit the committee and give the final call.`,
       config: { systemInstruction: bossPrompt(desk), ...roleConfig(model, "boss"), responseMimeType: "application/json", responseSchema: BOSS_SCHEMA },
-    }, callOpts("boss"));
-    return { ...cleanBoss(jsonFrom(res, "Final boss")), model, ms: Date.now() - t0, tokens: usage(res) };
-  } catch (e) { return { available: false, verdict: null, reason: e.message, model, ms: Date.now() - t0 }; }
+    }, { retries: 0, timeoutMs: 150_000 });
+    return { ...cleanBoss(jsonFrom(res, "Final boss")), model, tokens: usage(res) };
+  }
 }
 
 // ───────────────────────────── code checks around the boss ─────────────────────────────
@@ -610,4 +683,4 @@ export function committeeChecks(decision, { news, data } = {}) {
   if (decision === "TAKE" && data?.available && data.dataQuality?.rating === "poor") { notes.push("The data analyst rated the data poor, so there is no TAKE."); decision = "SKIP"; }
   return { decision, notes };
 }
-export const _test = { newsCache };
+export const _test = { newsCache, annCache };

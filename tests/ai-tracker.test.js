@@ -75,18 +75,21 @@ test("tracker: the scorecard compares YES with WATCH / NO (if bought anyway), th
   assert.deepEqual(sc.calibration, [{ band: "40%+", n: 5, saidPct: 40, hitPct: 40 }]);
 });
 
-test("tracker: the committee's own record for its prompts needs 5+ resolved calls and names recent losing YES calls", () => {
-  assert.match(trackRecord([resolved({}, "win", 5.7)]).note, /Too few/);
+test("tracker: the committee's own record is for the same tier only; with fewer than 5: no track record for this tier", () => {
+  assert.equal(trackRecord([resolved({}, "win", 5.7)], "spot", T0, "confirmed").note, "no track record for this tier");
   const calls = [...Array.from({ length: 4 }, (_, i) => resolved({}, "loss", -3.3, T0 + i * HOUR)), resolved({}, "win", 5.7),
-    ...Array.from({ length: 5 }, () => resolved({ decision: "SKIP", final: "NO", committee: { ...result().committee, trader: { decision: "SKIP" } } }, "win", 5.7))];
-  const tr = trackRecord(calls, "spot", T0 + 2 * 86_400_000);
-  assert.equal(tr.resolved, 10); assert.equal(tr.scope, "spot calls");
+    ...Array.from({ length: 5 }, () => resolved({ decision: "SKIP", final: "NO", committee: { ...result().committee, trader: { decision: "SKIP" } } }, "win", 5.7)),
+    ...Array.from({ length: 6 }, () => resolved({ tier: "early" }, "win", 5.7))]; // another tier: never mixed in
+  const tr = trackRecord(calls, "spot", T0 + 2 * 86_400_000, "confirmed");
+  assert.equal(tr.resolved, 10); assert.equal(tr.scope, "spot calls, tier confirmed");
   assert.deepEqual(tr.finalYes, { n: 5, hitTargetPct: 20, hitStopPct: 80, avgNetPct: -1.5 });
   assert.equal(tr.finalNoIfBought.avgNetPct, 5.7); assert.equal(tr.edgeYesMinusNoPct, -7.2);
   assert.equal(tr.bossStoppedTakes, null); // fewer than 5
   assert.equal(tr.recentLosingYes.length, 3); assert.equal(tr.recentLosingYes[0].bearHadSaid, "fades under 97");
   assert.equal(tr.recentLosingYes[0].daysAgo, 1.9);
-  assert.equal(trackRecord(calls, "alpha").scope, "all calls"); // no Alpha calls yet: uses all
+  assert.equal(trackRecord(calls, "spot", T0, "early").resolved, 6);
+  assert.equal(trackRecord(calls, "spot", T0, "none").note, "no track record for this tier");
+  assert.equal(trackRecord(calls, "alpha", T0, "confirmed").note, "no track record for this tier");
 });
 
 test("tracker: WAIT triggers are cleaned and detected only after they were armed", () => {

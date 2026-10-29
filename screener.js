@@ -259,7 +259,7 @@ export const annotateAlpha = (id, patch) => {
 };
 export const alphaTokenFor = (key) => alpha?.tokenFor(key) ?? null;
 export const alphaSnapshot = () => alpha?.api() ?? null;
-export const alphaMatchingFor = (a) => alpha?.matchingGroups(a) ?? [];
+export const alphaMatchingFor = (a, tier = null) => alpha?.matchingGroups(a, 10, tier) ?? [];
 // Your own trades ("I took it"), linked to the alerts they came from.
 const journal = createJournal({ file: path.join(here, DEMO ? "journal.demo.json" : "journal.json"),
   priceOf: async (j) => {
@@ -1310,13 +1310,14 @@ function summarize(evs) {
   const wins = done.filter((e) => e.track.outcome === "win").length, losses = done.filter((e) => e.track.outcome === "loss").length;
   const tracked = evs.filter((e) => e.track && e.track.entry);
   const gross = done.length ? mean(done.map(resultOf)) : null;
-  const inProfit = done.filter((e) => resultOf(e) - COST_PCT > 0).length;
+  const inProfit = done.filter((e) => resultOf(e) - COST_PCT > 0).length, flats = done.filter((e) => e.track.outcome === "flat");
   return {
     total: evs.length, resolved: done.length, wins, losses, flat: done.length - wins - losses,
     pending: evs.filter((e) => e.track && !e.track.outcome).length, unclear: evs.filter((e) => e.track?.outcome === "unclear").length,
     winRatePct: done.length ? round((wins / done.length) * 100, 1) : null,   // hit the target
     inProfit, profitablePct: done.length ? round((inProfit / done.length) * 100, 1) : null, // closed with a profit after costs
     expectancyPct: round(gross, 2),                                    // gross, before costs
+    flatAvgPct: flats.length ? round(mean(flats.map(resultOf)), 2) : null, // average move of the alerts that hit neither (time-outs), before costs
     netPct: gross == null ? null : round(gross - COST_PCT, 2),         // after fees and slippage
     avgPeakPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.hiW ?? e.track.high) / e.track.entry - 1) * 100)), 2) : null,
     avgLowPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.loW ?? e.track.low) / e.track.entry - 1) * 100)), 2) : null,
@@ -1347,8 +1348,9 @@ const BUCKETS = [
   ["Alert within 30s of the candle close", (c) => c.ctx?.lagSec != null && c.ctx.lagSec <= 30], ["Alert 30s+ after the candle close", (c) => c.ctx?.lagSec > 30],
 ];
 // Groups that match a coin's current conditions, with their live results (for the AI desk: "alerts like this did X").
-export function matchingGroups(c, minResolved = 10) {
-  const groups = state.stats?.current?.buckets || [], x = c.ctx ? c : { ...c, ctx: marketContext(Date.now()) }; // a coin checked now: today's conditions
+// tier = "ignition" / "early": only that tier's alerts (the AI desk uses its own tier only); null = both quick tiers.
+export function matchingGroups(c, minResolved = 10, tier = null) {
+  const cur = state.stats?.current, groups = (tier ? cur?.bucketsByTier?.[tier] : cur?.buckets) || [], x = c.ctx ? c : { ...c, ctx: marketContext(Date.now()) }; // a coin checked now: today's conditions
   return BUCKETS.filter(([, fn]) => { try { return fn(x); } catch { return false; } }).map(([name]) => groups.find((g) => g.name === name))
     .filter((g) => g && g.resolved >= minResolved).map((g) => ({ group: g.name, resolved: g.resolved, hitTargetPct: g.winRatePct, avgNetPct: g.netPct, olderPct: g.olderPct, newerPct: g.newerPct }));
 }
@@ -1356,7 +1358,7 @@ const resolvedOk = (e) => ["win", "loss", "flat"].includes(e.track?.outcome);
 function statsBlock(evs) {
   const ig = evs.filter((e) => e.tier === "ignition" || e.tier === "early");
   const igDone = ig.filter((e) => e.detail && resolvedOk(e)), overall = summarize(evs.filter((e) => e.tier !== "bigmove"));
-  const items = igDone.map((e) => ({ ...e.detail, t: e.time, netPct: resultOf(e) - COST_PCT, win: e.track.outcome === "win", ai: e.ai }));
+  const items = igDone.map((e) => ({ ...e.detail, t: e.time, tier: e.tier, netPct: resultOf(e) - COST_PCT, win: e.track.outcome === "win", ai: e.ai }));
   const exitItems = (tier) => evs.filter((e) => e.tier === tier && e.track?.exits).map((e) => ({ exits: e.track.exits, t: e.time, mainPct: resolvedOk(e) ? resultOf(e) : undefined }));
   const quickLabel = `+${TARGET_PCT}% / -${STOP_PCT}% (${OUTCOME_MS / 3_600_000}h): the alert's rule`, bigLabel = `+${BIG_TARGET_PCT}% / -${BIG_STOP_PCT}% (${BIG_OUTCOME_MS / 86_400_000} days): the alert's rule`;
   const speedItems = evs.filter((e) => e.track?.after && e.tier !== "setup").map((e) => ({ lagSec: e.detail?.ctx?.lagSec, after: e.track.after }));
@@ -1367,6 +1369,9 @@ function statsBlock(evs) {
     // older / newer = the first and second half of each group's alerts; "holds" = better (or worse) than average in both
     buckets: groupSummary(items, BUCKETS.map(([name, fn]) => [name, (it) => fn(it)]), overall.netPct)
       .map((g) => ({ ...g, profitablePct: g.inProfitPct, netPct: g.avgNetPct })),
+    // the same groups for one tier at a time
+    bucketsByTier: Object.fromEntries(["ignition", "early"].map((t) => [t, groupSummary(items.filter((it) => it.tier === t), BUCKETS.map(([name, fn]) => [name, (it) => fn(it)]),
+      summarize(evs.filter((e) => e.tier === t)).netPct).map((g) => ({ ...g, profitablePct: g.inProfitPct, netPct: g.avgNetPct }))])),
     exits: { ignition: exitSummary(exitItems("ignition"), EXIT_RULES.quick, COST_PCT, quickLabel), early: exitSummary(exitItems("early"), EXIT_RULES.quick, COST_PCT, quickLabel),
       bigmove: exitSummary(exitItems("bigmove"), EXIT_RULES.bigmove, COST_PCT, bigLabel) },
     speed: speedSummary(speedItems, AFTER_MARKS, 1),

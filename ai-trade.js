@@ -227,6 +227,25 @@ function flowBreadth() {
 }
 
 // ───────────────────────────── dossier ─────────────────────────────
+// The track record the AI sees: this tier only. With nothing for this tier: "no track record for this tier", and the
+// AI uses the base rate only.
+export function performanceFor({ tier, live, groups = [], committee = null, aiCalls = [] }) {
+  const out = { tier };
+  if (live?.resolved) out.thisTier = { resolved: live.resolved, hitTargetPct: live.winRatePct ?? live.winPct ?? null, avgNetPct: live.netPct ?? live.avgNetPct ?? null };
+  if (groups.length) out.matchingGroups = groups;
+  if (aiCalls.length) out.aiCallsThisTier = aiCalls.map((b) => ({ call: b.name.replace("AI said ", ""), resolved: b.resolved, hitTargetPct: b.winRatePct, avgNetPct: b.netPct }));
+  if (committee && committee.resolved >= 5) out.aiCommittee = committee;
+  if (!out.thisTier && !out.matchingGroups && !out.aiCommittee) out.note = "no track record for this tier";
+  return out;
+}
+// The average move of this tier's trades that ended at the time limit (before costs), for the expected value: from this
+// tier's live alerts (10+ time-outs), else from the AI's own calls on this tier (5+), else 0 (no data yet).
+function timeoutFor(kind, tier, live) {
+  if (live?.flat >= 10 && Number.isFinite(live.flatAvgPct)) return { pct: live.flatAvgPct, from: `live alerts of this tier that timed out (${live.flat})` };
+  const t = tracker.timeoutAverage(kind, tier);
+  if (t) return { pct: t.pct, from: `AI calls of this tier that timed out (${t.n})` };
+  return { pct: 0, from: "no time-out data for this tier yet: counted as flat" };
+}
 const dossierCache = new Map();
 export async function buildDossier(symbol, tierHint = null) {
   const key = `${symbol}:${tierHint || ""}`, hit = dossierCache.get(key);
@@ -252,7 +271,8 @@ export async function buildDossier(symbol, tierHint = null) {
 
   // Reference plan from the alert's own exit rule plus structure / volatility alternatives (long only).
   const tier = tierHint || (cand?.ignition === "ignited" ? ((cand.igScore ?? 0) >= CONFIG.igniteMinScore ? "confirmed" : "early") : cand?.bigmove === "ignited" ? "bigmove" : null);
-  const alert = alertContext(tier, snap), rule = alert.trackedAs;
+  const alert = alertContext(tier, snap), rule = alert.trackedAs, liveKey = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[alert.tier] || null;
+  alert.timeout = timeoutFor("spot", alert.tier, liveKey ? snap.stats?.current?.byTier?.[liveKey] : null);
   const stopRule = price * (1 - rule.stopPct / 100);
   const stopStructure = support && pct(support, price) > -8 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
   const stopAtr = atr1h ? price * (1 - (1.5 * atr1h) / 100) : null;
@@ -311,16 +331,12 @@ export async function buildDossier(symbol, tierHint = null) {
       btcRegime: cand?.rotation?.regimeLabel || null, narrativeRanks: cand?.rotation?.narratives?.filter((x) => x.rank != null).slice(0, 3) || null,
       regime: marketRegime(snap),
     },
-    livePerformance: {
-      byTier: Object.fromEntries(Object.entries(live).map(([k, b]) => [k, liveRate(b)])),
-      aiCalls: (snap.stats?.current?.buckets || []).filter((b) => /^AI said/.test(b.name)).map((b) => ({ call: b.name.replace("AI said ", ""), resolved: b.resolved, hitTargetPct: b.winRatePct, avgNetPct: b.netPct })),
-      // live results of past alerts that shared this coin's conditions (10+ resolved each), with the older / newer half
-      matchingGroups: cand ? matchingGroups(cand) : [],
-      // the committee's own past calls, followed with their own plans (ai-tracker.js)
-      aiCommittee: tracker.trackRecord("spot"),
-    },
+    // this alert tier's own record only (other tiers behave differently): live results, past alerts of this tier with the
+    // same conditions (10+ resolved each, with the older / newer half), and the committee's calls on this tier
+    livePerformance: performanceFor({ tier: alert.tier, live: liveKey ? live[liveKey] : null, groups: cand && liveKey && liveKey !== "bigmove" ? matchingGroups(cand, 10, liveKey) : [],
+      committee: tracker.trackRecord("spot", alert.tier),
+      aiCalls: liveKey && liveKey !== "bigmove" ? (snap.stats?.current?.bucketsByTier?.[liveKey] || []).filter((b) => /^AI said/.test(b.name) && b.resolved >= 10) : [] }),
     referencePlan: plan,
-    baseRates: { replay: REPLAY, live: { confirmed: liveRate(live.ignition), early: liveRate(live.early) } },
   };
   dossierCache.set(key, { at: Date.now(), d });
   if (dossierCache.size > 60) dossierCache.delete(dossierCache.keys().next().value);
@@ -346,16 +362,17 @@ Work through these steps in order and show them in your answer:
    trend (1h and 4h direction vs the trade), room (distance to resistance vs distance to the stop: an ignition just under
    a recent high is normal, but a 15d or 7d high right overhead caps the move), liquidity (spread, depth),
    positioning (futures funding / open interest / long-short, whale exchange deposits, DEX net selling),
-   market (BTC, market.regime breadth, market-wide surge), track record (livePerformance of this tier, of AI calls, and
-   livePerformance.matchingGroups: how past alerts with the same conditions did; trust a group more when its older and
-   newer halves agree).
+   market (BTC, market.regime breadth, market-wide surge), track record (livePerformance: THIS tier only; trust a
+   matching group more when its older and newer halves agree; if it says "no track record for this tier", write that
+   and use the base rate only).
 3. PROBABILITY. Start from alert.anchorProbTargetPct (how often this kind of alert hit its target before its stop) and
    alert.anchorProbStopPct (how often it hit the stop first); the rest end flat. Move them only for checklist evidence,
    at most 15 points each way, and say which items moved them. A weak market regime, BTC weakness or poor live results
    (including matchingGroups well below this tier's average) lower the target chance; strong confirmed volume with
    buyers in control and room to run raise it.
-4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct, using your plan's
-   target and stop. The code recomputes it.
+4. EXPECTED VALUE per trade = P_target x target% - P_stop x stop% + P_timeout x alert.timeout.pct - alert.costPct, with
+   P_timeout = 100 - P_target - P_stop, using your plan's target and stop. Write the full calculation in probReason. The
+   code recomputes it.
 5. DECIDE.
    TAKE only if there is no hard stop, the expected value is at least +0.5% per trade, reward:risk is at least 1.5 and
    the price is inside the entry zone now. The Final Boss then wants reward:risk of 2 or more with the target capped at
@@ -366,9 +383,10 @@ Work through these steps in order and show them in your answer:
    candle timeframe; the time limit in minutes): the code watches it and the committee checks the coin again when it
    happens. For TAKE and SKIP leave trigger empty.
    SKIP (no trade) for everything else, including when the data is too thin to judge.
-6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs
-   (its target, stop and holding time; a big-move alert aims for its large target over days). Risk at most 1% of the
-   account per trade.
+6. PLAN. Entry from dossier.price. Stop just below the nearest real support (levels.support or levels.low24h), never
+   a fixed percentage. Target 1 at or below the nearest resistance (levels.resistance): the code caps the target there
+   and moves the stop below support, so plan with that in mind. Holding time from alert.trackedAs. Risk at most 1% of
+   the account per trade.
 Be concise and concrete.`.trim();
 
 const TRIAGE_SYSTEM = `You are a disciplined crypto spot trader triaging several setups from a volume-ignition screener at once.\n\n${RULES}
@@ -470,6 +488,15 @@ export function hardStops(d, plan) {
 
 // Expected value per trade from the (anchored) probabilities, then the final call. TAKE needs no hard stop, EV >=
 // AI_MIN_EV_PCT and reward:risk >= 1.5; a TAKE that fails becomes WAIT (EV not far below zero) or SKIP.
+// Expected value per trade, the full calculation: P_target × target% − P_stop × stop% + P_timeout × average time-out% −
+// costs, with P_timeout = 100 − P_target − P_stop. timeoutPct = the average move of this tier's trades that ended at the
+// time limit (alert.timeout); 0 when there is no data yet. Returns the numbers and the formula as text.
+export function evCalc({ pT, pS, targetPct, stopPct, timeoutPct = 0, costPct = 0, timeoutFrom = null }) {
+  const pTO = Math.max(0, 100 - pT - pS), S = Math.abs(stopPct ?? 0), T = targetPct ?? 0, TO = Number(timeoutPct) || 0, f = (x) => Number(x).toFixed(2);
+  const ev = r((pT / 100) * T - (pS / 100) * S + (pTO / 100) * TO - costPct, 2);
+  return { pTargetPct: pT, targetPct: r(T), pStopPct: pS, stopPct: r(S), pTimeoutPct: pTO, timeoutPct: r(TO), timeoutFrom, costPct: r(costPct), ev,
+    formula: `${f(pT / 100)} × ${f(T)}% − ${f(pS / 100)} × ${f(S)}% + ${f(pTO / 100)} × ${f(TO)}% − ${f(costPct)}% costs = ${ev >= 0 ? "+" : ""}${f(ev)}%` };
+}
 export function decide(d, out, plan, minEv = MIN_EV_PCT) {
   const a = d.alert || alertContext(d.screener?.tier || null), notes = [];
   const anT = a.anchorProbTargetPct, anS = a.anchorProbStopPct, n = (v, dflt) => (Number.isFinite(Number(v)) ? Number(v) : dflt);
@@ -477,13 +504,13 @@ export function decide(d, out, plan, minEv = MIN_EV_PCT) {
   let pS = clamp(n(out.probStopPct, anS), Math.max(0, anS - 15), Math.min(100, anS + 15));
   if (pT + pS > 100) pS = 100 - pT;
   if (pT !== n(out.probTargetPct, anT) || pS !== n(out.probStopPct, anS)) notes.push(`Chances held within 15 points of this alert's base rate (${anT}% target / ${anS}% stop).`);
-  const ev = r((pT / 100) * (plan.target1Pct ?? 0) - (pS / 100) * Math.abs(plan.stopPct ?? 0) - a.costPct, 2);
+  const calc = evCalc({ pT, pS, targetPct: plan.target1Pct, stopPct: plan.stopPct, timeoutPct: a.timeout?.pct, timeoutFrom: a.timeout?.from, costPct: a.costPct }), ev = calc.ev;
   const hard = hardStops(d, plan);
   let decision = out.decision;
   if (hard.length && decision !== "SKIP") { notes.push(`Hard stop: ${hard.join("; ")}. No trade.`); decision = "SKIP"; }
   if (decision === "TAKE" && !(ev >= minEv)) { decision = ev >= -0.5 ? "WAIT" : "SKIP"; notes.push(`Expected value ${ev}% per trade is below +${minEv}%, so TAKE became ${decision === "SKIP" ? "no trade" : "WAIT"}.`); }
   if (decision === "TAKE" && !(plan.rewardRisk >= 1.5)) { decision = "WAIT"; notes.push(`Reward:risk ${plan.rewardRisk} is under 1.5, so TAKE became WAIT.`); }
-  return { decision, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, hardStops: hard, notes };
+  return { decision, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, evCalc: calc, hardStops: hard, notes };
 }
 
 // Long plan sanity: numbers in order and within believable distances; otherwise the reference plan is used.
@@ -511,26 +538,49 @@ export function realisticPlan(d, plan) {
   return { target: sig(target), targetPct: r(pct(target, mid)), rewardRisk: mid > plan.stop ? r((target - mid) / (mid - plan.stop)) : null, cappedAtResistance: target !== plan.target1 };
 }
 
+// The plan rule: the target shown is the one used for reward:risk, capped at the nearest resistance above the entry; the
+// stop sits just below the nearest real support (levels.support or the 24h low) that is at least half a normal 1h move
+// (and 0.3%) under the entry, never at a fixed percentage. With no such support within 11%, the plan's stop stays.
+export function alignPlan(d, plan) {
+  const lv = d.levels || {}, atr = Number(d.chart?.atrPct?.["1h"]) || 1, notes = [];
+  let { stop, target1, target2 } = plan, stopAt = null;
+  const res = Number(lv.resistance);
+  if (res > plan.entryHigh * 1.002 && res < target1) {
+    notes.push(`Target set at the nearest resistance ${sig(res)} (${lv.resistanceIs || "level"}) instead of ${sig(target1)}.`);
+    target2 = target1; target1 = res;
+  }
+  const gap = Math.max(0.3, 0.5 * atr), level = [{ price: Number(lv.support), what: lv.supportIs || "support" }, { price: Number(lv.low24h), what: "24h low" }]
+    .filter((x) => x.price > 0 && pct(x.price, plan.entryLow) <= -gap && pct(x.price, plan.entryLow) >= -11).sort((a, b) => b.price - a.price)[0];
+  if (level) {
+    const s = level.price * (1 - Math.max(0.1, 0.15 * atr) / 100);
+    if (Math.abs(s / stop - 1) > 0.001) notes.push(`Stop set just below the nearest support ${sig(level.price)} (${level.what}): ${sig(s)} instead of ${sig(stop)}.`);
+    stop = s; stopAt = { price: sig(level.price), what: level.what };
+  } else notes.push(`No support at least ${r(gap)}% below the entry (within 11%): the plan's stop ${sig(stop)} is kept.`);
+  const mid = (plan.entryLow + plan.entryHigh) / 2;
+  return { plan: { ...plan, stop: sig(stop), target1: sig(target1), target2: Number.isFinite(target2) && target2 > target1 ? sig(target2) : null, stopAt,
+    stopPct: r(pct(stop, mid)), target1Pct: r(pct(target1, mid)), rewardRisk: mid > stop ? r((target1 - mid) / (mid - stop)) : null }, notes };
+}
+
 // The final call after the Final Boss: YES = TAKE, WATCH = WAIT (with its triggers), NO = no trade. The code keeps the
 // last word on safety: a YES needs no hard stop (the code's, confirmed news, or the boss's own), a coin that has not run
 // and is igniting now, a plan that fits the price, realistic reward:risk of 2+ and expected value of +AI_MIN_EV_PCT after
 // costs with the boss's chances (held within 15 points of the base rate); otherwise it becomes WATCH. If the boss cannot
 // answer: the code's own call on the trader's plan, and never a YES.
 const VERDICT_DECISION = { YES: "TAKE", WATCH: "WAIT", NO: "SKIP" };
-export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, dataPoor = false, newsRedFlag = null, minEv = MIN_EV_PCT }) {
+export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, dataPoor = false, minEv = MIN_EV_PCT }) {
   const notes = [];
   if (!boss?.available) {
     const decision = code.decision === "TAKE" ? "WAIT" : code.decision;
     notes.push(`The final boss could not answer (${boss?.reason || "unavailable"}), so this is the code's own call on the trader's plan${code.decision === "TAKE" ? ", never a YES without the boss: run it again in a minute" : ""}.`);
     return { decision, final: decision === "WAIT" ? "WATCH" : "NO", plan: traderPlan, probTargetPct: code.probTargetPct, probStopPct: code.probStopPct,
-      expectedValuePct: code.expectedValuePct, realistic: realisticPlan(d, traderPlan), trigger: decision === "WAIT" ? traderTrigger : null, notes };
+      expectedValuePct: code.expectedValuePct, evCalc: code.evCalc, realistic: realisticPlan(d, traderPlan), trigger: decision === "WAIT" ? traderTrigger : null, notes };
   }
   let verdict = boss.verdict, plan = traderPlan, planOk = true;
   if (verdict !== "NO") {
     const bp = boss.plan || {};
     const pc = bp.entryZone && bp.stop && bp.targets?.length ? checkPlan(d, { entryLow: bp.entryZone[0], entryHigh: bp.entryZone[1], stop: bp.stop, target1: bp.targets[0],
       target2: bp.targets[1] ?? null, holdHours: bp.maxHoldHours || traderPlan.holdHours }, { maxEntryPct: verdict === "WATCH" ? 10 : 3 }) : null;
-    if (pc && !pc.replaced) plan = pc.plan;
+    if (pc && !pc.replaced) { const al = alignPlan(d, pc.plan); plan = al.plan; notes.push(...al.notes); }
     else { planOk = false; notes.push(`The final boss's plan ${pc ? "did not fit the price levels" : "was incomplete"}, so the trader's plan is shown.`); }
   }
   const a = d.alert, c = boss.corrected || {};
@@ -539,9 +589,10 @@ export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, 
   const pS = Math.min(held(c.pStopPct, a.anchorProbStopPct, code.probStopPct), 100 - pT);
   if ((Number.isFinite(c.pTargetPct) && pT !== c.pTargetPct) || (Number.isFinite(c.pStopPct) && pS !== c.pStopPct))
     notes.push(`The boss's chances were held within 15 points of this alert's base rate (${a.anchorProbTargetPct}% target / ${a.anchorProbStopPct}% stop).`);
-  const real = realisticPlan(d, plan), ev = r((pT / 100) * real.targetPct - (pS / 100) * Math.abs(plan.stopPct) - a.costPct, 2);
+  const real = realisticPlan(d, plan);
+  const calc = evCalc({ pT, pS, targetPct: real.targetPct, stopPct: plan.stopPct, timeoutPct: a.timeout?.pct, timeoutFrom: a.timeout?.from, costPct: a.costPct }), ev = calc.ev;
   if (Number.isFinite(c.expectedValuePct) && Math.abs(c.expectedValuePct - ev) > 0.5)
-    notes.push(`The boss's expected value (${c.expectedValuePct}%) differs from the code's ${ev}% (timeouts counted as flat, target capped at resistance, costs subtracted).`);
+    notes.push(`The boss's expected value (${c.expectedValuePct}%) differs from the code's: ${calc.formula}.`);
   if (verdict === "YES") {
     const why = [];
     if (code.hardStops.length) why.push(`hard stop (${code.hardStops.join("; ")})`);
@@ -552,11 +603,10 @@ export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, 
     if (!(real.rewardRisk >= 2)) why.push(`realistic reward:risk ${real.rewardRisk} is under 2`);
     if (!(ev >= minEv)) why.push(`expected value ${ev}% is under +${minEv}%`);
     if (dataPoor) why.push("the data was rated poor");
-    if (newsRedFlag) why.push(`unconfirmed bad news (${newsRedFlag}) must be confirmed or ruled out first`);
     if (why.length) { verdict = "WATCH"; notes.push(`The final boss said YES, but the code made it WATCH: ${why.join("; ")}.`); }
   }
   const decision = VERDICT_DECISION[verdict];
-  return { decision, final: verdict, plan, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, realistic: real,
+  return { decision, final: verdict, plan, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, evCalc: calc, realistic: real,
     trigger: decision === "WAIT" ? triggerFromWatch(boss.watchTriggers, boss.watchExpiresHours, d.price) || traderTrigger : null, notes };
 }
 
@@ -587,8 +637,7 @@ const CONF_CAP = { good: "high", partial: "medium", poor: "low" };
 // Issues the code can see in the committee's work, handed to the Final Boss to audit one by one.
 export function auditHints(d, { out, pc, dz, data, news, dbt, code }) {
   const h = [], a = d.alert || {}, sign = (v) => (v > 0 ? "+" : "") + v;
-  if (news?.available && news.verified === false) h.push(`NEWS REPORT: no web search ran${news.requests > 1 ? " (asked twice)" : ""}; its items and risk level come from the model's memory and are unverified`);
-  if (news?.unverifiedRedFlag) h.push(`NEWS REPORT claims, unverified, a serious problem (${news.unverifiedRedFlag}): no YES until it is confirmed or ruled out`);
+  if (news?.available && news.verified === false) h.push(`NEWS REPORT: no web search ran${news.requests > 1 ? " (asked twice)" : ""}, so the news is unknown and nothing from the model's memory is used`);
   if (!news?.available && !news?.off) h.push(`NEWS REPORT unavailable (${news?.error || "no answer"}): the news is unknown`);
   const mT = Math.round(Number(out.probTargetPct) - a.anchorProbTargetPct), mS = Math.round(Number(out.probStopPct) - a.anchorProbStopPct);
   if (Number.isFinite(mT) && Number.isFinite(mS)) h.push(mT || mS ? `TRADER moved the chances from the base rate by ${sign(mT)} points (target) and ${sign(mS)} (stop): check the evidence for each (probReason)`
@@ -621,6 +670,8 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
   if (!dbt.off) dbt.verdict = out.debate && ["bull", "bear", "even"].includes(out.debate.winner) ? { winner: out.debate.winner, reason: out.debate.reason } : null;
   const g = applyGuards(d, out), pc = checkPlan(d, out.plan);
   if (pc.replaced) g.notes.push("The trader's plan did not fit the levels, so the reference plan is shown.");
+  const al = alignPlan(d, pc.plan);
+  pc.plan = al.plan; g.notes.push(...al.notes);
   const dz = decide(d, { ...out, decision: g.decision }, pc.plan);
   g.notes.push(...dz.notes);
   const extra = extraStops(d);
@@ -630,7 +681,7 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
   const hard = [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : [])])];
   const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
   // The Final Boss audits everything, whatever the trader decided (fast path: only when the trader or the code is not a no).
-  const code = { decision: pre.decision, hardStops: hard, expectedValuePct: dz.expectedValuePct, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
+  const code = { decision: pre.decision, hardStops: hard, expectedValuePct: dz.expectedValuePct, evCalc: dz.evCalc, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
     rewardRisk: pc.plan.rewardRisk, realisticRewardRisk: realisticPlan(d, pc.plan), costPct: d.alert.costPct, moved: !!d.screener?.moved, igniting: isIgniting(d),
     traderPlanReplaced: pc.replaced, notes: [...g.notes] };
   code.auditHints = auditHints(d, { out, pc, dz, data, news, dbt, code });
@@ -652,16 +703,15 @@ export async function runCommittee(ai, d, { desk, rules, identity, extraStops = 
       boss.confidenceSaid ??= boss.confidence; boss.confidence = lower(boss.confidence);
     }
   }
-  const fin = fastNo ? { decision: "SKIP", final: "NO", plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct,
+  const fin = fastNo ? { decision: "SKIP", final: "NO", plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, evCalc: dz.evCalc,
     realistic: realisticPlan(d, pc.plan), trigger: null, notes: [] }
-    : finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor",
-      newsRedFlag: news.unverifiedRedFlag || null });
+    : finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor" });
   g.notes.push(...fin.notes);
   const confidence = boss.available ? LEVELS[Math.min(LEVELS.indexOf(g.confidence), Math.max(0, LEVELS.indexOf(boss.confidence)))] : lower(g.confidence);
   const watch = fin.final === "WATCH" && boss.available && boss.watchTriggers?.length ? { triggers: boss.watchTriggers, expiresHours: boss.watchExpiresHours } : null;
   return {
     decision: fin.decision, final: fin.final, modelDecision: out.decision, confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
-    tier: d.alert.tier, probTargetPct: fin.probTargetPct, probStopPct: fin.probStopPct, expectedValuePct: fin.expectedValuePct, realistic: fin.realistic, probReason: out.probReason,
+    tier: d.alert.tier, probTargetPct: fin.probTargetPct, probStopPct: fin.probStopPct, expectedValuePct: fin.expectedValuePct, evCalc: fin.evCalc, realistic: fin.realistic, probReason: out.probReason,
     hardStops: [...new Set([...hard, ...(boss.hardStopFailures || []), ...(out.hardStops || [])])], checklist,
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
     plan: fin.plan, sizePct: boss.available && fin.final !== "NO" ? boss.plan?.sizePct ?? null : null,
@@ -813,12 +863,13 @@ const FINAL_LABEL = { YES: "YES", WATCH: "WATCH", NO: "NO TRADE" };
 export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${x.final ? FINAL_LABEL[x.final] || x.final : LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
   x.headline, x.committee ? tgCommittee(x) : null,
   `Chance: ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct >= 0 ? "+" : ""}${x.expectedValuePct}% per trade · ${x.confidence} confidence · setup ${x.setupScore}/10`,
+  x.evCalc ? `EV = ${x.evCalc.formula}` : null,
   x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.realistic?.rewardRisk ?? x.plan.rewardRisk} | hold ${x.plan.holdHours}h${x.sizePct != null ? ` | size ${x.sizePct}% of normal` : ""}` : null,
   x.decision === "WAIT" && x.waitFor ? `${x.watch ? "Watch for" : "Trigger"}: ${x.waitFor}` : null,
   x.decision === "WAIT" && x.watch ? `Plan if it triggers: entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} | target ${x.plan.target1}${x.sizePct != null ? ` | size ${x.sizePct}% of normal` : ""}` : null,
   x.decision === "WAIT" && x.trigger ? `Watching: ${x.trigger.event === "breakout" ? `a ${x.trigger.timeframe} close above ${x.trigger.price}` : `a dip to ${x.trigger.price}`} for ${x.trigger.expiresMinutes} min; the AI checks again if it happens.` : null,
   x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
-  x.committee?.news?.available && x.committee.news.verified !== false && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
+  x.committee?.news?.available && x.committee.news.status !== "unknown" && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
   "AI opinion on screener data. Research only, not financial advice."].filter(Boolean).join("\n");
 
 // "bull 7 vs bear 5, bear won" (the strengths are the sides' own scores; the winner is the trader's call).
@@ -830,7 +881,7 @@ const bossVote = (b) => (!b?.asked ? (b?.skipped === "fast" ? "skipped (fast NO)
 const tgCommittee = (x) => {
   const { data, news, debate: dbt, trader, boss } = x.committee;
   return [[`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}${x.fastNo ? " (fast NO)" : ""}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
-    `news ${news?.available ? (news.verified === false ? "unverified" : `${news.riskLevel} risk`) : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`,
+    `news ${news?.available ? (news.status === "unknown" ? "unknown" : `${news.riskLevel} risk`) : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`,
     `boss ${bossVote(boss)}`].filter(Boolean).join(" · "),
     boss?.available && boss.summary ? `Boss: ${boss.summary}` : null, boss?.available && boss.decidingFactor ? `Deciding factor: ${boss.decidingFactor}` : null].filter(Boolean).join("\n");
 };
@@ -840,7 +891,7 @@ const reviewSummary = (out, tg) => {
   const c = out.committee || {};
   return { decision: out.decision, final: out.final, confidence: out.confidence, setupScore: out.setupScore, headline: out.headline, rewardRisk: out.plan.rewardRisk,
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
-    committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? (c.news.verified === false ? "unverified" : c.news.riskLevel) : null, newsHardStop: !!c.news?.hardStop,
+    committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? (c.news.status === "unknown" ? "unknown" : c.news.riskLevel) : null, newsHardStop: !!c.news?.hardStop,
       debate: debateLine(c.debate), debateWinner: c.debate?.verdict?.winner || null,
       trader: c.trader?.decision || null, boss: c.boss?.available ? c.boss.verdict : null, bossAgrees: c.boss?.available ? c.boss.agreesWithTrader : null,
       bossSummary: c.boss?.available ? c.boss.summary : c.boss?.reason || null }, sizePct: out.sizePct ?? null,
@@ -882,18 +933,20 @@ Work through these steps in order and show them in your answer:
    dollars and trades per candle, 24h volume), DEX buying (alpha.dex buys vs sells, 5 min and 1 hour), trend (1h and 4h),
    room (distance to resistance vs distance to the stop), liquidity and holders (pool size vs a normal order, holders),
    supply (circulating share, FDV vs market cap), market (BTC, alt season meter, BTC regime), track record
-   (livePerformance.byTier and livePerformance.matchingGroups: how past Alpha alerts with the same conditions did).
+   (livePerformance: THIS tier only; if it says "no track record for this tier", write that and use the base rate only).
 3. PROBABILITY. Start from alert.anchorProbTargetPct and alert.anchorProbStopPct; move them only for checklist evidence,
    at most 15 points each way, and say which items moved them.
-4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct. The code recomputes it.
+4. EXPECTED VALUE per trade = P_target x target% - P_stop x stop% + P_timeout x alert.timeout.pct - alert.costPct
+   (P_timeout = 100 - P_target - P_stop); write the full calculation in probReason. The code recomputes it.
 5. DECIDE. TAKE only with no hard stop, expected value of at least +0.5% per trade, reward:risk 1.5+ and price inside the
    entry zone now (the Final Boss wants 2+ with the target capped at levels.resistance). WAIT must name a price level, a condition and a time limit, with the same price event in trigger
    (breakout or pullback, timeframe, minutes): the code watches it and asks the committee again. SKIP for everything else.
-6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs.
+6. PLAN. Entry from dossier.price; stop just below the nearest real support (levels.support or levels.low24h), never a
+   fixed percentage; target 1 at or below the nearest resistance (levels.resistance); holding time from alert.trackedAs.
    Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
 Be concise and concrete.`.trim();
 
-const alertMatching = (a) => { try { return a ? alphaMatchingFor(a) : []; } catch { return []; } };
+const alertMatching = (a, tier) => { try { return a ? alphaMatchingFor(a, tier) : []; } catch { return []; } };
 async function alphaCandles(id, interval, limit, quote) {
   const j = await fetchJson(alphaKlinesUrl(id, { interval, limit, quote }), { retries: 1, timeoutMs: 12_000 });
   return parseKlines(j?.data ?? j).map((k) => ({ t: k[0], o: k[1], h: k[2], l: k[3], c: k[4], qv: k[5] }));
@@ -923,7 +976,7 @@ export async function buildAlphaDossier(key, alert = null) {
     tier: t, label: tier ? `Alpha ${t} ignition` : "Alpha token, no ignition right now", trackedAs: { targetPct: cfg.targetPct, stopPct: cfg.stopPct, holdHours: cfg.outcomeDays * 24 },
     costPct: cfg.costPct, baseRate: base, live: live?.closed ? { resolved: live.closed, hitTargetPct: live.winPct, hitStopPct: r((live.losses / live.closed) * 100, 0), avgNetPct: live.avgNetPct } : null,
     anchorProbTargetPct: Math.round(useLive ? live.winPct : base.hitTargetPct), anchorProbStopPct: Math.round(useLive ? (live.losses / live.closed) * 100 : base.hitStopPct),
-    anchorFrom: useLive ? "live results" : "replay",
+    anchorFrom: useLive ? "live results" : "replay", timeout: timeoutFor("alpha", t, null),
   };
   const stopRule = price * (1 - cfg.stopPct / 100), tRule = price * (1 + cfg.targetPct / 100);
   const stopStructure = support && pct(support, price) > -12 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;
@@ -950,8 +1003,8 @@ export async function buildAlphaDossier(key, alert = null) {
     marketFlow: { available: false }, orderBook: { available: false },
     market: { btcChange24hPct: mctx.btcChange24hPct, btc1hPct: mctx.btc1hPct, btc4hPct: mctx.btc4hPct, marketWideSurge: false,
       altSeason: alert?.ctx?.altSeason ?? null, btcRegime: alert?.ctx?.btcRegime ?? null },
-    livePerformance: { byTier: { confirmed: res.confirmed || null, early: res.early || null },
-      matchingGroups: alertMatching(alert || (tok ? { ...tok, token: tok } : null)), aiCommittee: tracker.trackRecord("alpha") },
+    livePerformance: performanceFor({ tier: t, live: live?.closed ? { resolved: live.closed, winPct: live.winPct, avgNetPct: live.avgNetPct } : null,
+      groups: alertMatching(alert || (tok ? { ...tok, token: tok } : null), t), committee: tracker.trackRecord("alpha", t) }),
     referencePlan: { entry: sig(price), entryZone: [sig(price * 0.995), sig(price)], stops: { screenerRule: sig(stopRule), belowSupport: sig(stopStructure) },
       targets: { screenerRule: sig(tRule), nearResistance: sig(tRes), twoR: sig(price + 2 * (price - stopRule)) },
       rewardRisk: { ruleTargetRuleStop: rr(stopRule, tRule), resistanceRuleStop: rr(stopRule, tRes) } },

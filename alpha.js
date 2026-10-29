@@ -361,7 +361,10 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
     const main = `+${cfg.targetPct}% / -${cfg.stopPct}% (${cfg.outcomeDays} days): the alert's rule`;
     return { costPct: cfg.costPct, exits: { confirmed: exitSummary(exitItems("confirmed"), exitRules, cfg.costPct, main), early: exitSummary(exitItems("early"), exitRules, cfg.costPct, main) },
       speed: speedSummary(store.alerts.filter((a) => a.track.after).map((a) => ({ lagSec: a.ctx?.lagSec, after: a.track.after })), AFTER_MARKS_5M, 2),
-      groups: groupSummary(items, ALPHA_GROUPS, overall), overallNetPct: overall, ai: aiCalibration(items) };
+      groups: groupSummary(items, ALPHA_GROUPS, overall),
+      groupsByTier: Object.fromEntries(["confirmed", "early"].map((t) => { const g = items.filter((it) => (it.tier || "confirmed") === t);
+        return [t, groupSummary(g, ALPHA_GROUPS, g.length ? r2(g.reduce((x, it) => x + it.netPct, 0) / g.length) : null)]; })),
+      overallNetPct: overall, ai: aiCalibration(items) };
   }
   let statsCache = { at: 0, v: null };
   const statsNow = () => { if (Date.now() - statsCache.at > 20_000) statsCache = { at: Date.now(), v: stats() }; return statsCache.v; };
@@ -403,8 +406,9 @@ export function createAlpha({ fetchJson, stateFile = null, reportFile = null, se
       return { ...row, alerts: store.alerts.filter((a) => a.alphaId === row.alphaId).slice(-3), quote: quotes.get(row.alphaId) || "USDT" };
     },
     // Groups that match an alert's conditions, with their live results (10+ closed alerts).
-    matchingGroups(a, minResolved = 10) {
-      const groups = statsNow().groups, x = a.ctx ? a : { ...a, ctx: context() || {} }; // a token checked now: today's conditions
+    // tier = "confirmed" / "early": only that tier's alerts; null = both
+    matchingGroups(a, minResolved = 10, tier = null) {
+      const st2 = statsNow(), groups = (tier ? st2.groupsByTier?.[tier] : st2.groups) || [], x = a.ctx ? a : { ...a, ctx: context() || {} }; // a token checked now: today's conditions
       return ALPHA_GROUPS.filter(([, fn]) => { try { return fn(x); } catch { return false; } }).map(([name]) => groups.find((g) => g.name === name))
         .filter((g) => g && g.resolved >= minResolved).map((g) => ({ group: g.name, resolved: g.resolved, hitTargetPct: g.winRatePct, avgNetPct: g.avgNetPct, olderPct: g.olderPct, newerPct: g.newerPct }));
     },

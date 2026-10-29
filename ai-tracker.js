@@ -42,7 +42,7 @@ export function callFromResult(x, { source = "manual", at = Date.now(), depth = 
     bossReason: c.boss?.asked ? String(c.boss.summary || c.boss.reason || "").slice(0, 300) : null, sizePct: x.sizePct ?? null,
     debate: dbt ? { winner: dbt.verdict?.winner || null, bull: dbt.bull?.available ? dbt.bull.strength : null, bear: dbt.bear?.available ? dbt.bear.strength : null,
       bearPath: dbt.bear?.available ? String(dbt.bear.path || "").slice(0, 200) : null } : null,
-    news: c.news?.available ? (c.news.verified === false ? "unverified" : c.news.riskLevel) : null, fastNo: !!x.fastNo, newsStop: !!c.news?.hardStop, data: c.data?.available ? c.data.dataQuality?.rating || null : null,
+    news: c.news?.available ? (c.news.status === "unknown" ? "unknown" : c.news.riskLevel) : null, fastNo: !!x.fastNo, newsStop: !!c.news?.hardStop, data: c.data?.available ? c.data.dataQuality?.rating || null : null,
     probTargetPct: x.probTargetPct ?? null, probStopPct: x.probStopPct ?? null, expectedValuePct: x.expectedValuePct ?? null, headline: String(x.headline || "").slice(0, 160),
     track: { status: "open", hi: entry, lo: entry, last: entry, to: null, bars: 0 },
   };
@@ -119,22 +119,28 @@ export function scorecard(calls) {
     edgePct: yes.n && no.n ? r2(yes.avgNetPct - no.avgNetPct) : null, notYes: no, groups, calibration };
 }
 
-// The committee's own record for its prompts: groups with 5+ resolved calls, the calibration bands with 5+, and the
-// latest losing YES calls with what the bear and the boss had said. Same kind of coin when it has 10+ resolved calls.
-export function trackRecord(calls, kind = null, now = Date.now()) {
-  const all = calls.filter((c) => RESOLVED.includes(c.track.status)), same = kind ? all.filter((c) => c.kind === kind) : all;
-  const pool = same.length >= 10 ? same : all;
-  if (pool.length < 5) return { resolved: pool.length, note: "Too few resolved calls yet to judge the committee's own record." };
+// The committee's own record for its prompts, on calls of the SAME kind of coin and the SAME alert tier only (other
+// tiers behave differently): groups with 5+ resolved calls, the calibration bands with 5+, and the latest losing YES
+// calls with what the bear had said. Fewer than 5 resolved: "no track record for this tier".
+export function trackRecord(calls, kind = null, now = Date.now(), tier = null) {
+  const pool = calls.filter((c) => RESOLVED.includes(c.track.status) && (!kind || c.kind === kind) && (!tier || c.tier === tier));
+  if (pool.length < 5) return { resolved: pool.length, tier, note: "no track record for this tier" };
   const sc = scorecard(pool);
   const pick = (s, k) => { const g = sc.groups.find((x) => x.section === s && x.key === k); return g && g.n >= 5 ? { n: g.n, hitTargetPct: g.hitTargetPct, hitStopPct: g.hitStopPct, avgNetPct: g.avgNetPct } : null; };
   return {
-    resolved: pool.length, scope: pool === same && kind ? `${kind} calls` : "all calls", edgeYesMinusNoPct: sc.edgePct,
+    resolved: pool.length, scope: `${kind || "all"} calls${tier ? `, tier ${tier}` : ""}`, tier, edgeYesMinusNoPct: sc.edgePct,
     finalYes: pick("final", "yes"), finalWatchIfBought: pick("final", "watch"), finalNoIfBought: pick("final", "no"),
     bossStoppedTakes: pick("boss", "blocked"), bossTurnedIntoYes: pick("boss", "upgraded"), bullWon: pick("debate", "bull"), bearWon: pick("debate", "bear"),
     calibration: sc.calibration.filter((b) => b.n >= 5),
     recentLosingYes: pool.filter((c) => c.final === "YES" && c.track.status === "loss").sort((a, b) => b.at - a.at).slice(0, 3)
       .map((c) => ({ symbol: c.symbol, daysAgo: r2((now - c.at) / DAY, 1), resultPct: c.track.netPct, bearHadSaid: c.debate?.bearPath || null })),
   };
+}
+
+// Average move of the calls of this kind and tier that ended at the time limit (before costs), from 5 or more.
+export function timeoutAverage(calls, kind, tier) {
+  const g = calls.filter((c) => c.track.status === "timeout" && c.kind === kind && c.tier === tier && Number.isFinite(c.track.exitPct));
+  return g.length >= 5 ? { pct: avg(g.map((c) => c.track.exitPct)), n: g.length } : null;
 }
 
 // ───────────────────────────── WAIT triggers ─────────────────────────────
@@ -307,5 +313,5 @@ export function createAiTracker({ file = null, bars, now = () => Date.now(), dai
     return () => { clearInterval(a); clearInterval(b); };
   }
   return { ready, record, cancel, trackOpen, checkTriggers, view, start, countRequest, countTokens, canSpend, usage,
-    trackRecord: (kind) => trackRecord(st.calls, kind, now()), _state: st };
+    trackRecord: (kind, tier) => trackRecord(st.calls, kind, now(), tier), timeoutAverage: (kind, tier) => timeoutAverage(st.calls, kind, tier), _state: st };
 }

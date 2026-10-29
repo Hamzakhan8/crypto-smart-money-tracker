@@ -78,10 +78,9 @@ export const DESKS = {
 - whales: large Ethereum transfers of the token and exchange deposits / withdrawals in 24h (Ethereum only).
 - dexFlows: DEX buying and selling of the token (only for followed pools).
 - market: BTC 1h / 4h / 24h, share of coins surging, taker-flow breadth, BTC regime and narrative ranks.
-- livePerformance: live results of this tier, of past AI calls, and matchingGroups (past alerts with the same
-  conditions, with older / newer halves). aiCommittee: this committee's own past answers, each followed with its own
-  plan (final YES, final WATCH / NO if bought anyway, trader TAKEs the boss stopped, debate winners, said vs real target
-  chances, recent losing YES calls).
+- livePerformance: THIS alert tier only. thisTier = its live results; matchingGroups = past alerts of this tier with the
+  same conditions (older / newer halves); aiCallsThisTier; aiCommittee = this committee's own calls on this tier, each
+  followed with its own plan. note "no track record for this tier" = none of these exist: use the base rate only.
 - referencePlan: entries, stops, targets and reward:risk computed by code. dataQuality: demo / missing-data notes.`.trim(),
   },
   alpha: {
@@ -104,8 +103,8 @@ export const DESKS = {
 - chart: trend1h / trend4h, returnsPct, atrPct. levels: resistance / support (resistanceIs / supportIs: a high, a 1h
   swing high or low, a 1h / 4h EMA), distances, overhead / underneath levels, 24h / 3d / 7d highs and lows.
 - market: BTC moves, alt season meter, BTC regime. No order book, no futures data for these tokens.
-- livePerformance: live results by tier and matchingGroups (past Alpha alerts with the same conditions). aiCommittee:
-  this committee's own past answers, each followed with its own plan.
+- livePerformance: THIS tier only: thisTier (live results), matchingGroups (past Alpha alerts of this tier with the
+  same conditions), aiCommittee (this committee's calls on this tier). note "no track record for this tier" = none.
 - referencePlan: entries, stops, targets and reward:risk computed by code.`.trim(),
   },
 };
@@ -194,7 +193,8 @@ WHAT TO LOOK FOR, MOST IMPORTANT FIRST
 
 RULES
 - Report only what you found in the search results, with its date and source. Never rely on memory. If nothing
-  relevant turns up, say so: "no relevant news" is a valid and common answer.
+  relevant turns up, say so: "no relevant news" is a valid and common answer. If you could not search, return
+  items: [] and upcoming: [] with the summary "no search": never write headlines, dates, figures or sources from memory.
 - Make sure each item is about THIS token (ticker AND name${id.contract ? " or contract" : ""}), not another project with a similar ticker.
   If you cannot tell, leave the item out.
 - Prefer primary sources: exchange announcements, the project's official site or accounts, major crypto media.
@@ -237,16 +237,19 @@ export function cleanNews(text, grounding, usageMeta = null) {
   const items = (Array.isArray(j.items) ? j.items : []).slice(0, 10).map((x) => ({ date: String(x.date || "").slice(0, 10), title: String(x.title || "").slice(0, 200),
     type: String(x.type || "other"), impact: ["positive", "negative", "neutral"].includes(x.impact) ? x.impact : "neutral",
     severity: ["low", "medium", "high"].includes(x.severity) ? x.severity : "low", pricedIn: ["yes", "no", "unclear"].includes(x.pricedIn) ? x.pricedIn : "unclear", source: String(x.source || "").slice(0, 80) }));
+  // The news rule: without a web search the news is "unknown" and nothing from the model's memory is kept (no headlines,
+  // dates, figures or sources). How many items were thrown away is kept, only to find out why no search showed.
+  if (!searched) {
+    const recent = items.some((x) => Date.parse(x.date) > Date.now() - 10 * 86_400_000);
+    return { available: true, searched: false, verified: false, status: "unknown", evidence: { ...evidence, discardedItems: items.length, recentDiscarded: recent },
+      queries: [], sources: [], summary: "", overall: null, riskLevel: null, hardStop: false, hardStopReason: "", items: [], upcoming: [],
+      note: "No web search ran, so the news is unknown. Nothing from the model's memory is used." };
+  }
   return {
-    available: true, searched, verified: searched, evidence, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12),
-    note: searched ? null : "No web search ran: these items come from the model's memory and are unverified. Treat the news as unknown, except that an unconfirmed hack, exploit, delisting or halt still means no buying until it is confirmed.",
+    available: true, searched, verified: searched, status: "searched", evidence, queries: (grounding?.webSearchQueries || []).slice(0, 6), sources: sources.slice(0, 12), note: null,
     summary: String(j.summary || "").slice(0, 600), overall: NEWS_ENUMS.overall.includes(j.overall) ? j.overall : "none",
     riskLevel: NEWS_ENUMS.riskLevel.includes(j.riskLevel) ? j.riskLevel : "none",
-    // a hard stop counts only when the answer is backed by an actual search
-    hardStop: j.hardStop === true && searched, hardStopReason: String(j.hardStopReason || "").slice(0, 300), unverifiedHardStop: j.hardStop === true && !searched,
-    // an unconfirmed claim of serious trouble: not a hard stop, but never a YES until it is confirmed
-    unverifiedRedFlag: !searched && (j.hardStop === true || items.some((x) => x.impact === "negative" && x.severity === "high"))
-      ? String(j.hardStopReason || items.find((x) => x.impact === "negative" && x.severity === "high")?.title || "a high-severity negative item").slice(0, 200) : null,
+    hardStop: j.hardStop === true, hardStopReason: String(j.hardStopReason || "").slice(0, 300),
     items, upcoming: (Array.isArray(j.upcoming) ? j.upcoming : []).slice(0, 6).map((x) => ({ date: String(x.date || "").slice(0, 10), event: String(x.event || "").slice(0, 200), impact: String(x.impact || "unclear") })),
   };
 }
@@ -271,8 +274,7 @@ export async function newsResearch(ai, { identity, holdHours, model, enabled = t
     }
     const out = { ...report, model, ms: Date.now() - t0, at: Date.now(), tokens, requests };
     // Recent dated items without any sign of a search are suspicious: log what Google sent back, to find out why.
-    const recent = (out.items || []).some((x) => Date.parse(x.date) > Date.now() - 10 * 86_400_000);
-    if (out.available && !out.verified && recent) console.warn(`AI news (${identity.symbol}): items dated in the last 10 days but no search evidence; grounding fields: [${out.evidence?.fields?.join(", ")}], tool tokens: ${out.evidence?.toolTokens}`);
+    if (out.available && !out.verified && out.evidence?.recentDiscarded) console.warn(`AI news (${identity.symbol}): items dated in the last 10 days but no search evidence; grounding fields: [${out.evidence?.fields?.join(", ")}], tool tokens: ${out.evidence?.toolTokens}`);
     // only verified news is kept for 30 minutes; unverified news is asked again next time
     if (out.available && out.verified) { newsCache.set(key, { at: Date.now(), report: out }); if (newsCache.size > 200) newsCache.delete(newsCache.keys().next().value); }
     return out;
@@ -379,11 +381,9 @@ HOW TO USE YOUR COLLEAGUES' WORK
   monitoring tag, hack or exploit, deposit / withdrawal halt, an unlock above 2% of the supply inside the holding time)
   is a HARD STOP. A medium negative item inside the holding time lowers the target chance (within the 15-point limit)
   or makes the call WAIT. Positive news that is already priced in does not raise the chance, and rumors do not count.
-  "Unavailable", or verified: false (no web search ran, so the items come from the model's memory), means unknown:
-  say so; do not treat it as good or bad news, and its items do not count. One exception, because capital comes
-  first: an unverified claim of a hack, exploit, delisting, halt or monitoring tag (unverifiedRedFlag) still means no
-  TAKE; WAIT at most until it is confirmed.
-- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unavailable / unverified".${debate ? `
+  "Unavailable", or status "unknown" (no web search ran, so it has no items), means unknown: say so, and do not treat
+  it as good or bad news.
+- Add a checklist item "news" with the decisive item, or "no relevant news found", or "news unknown (no search)".${debate ? `
 - THE DEBATE: the bull argued for buying; then the bear read the bull's case and attacked it. Judge it like a referee:
   only arguments backed by a dossier number count; a bull point the bear showed wrong with a number is gone; a bear
   point or red flag the bull could not answer stands. Ignore tone, confidence and the strength scores they gave
@@ -392,8 +392,12 @@ HOW TO USE YOUR COLLEAGUES' WORK
   argument that decided it, and let the unanswered points move your probabilities. A side marked unavailable did not
   argue: judge from the dossier.` : ""}
 
-THE COMMITTEE'S OWN RECORD (dossier livePerformance.aiCommittee: this committee's past answers, each followed with its
-own plan; ignore it while it says there are too few calls)
+TRACK RECORD RULE: use only performance numbers of this alert's tier (dossier livePerformance). If it says "no track
+record for this tier", write exactly that in the "track record" checklist item and use the base rate only
+(alert.anchorProbTargetPct / alert.anchorProbStopPct). Never use another tier's results.
+
+THE COMMITTEE'S OWN RECORD (livePerformance.aiCommittee: this committee's past answers on this tier, each followed with
+its own plan; absent while there are too few)
 - If final YES calls have lost money on average, or the calibration shows your target chances ran well above what
   really happened, be stricter: move the target chance toward what happened and demand clearer evidence for TAKE.
 - If final WATCH or NO calls (bought anyway) did clearly better than final YES calls over 10+ each, the committee's own
@@ -497,10 +501,13 @@ WHERE THINGS ARE IN THIS REPORT
 - DATA ANALYST REPORT, NEWS REPORT (sources = what Google really returned), DEBATE (bull, then bear who saw the bull's
   case, and who the trader said won), RAW DATA (the dossier).
 - In RAW DATA: base rates alert.anchorProbTargetPct / alert.anchorProbStopPct (the rest end at the time limit, so
-  p_timeout = 100 - p_target - p_stop); costs alert.costPct per trade (subtract them from the EV); holding time
+  p_timeout = 100 - p_target - p_stop); the average time-out move alert.timeout.pct (source: alert.timeout.from);
+  costs alert.costPct per trade (subtract them from the EV); holding time
   alert.trackedAs.holdHours; nearest resistance levels.resistance (levels.roomToResistancePct away); support
-  levels.support; normal move per candle chart.atrPct; current price price; the committee's own record
-  livePerformance.aiCommittee.
+  levels.support; normal move per candle chart.atrPct; current price price; the track record of THIS tier only
+  livePerformance (if it says "no track record for this tier", use the base rate only).
+- CODE CHECKS.evCalc: the code's expected value written out in full: P_target × target% − P_stop × stop% + P_timeout ×
+  average time-out% − costs. Show your own calculation the same way in audit_findings.
 
 HARD STOPS IN THIS SYSTEM (the complete list; CODE CHECKS.hardStops shows the ones the code found failing)
 ${DESKS[deskKey].hardStops}
@@ -511,16 +518,16 @@ HOW TO AUDIT
 - Address every item of CODE CHECKS.auditHints in audit_findings: confirm it, correct it, or say why it does not matter.
 - corrected_numbers must be your own estimate: start from the base rate and explain every change in audit_findings. Do
   not copy the trader's numbers without checking them.
-- A NEWS REPORT with verified false (no web search ran) is unknown news: flag it, and do not use its items or risk level,
-  except unverifiedRedFlag (an unconfirmed hack, exploit, delisting or halt): then the verdict cannot be YES until it is
-  confirmed; WATCH at most, with "the news is confirmed false" as a trigger.
+- A NEWS REPORT with status "unknown" (no web search ran) has no items: the news is unknown. Say so; never fill it in
+  from memory.
 - Confidence: at most "medium" when the DATA ANALYST REPORT rates the data partial or is missing, "low" when it is poor.
 
 WHAT THE CODE DOES WITH YOUR ANSWER
 - Your confidence is capped by the data rating as above, and lowered one step when you report no audit findings while
   auditHints lists issues.
-- Your probabilities are held within 15 points of the base rates. The code recomputes the expected value from your plan
-  (timeouts counted as flat, costs subtracted) and the reward:risk with the target capped at levels.resistance.
+- Your probabilities are held within 15 points of the base rates. Your plan's target is capped at levels.resistance and
+  its stop is moved to just below the nearest real support (levels.support or levels.low24h); the target shown is the
+  one used for reward:risk. The code recomputes the expected value in full (with alert.timeout.pct, costs subtracted).
 - A YES becomes WATCH when a hard stop fails, the coin already ran (screener.moved) or is not igniting now, your plan
   does not fit the price (entry more than 3% from the price, stop not below the entry, target not above it), realistic
   reward:risk is under 2, the expected value is under +0.5% per trade, or the data was rated poor.
@@ -601,7 +608,6 @@ export function committeeChecks(decision, { news, data } = {}) {
   const notes = [];
   if (news?.hardStop && decision !== "SKIP") { notes.push(`News hard stop: ${news.hardStopReason || "a confirmed high-severity negative item"}. No trade.`); decision = "SKIP"; }
   if (decision === "TAKE" && data?.available && data.dataQuality?.rating === "poor") { notes.push("The data analyst rated the data poor, so there is no TAKE."); decision = "SKIP"; }
-  if (decision === "TAKE" && news?.unverifiedRedFlag) { notes.push(`Unconfirmed bad news (${news.unverifiedRedFlag}): no TAKE until it is confirmed or ruled out.`); decision = "WAIT"; }
   return { decision, notes };
 }
 export const _test = { newsCache };

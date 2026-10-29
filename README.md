@@ -42,7 +42,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
 | **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
-| **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, final boss) answers **YES / NO** (TAKE / WAIT / NO TRADE) with entry, stop, targets and expected value |
+| **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, Final Boss) answers **YES / WATCH / NO** with entry, stop, targets, expected value and position size |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
 **Section tags:** every page has a row of tags under its title (for example *Live watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
@@ -181,7 +181,7 @@ Ignition alerts are rare (often a few a day across all coins), so a quiet phone 
 
 Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works, and every new ignition alert gets an automatic AI verdict. To control cost: `AI_REVIEWS_PER_HOUR=12` (the default) caps automatic reviews; `AI_AUTO_REVIEW=0` turns them off.
 
-**Cost per analysis:** the AI committee makes 5 Gemini requests (data analyst, news researcher, bull, bear, trader), and a 6th with the stronger model only when the trader says TAKE. The trader and the final boss think deeply (more "thinking" tokens, billed as output); the others think quickly. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. To spend less: `AI_DEBATE=0` (no bull and bear, 2 requests fewer), `AI_NEWS=0` (no web search, 1 fewer), `AI_DEEP_THINKING=0` (everyone thinks quickly). The page shows the requests and tokens of each analysis and of the day.
+**Cost per analysis:** the AI committee makes 6 Gemini requests (data analyst, news researcher, bull, bear, trader, and the Final Boss with the stronger model, on every analysis). The trader and the Final Boss think deeply (more "thinking" tokens, billed as output); the others think quickly. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. To spend less: `AI_DEBATE=0` (no bull and bear, 2 requests fewer), `AI_NEWS=0` (no web search, 1 fewer), `AI_DEEP_THINKING=0` (everyone thinks quickly). The page shows the requests and tokens of each analysis and of the day.
 
 **Daily limit:** `AI_DAILY_REQUESTS=400` (the default) caps Gemini requests per day (UTC). Telegram warns at 80% and at 100%. At the limit, automatic alert reviews and WAIT-trigger re-checks pause until midnight UTC; your own analyses still run. `AI_DAILY_REQUESTS=0` = no limit.
 
@@ -247,7 +247,7 @@ Binance Alpha tokens are the early on-chain tokens in Binance Wallet (for exampl
 
 Each row shows volume vs normal, price change, DEX buyers vs sellers (from DexScreener, because Binance's Alpha data has no buy/sell side), liquidity, holders, market cap and links. Every alert is tracked: +40% before -10% within 7 days, after 1% costs.
 
-> Alpha pools are thin (often a few hundred thousand dollars), so a market order moves the price, and tokens can be delisted. Press **Ask AI** on a row for the AI committee's YES / NO (see [AI trade desk](#67-ai-trade-desk)).
+> Alpha pools are thin (often a few hundred thousand dollars), so a market order moves the price, and tokens can be delisted. Press **Ask AI** on a row for the AI committee's YES / WATCH / NO (see [AI trade desk](#67-ai-trade-desk)).
 
 ### 6.4 Early 2x movers
 
@@ -337,9 +337,9 @@ Lists the coins the screener flags as igniting or heating up.
 | 3 | **Bull** | `GEMINI_ANALYST_MODEL` · quick | Makes the strongest honest case **for** buying now: 3-5 reasons with the exact numbers, answers to every red flag (or admits it stands), the path to the target, its own weakest point, and a strength score (most setups are 3-6 out of 10). |
 | 4 | **Bear** | `GEMINI_ANALYST_MODEL` · quick | Reads the bull's case and answers each point (holds / overstated / wrong, with the number), then makes the strongest honest case **against**: fake-outs, sellers, resistance, BTC, crowded futures, thin liquidity, the base rate, news, and the most likely path to the stop. |
 | 5 | **Trader** | the model you pick · deep | Decides TAKE / WAIT / NO TRADE as the referee of the debate, following the rules below: only arguments with a number count, a bear point the bull could not answer stands, tone and self-given scores are ignored, and if the bear's path to the stop is more likely than the bull's path to the target there is no TAKE. Names the winner, answers every red flag, and adds a "news" line to its checklist. |
-| 6 | **Final boss** | `GEMINI_REVIEW_MODEL` (stronger) · deep | Asked only when the trade is a TAKE after the code checks. Runs six tests (data, red flags and the bear's unanswered points, news, chances, stop distance vs normal noise, market) and says **YES** only if all pass. "When in doubt, NO." |
+| 6 | **Final Boss** | `GEMINI_REVIEW_MODEL` (stronger) · deep | Runs on **every** analysis, whatever the trader decided, with the full report and the raw data. Audits the committee: hard stops; reward:risk recomputed with the **nearest resistance** as the realistic target; expected value with the chance of a time-out; whether the probability changes from the base rate are backed by evidence; contradictions between and within members; missing data; whether the bull argued its strongest case. Names the single deciding factor and answers **YES** (hard stops pass, realistic R:R 2:1 or better, positive EV), **WATCH** (not valid now but could be: measurable triggers and an expiry) or **NO** (structurally broken or no path to positive EV), with a corrected plan and a position size as % of normal. It can overturn the trader **either way**, and rates each member ok / weak. |
 
-Members 1 and 2 work at the same time; then the bull, the bear, the trader and the boss in turn (about 1-2 minutes in all). If a member fails, the others are told that part is unknown (never "fine"). If the final boss cannot answer, there is no TAKE.
+Members 1 and 2 work at the same time; then the bull, the bear, the trader and the boss in turn (about 1-2 minutes in all). If a member fails, the others are told that part is unknown (never "fine"). If the Final Boss cannot answer, the code's own call on the trader's plan is shown, and never a YES.
 
 **Model settings per member:** Gemini 3 models get a thinking level (quick for checking, searching and arguing; deep for deciding and approving) and keep their default temperature, as Google advises for Gemini 3. Gemini 2.5 models get a thinking budget and a low temperature; other models a low temperature. Deep members get up to 2 minutes per request.
 
@@ -348,17 +348,17 @@ Members 1 and 2 work at the same time; then the bull, the bear, the trader and t
 2. **Checklist:** trigger, buying, trend, room to resistance, liquidity, futures and whales, market breadth, past results, news.
 3. **Chances** of hitting the target and the stop, starting from the real base rates and moved by at most 15 points.
 4. **Expected value** after costs. The code recomputes it: TAKE needs +0.5% or more per trade and reward:risk of 1.5+.
-5. **Final YES / NO:** a TAKE that passes the code goes to the final boss. YES = take it as planned; NO = no trade, with the reason and what would have to change.
+5. **The Final Boss** audits it all and gives the final call. **Code still checks every YES** and turns it into WATCH unless there is no hard stop (the code's own, confirmed bad news, or one the boss listed), the coin is igniting now and has not already run, the boss's plan fits the price, the realistic reward:risk (target capped at the nearest resistance) is 2 or more, and the expected value after costs is +0.5% or more with the boss's chances held within 15 points of the base rate. YES = take it with the boss's plan and size; WATCH = wait for the triggers; NO = no trade.
 
-**WAIT triggers (watching):** a WAIT comes with one price event: a **breakout** (a 5m / 15m / 1h candle closes above a level) or a **pullback** (the price dips to a level), with a time limit of 10 minutes to 6 hours. The code watches it every minute. When it happens, the full committee checks the coin again with fresh data and Telegram gets "⏰ AI TRIGGER HIT" with the new YES / NO. The **Watching** list on the AI desk shows what is being watched, with a "Stop watching" button. One watched event per coin (the newest), up to 30 at a time; a re-check can set one more trigger, not an endless chain.
+**WATCH triggers (watching):** a WATCH comes with the Final Boss's triggers and an expiry. Its first price trigger (e.g. "15m close above 1.245" or "dips to 1.19") is watched by the code; if there is none, the trader's own price event is used: a **breakout** (a 5m / 15m / 1h candle closes above a level) or a **pullback** (the price dips to a level), within 10 minutes to 24 hours. The other conditions (buyers %, funding, news) are checked by the whole committee when it looks again. The code watches every minute. When the price trigger hits, the full committee checks the coin again with fresh data and Telegram gets "⏰ AI TRIGGER HIT" with the new YES / WATCH / NO. The **Watching** list on the AI desk shows what is being watched, with a "Stop watching" button. One watched event per coin (the newest), up to 30 at a time; a re-check can set one more trigger, not an endless chain.
 
-**AI track record:** every AI answer (your analyses, automatic alert reviews, Alpha checks, trigger re-checks) is followed like a trade with its own plan: bought at the price of the answer, closed at its stop or target (the stop counts first if a candle touches both) or at the end of its holding time, after costs. NO answers are followed too, "if bought anyway". The same coin is counted once per 30 minutes. The **AI track record** section shows:
-- **Final YES** vs **Final NO, if bought** and the **edge** between them: above 0 means the committee picks better than what it rejects.
-- **Boss blocked:** how the trades the final boss said NO to would have done (below 0 = the boss saved money).
+**AI track record:** every AI answer (your analyses, automatic alert reviews, Alpha checks, trigger re-checks) is followed like a trade with its own plan: bought at the price of the answer, closed at its stop or target (the stop counts first if a candle touches both) or at the end of its holding time, after costs. WATCH and NO answers are followed too, "if bought anyway". The same coin is counted once per 30 minutes. The **AI track record** section shows:
+- **Final YES** vs **WATCH / NO, if bought** and the **edge** between them: above 0 means the committee picks better than what it rejects.
+- **Boss stopped a TAKE:** how the trader's TAKEs that the Final Boss did not approve would have done (below 0 = the boss saved money); also the trades it turned into YES, and when it agreed with or overturned the trader.
 - Results by member: trader TAKE / WAIT / NO TRADE, bull or bear won, news risk, data quality, your analyses vs alert reviews vs trigger re-checks, spot vs Alpha.
 - **Said vs real chance** of the target (calibration), and the latest answers with their results.
 
-**It learns from its own record:** the committee sees a summary of it in every analysis (groups with 5+ resolved calls): if its YES calls have been losing, or its target chances ran above what happened, the trader and the final boss are told to be stricter; if its NO calls did better than its YES calls, to weigh the data more than vague doubts; and if a recent losing YES looks like the new setup, to name the difference or not take it. Saved in `ai_calls.json`.
+**It learns from its own record:** the committee sees a summary of it in every analysis (groups with 5+ resolved calls): if its YES calls have been losing, or its target chances ran above what happened, the trader and the final boss are told to be stricter; if its WATCH / NO calls did better than its YES calls, to weigh the data more than vague doubts; and if a recent losing YES looks like the new setup, to name the difference or not take it. Saved in `ai_calls.json`.
 
 Long only, no leverage, risk at most 1% of your account per trade.
 
@@ -514,11 +514,11 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | — | See [Set up Telegram](#3-set-up-telegram-alerts) |
 | `GEMINI_API_KEY` | — | See [Set up the AI](#4-set-up-the-ai-gemini) |
 | `GEMINI_ANALYST_MODEL` | `gemini-3.5-flash` | Model for analyses: the AI desk's data analyst, news researcher and (by default) the trader |
-| `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the final boss (AI desk) and the risk review (Market Flow brief) |
+| `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the Final Boss (AI desk, every analysis) and the risk review (Market Flow brief) |
 | `AI_NEWS` | on | `0` = no web news search by the AI committee |
 | `AI_DEBATE` | on | `0` = no bull vs bear debate (2 requests fewer per analysis) |
 | `AI_DAILY_REQUESTS` | `400` | Gemini requests per day (UTC) for automatic reviews and trigger re-checks; `0` = no limit |
-| `AI_DEEP_THINKING` | on | `0` = the trader and the final boss think quickly too (faster, cheaper) |
+| `AI_DEEP_THINKING` | on | `0` = the trader and the Final Boss think quickly too (faster, cheaper) |
 | `AI_AUTO_REVIEW` | on | `0` = no automatic verdict on new alerts |
 | `AI_REVIEWS_PER_HOUR` | `12` | Cost cap for automatic verdicts |
 | `AI_REVIEW_TELEGRAM` | on | `0` = AI verdicts off on Telegram by default |
@@ -723,7 +723,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, when the final boss can say no, news hard stops), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 

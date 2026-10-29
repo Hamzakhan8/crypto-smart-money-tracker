@@ -20,8 +20,8 @@
 // and the market backdrop, and a reference plan from the screener's own +target / -stop rule.
 //
 // Single coin: POST /api/ai/analyze runs the AI committee (ai-committee.js): a data analyst and a news researcher (web
-// search) report first, a bull and a bear argue the trade, a trader decides, and for a TAKE that passes the code checks
-// a final boss says YES or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
+// search) report first, a bull and a bear argue the trade, a trader decides, the code checks the trader's numbers, and
+// the Final Boss audits all of it on every analysis and gives the final call: YES, WATCH or NO. All ignition coins: POST /api/ai/analyze-all (one batched triage call). Facts only, no AI:
 // GET /api/ai/dossier?symbol=. Track record, watched WAIT triggers and today's Gemini use: GET /api/ai/record
 // (ai-tracker.js). Research tool, not financial advice.
 
@@ -33,8 +33,8 @@ import { tokenWhaleSummary } from "./whales.js";
 import { tokenFlowSummary } from "./flows.js";
 import { analyzeDepth, generate, jsonFrom, MODELS, MODEL_PATTERN, readJsonBody, AgentError } from "./agent.js";
 import { sendTelegram, telegramWants } from "./telegram.js";
-import { dataReview, newsResearch, debate, traderDecision, finalBoss, committeeChecks, bossCall, roleConfig, usage } from "./ai-committee.js";
-import { createAiTracker, cleanTrigger, TF } from "./ai-tracker.js";
+import { dataReview, newsResearch, debate, traderDecision, finalBoss, committeeChecks, roleConfig, usage } from "./ai-committee.js";
+import { createAiTracker, cleanTrigger, triggerFromWatch, TF } from "./ai-tracker.js";
 
 const env = process.env;
 const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, "");
@@ -320,7 +320,8 @@ Work through these steps in order and show them in your answer:
    target and stop. The code recomputes it.
 5. DECIDE.
    TAKE only if there is no hard stop, the expected value is at least +0.5% per trade, reward:risk is at least 1.5 and
-   the price is inside the entry zone now.
+   the price is inside the entry zone now. The Final Boss then wants reward:risk of 2 or more with the target capped at
+   the nearest resistance (levels.resistance), so plan the target and stop with that in mind.
    WAIT when the setup is close and one specific thing is missing: waitFor must name a price level, a condition and a
    time limit, e.g. "a 5m close above 0.0512 with buyers 55%+ within 30 minutes; otherwise no trade". Put the same
    price event in trigger (breakout = a candle closes above the price; pullback = the price trades down to it; the
@@ -400,14 +401,14 @@ const TRIAGE_SCHEMA = {
 const lower = (c) => LEVELS[Math.max(0, LEVELS.indexOf(c) - 1)];
 const cap = (c, max) => LEVELS[Math.min(Math.max(0, LEVELS.indexOf(c)), LEVELS.indexOf(max))];
 
+const isIgniting = (d) => d.screener?.state === "ignited" || (d.alert?.tier === "bigmove" && d.screener?.bigmove === "ignited");
 export function applyGuards(d, out) {
   const notes = [];
   let decision = ["TAKE", "WAIT", "SKIP"].includes(out.decision) ? out.decision : "SKIP";
   let confidence = LEVELS.includes(out.confidence) ? out.confidence : "low";
   const sc = d.screener;
   if (sc?.moved) { if (decision !== "SKIP") notes.push(`Already moved (${(sc.movedWhy || []).join(", ")}): the screener never chases.`); decision = "SKIP"; }
-  const igniting = sc?.state === "ignited" || (d.alert?.tier === "bigmove" && sc?.bigmove === "ignited");
-  if (decision === "TAKE" && !igniting) { decision = "WAIT"; notes.push("Not igniting right now (screener: " + (sc ? sc.state : "no signal") + "), so TAKE becomes WAIT."); }
+  if (decision === "TAKE" && !isIgniting(d)) { decision = "WAIT"; notes.push("Not igniting right now (screener: " + (sc ? sc.state : "no signal") + "), so TAKE becomes WAIT."); }
   if (sc?.tier !== "confirmed") confidence = cap(confidence, "medium");
   if (d.dataQuality.demo) { confidence = "low"; notes.push("Screener signal is simulated (demo mode)."); }
   if (d.market.marketWideSurge || (d.market.btc4hPct != null && d.market.btc4hPct < -1)) confidence = lower(confidence);
@@ -447,11 +448,11 @@ export function decide(d, out, plan, minEv = MIN_EV_PCT) {
 }
 
 // Long plan sanity: numbers in order and within believable distances; otherwise the reference plan is used.
-export function checkPlan(d, plan) {
+export function checkPlan(d, plan, { maxEntryPct = 3 } = {}) {
   const p = plan || {}, price = d.price;
   const ok = [p.entryLow, p.entryHigh, p.stop, p.target1].every((x) => Number.isFinite(x) && x > 0)
     && p.entryLow <= p.entryHigh && p.stop < p.entryLow && p.target1 > p.entryHigh
-    && Math.abs(pct(p.entryHigh, price)) <= 3 && pct(p.stop, p.entryHigh) >= -12 && pct(p.stop, p.entryHigh) <= -0.3 && pct(p.target1, p.entryHigh) <= 40;
+    && Math.abs(pct(p.entryHigh, price)) <= maxEntryPct && pct(p.stop, p.entryHigh) >= -12 && pct(p.stop, p.entryHigh) <= -0.3 && pct(p.target1, p.entryHigh) <= 40;
   const ref = d.referencePlan;
   const use = ok ? p : { entryLow: ref.entryZone[0], entryHigh: ref.entryZone[1], stop: ref.stops.screenerRule, target1: ref.targets.screenerRule,
     target2: ref.targets.nearResistance, holdHours: (d.alert?.trackedAs || ruleFor(null)).holdHours };
@@ -462,6 +463,61 @@ export function checkPlan(d, plan) {
       stopPct: r(pct(use.stop, mid)), target1Pct: r(pct(use.target1, mid)), rewardRisk: r((use.target1 - mid) / (mid - use.stop)) },
     replaced: !ok,
   };
+}
+
+// Reward:risk and the target % with the target capped at the nearest resistance above the entry (the Final Boss's rule).
+export function realisticPlan(d, plan) {
+  const mid = (plan.entryLow + plan.entryHigh) / 2, res = Number(d.levels?.resistance);
+  const target = res > mid && res < plan.target1 ? res : plan.target1;
+  return { target: sig(target), targetPct: r(pct(target, mid)), rewardRisk: mid > plan.stop ? r((target - mid) / (mid - plan.stop)) : null, cappedAtResistance: target !== plan.target1 };
+}
+
+// The final call after the Final Boss: YES = TAKE, WATCH = WAIT (with its triggers), NO = no trade. The code keeps the
+// last word on safety: a YES needs no hard stop (the code's, confirmed news, or the boss's own), a coin that has not run
+// and is igniting now, a plan that fits the price, realistic reward:risk of 2+ and expected value of +AI_MIN_EV_PCT after
+// costs with the boss's chances (held within 15 points of the base rate); otherwise it becomes WATCH. If the boss cannot
+// answer: the code's own call on the trader's plan, and never a YES.
+const VERDICT_DECISION = { YES: "TAKE", WATCH: "WAIT", NO: "SKIP" };
+export function finalVerdict(d, { boss, code, traderPlan, traderTrigger = null, dataPoor = false, minEv = MIN_EV_PCT }) {
+  const notes = [];
+  if (!boss?.available) {
+    const decision = code.decision === "TAKE" ? "WAIT" : code.decision;
+    notes.push(`The final boss could not answer (${boss?.reason || "unavailable"}), so this is the code's own call on the trader's plan${code.decision === "TAKE" ? ", never a YES without the boss: run it again in a minute" : ""}.`);
+    return { decision, final: decision === "WAIT" ? "WATCH" : "NO", plan: traderPlan, probTargetPct: code.probTargetPct, probStopPct: code.probStopPct,
+      expectedValuePct: code.expectedValuePct, realistic: realisticPlan(d, traderPlan), trigger: decision === "WAIT" ? traderTrigger : null, notes };
+  }
+  let verdict = boss.verdict, plan = traderPlan, planOk = true;
+  if (verdict !== "NO") {
+    const bp = boss.plan || {};
+    const pc = bp.entryZone && bp.stop && bp.targets?.length ? checkPlan(d, { entryLow: bp.entryZone[0], entryHigh: bp.entryZone[1], stop: bp.stop, target1: bp.targets[0],
+      target2: bp.targets[1] ?? null, holdHours: bp.maxHoldHours || traderPlan.holdHours }, { maxEntryPct: verdict === "WATCH" ? 10 : 3 }) : null;
+    if (pc && !pc.replaced) plan = pc.plan;
+    else { planOk = false; notes.push(`The final boss's plan ${pc ? "did not fit the price levels" : "was incomplete"}, so the trader's plan is shown.`); }
+  }
+  const a = d.alert, c = boss.corrected || {};
+  const held = (v, anchor, fallback) => clamp(Number.isFinite(v) ? v : fallback, Math.max(0, anchor - 15), Math.min(100, anchor + 15));
+  const pT = held(c.pTargetPct, a.anchorProbTargetPct, code.probTargetPct);
+  const pS = Math.min(held(c.pStopPct, a.anchorProbStopPct, code.probStopPct), 100 - pT);
+  if ((Number.isFinite(c.pTargetPct) && pT !== c.pTargetPct) || (Number.isFinite(c.pStopPct) && pS !== c.pStopPct))
+    notes.push(`The boss's chances were held within 15 points of this alert's base rate (${a.anchorProbTargetPct}% target / ${a.anchorProbStopPct}% stop).`);
+  const real = realisticPlan(d, plan), ev = r((pT / 100) * real.targetPct - (pS / 100) * Math.abs(plan.stopPct) - a.costPct, 2);
+  if (Number.isFinite(c.expectedValuePct) && Math.abs(c.expectedValuePct - ev) > 0.5)
+    notes.push(`The boss's expected value (${c.expectedValuePct}%) differs from the code's ${ev}% (timeouts counted as flat, target capped at resistance, costs subtracted).`);
+  if (verdict === "YES") {
+    const why = [];
+    if (code.hardStops.length) why.push(`hard stop (${code.hardStops.join("; ")})`);
+    if (boss.hardStopFailures?.length) why.push("the boss itself listed a hard-stop failure");
+    if (code.moved) why.push("the coin already ran");
+    else if (!code.igniting) why.push("the coin is not igniting right now");
+    if (!planOk) why.push("no usable plan from the boss");
+    if (!(real.rewardRisk >= 2)) why.push(`realistic reward:risk ${real.rewardRisk} is under 2`);
+    if (!(ev >= minEv)) why.push(`expected value ${ev}% is under +${minEv}%`);
+    if (dataPoor) why.push("the data was rated poor");
+    if (why.length) { verdict = "WATCH"; notes.push(`The final boss said YES, but the code made it WATCH: ${why.join("; ")}.`); }
+  }
+  const decision = VERDICT_DECISION[verdict];
+  return { decision, final: verdict, plan, probTargetPct: pT, probStopPct: pS, expectedValuePct: ev, realistic: real,
+    trigger: decision === "WAIT" ? triggerFromWatch(boss.watchTriggers, boss.watchExpiresHours, d.price) || traderTrigger : null, notes };
 }
 
 // ───────────────────────────── analysis ─────────────────────────────
@@ -475,12 +531,12 @@ const pickModel = (v, fallback) => {
 
 // The AI committee (ai-committee.js) around the code's guards: the data analyst and the news researcher work at the same
 // time, the bull and the bear argue with their reports, the trader decides as referee, the code checks the trader's
-// numbers (guards, plan, expected value, hard stops), and only a TAKE that survives goes to the final boss for YES or NO.
-// 3 Gemini requests without the debate, 5 with it, one more for a TAKE.
+// numbers (guards, plan, expected value, hard stops), and the Final Boss audits all of it and gives the final call
+// (finalVerdict). 4 Gemini requests without the debate, 6 with it.
 const newsOn = (opts) => opts.news !== false && env.AI_NEWS !== "0";
 const debateOn = (opts) => opts.debate !== false && env.AI_DEBATE !== "0";
 const flags = (opts) => (newsOn(opts) ? "n" : "-") + (debateOn(opts) ? "d" : "-");
-export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, extraStops = () => [], opts }) {
+export async function runCommittee(ai, d, { desk, rules, identity, extraStops = () => [], opts }) {
   const hold = d.alert?.trackedAs?.holdHours || 24;
   const [data, news] = await Promise.all([
     dataReview(ai, { desk, dossier: d, model: MODELS.analyst }),
@@ -497,24 +553,28 @@ export async function runCommittee(ai, d, { desk, rules, identity, keyFacts, ext
   if (extra.length && dz.decision !== "SKIP") { g.notes.push(`Hard stop: ${extra.join("; ")}. No trade.`); dz.decision = "SKIP"; }
   const pre = committeeChecks(dz.decision, { news, data });
   g.notes.push(...pre.notes);
+  const hard = [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : [])])];
   const checklist = Array.isArray(out.checklist) ? out.checklist.slice(0, 14) : [];
-  const boss = pre.decision !== "TAKE" ? { asked: false, verdict: null, reason: `Not asked: the call was ${LABEL[pre.decision]} before the final check.` }
-    : { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, keyFacts: keyFacts(d),
-      trade: { symbol: d.symbol, price: d.price, alert: { tier: d.alert.tier, label: d.alert.label, trackedAs: d.alert.trackedAs, anchorProbTargetPct: d.alert.anchorProbTargetPct,
-        anchorProbStopPct: d.alert.anchorProbStopPct, costPct: d.alert.costPct }, plan: pc.plan, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
-        expectedValuePct: dz.expectedValuePct, confidence: g.confidence, codeNotes: g.notes },
-      reasoning: { checklist, probReason: out.probReason, thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk,
-        invalidation: out.invalidation, hardStopsNamed: out.hardStops } }) };
-  const fin = bossCall(pre.decision, boss);
+  // The Final Boss audits everything, whatever the trader decided.
+  const code = { decision: pre.decision, hardStops: hard, expectedValuePct: dz.expectedValuePct, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct,
+    rewardRisk: pc.plan.rewardRisk, realisticRewardRisk: realisticPlan(d, pc.plan), costPct: d.alert.costPct, moved: !!d.screener?.moved, igniting: isIgniting(d),
+    traderPlanReplaced: pc.replaced, notes: [...g.notes] };
+  const boss = { asked: true, ...await finalBoss(ai, { desk, model: opts.reviewModel || MODELS.reviewer, data, news, debate: dbt, dossier: d, code,
+    trader: { decision: out.decision, confidence: out.confidence, setupScore: out.setupScore, probTargetPct: out.probTargetPct, probStopPct: out.probStopPct,
+      probReason: out.probReason, plan: pc.plan, waitFor: out.waitFor, trigger: out.trigger || null, hardStopsNamed: out.hardStops, checklist, headline: out.headline,
+      thesis: out.thesis, bullishPoints: out.bullishPoints, bearishPoints: out.bearishPoints, keyRisk: out.keyRisk, invalidation: out.invalidation, debateWinner: dbt.verdict || null } }) };
+  const fin = finalVerdict(d, { boss, code, traderPlan: pc.plan, traderTrigger: cleanTrigger(out.trigger, d.price), dataPoor: !!data.available && data.dataQuality?.rating === "poor" });
   g.notes.push(...fin.notes);
-  if (fin.decision !== "TAKE" && g.decision === "TAKE") g.confidence = lower(g.confidence);
+  const confidence = boss.available ? LEVELS[Math.min(LEVELS.indexOf(g.confidence), Math.max(0, LEVELS.indexOf(boss.confidence)))] : lower(g.confidence);
+  const watch = fin.final === "WATCH" && boss.available && boss.watchTriggers?.length ? { triggers: boss.watchTriggers, expiresHours: boss.watchExpiresHours } : null;
   return {
-    decision: fin.decision, final: fin.final, modelDecision: out.decision, confidence: g.confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
-    tier: d.alert.tier, probTargetPct: dz.probTargetPct, probStopPct: dz.probStopPct, expectedValuePct: dz.expectedValuePct, probReason: out.probReason,
-    hardStops: [...new Set([...(dz.hardStops || []), ...extra, ...(news.hardStop ? [`news: ${news.hardStopReason}`] : []), ...(out.hardStops || [])])], checklist,
+    decision: fin.decision, final: fin.final, modelDecision: out.decision, confidence, setupScore: clamp(Math.round(out.setupScore || 0), 0, 10),
+    tier: d.alert.tier, probTargetPct: fin.probTargetPct, probStopPct: fin.probStopPct, expectedValuePct: fin.expectedValuePct, realistic: fin.realistic, probReason: out.probReason,
+    hardStops: [...new Set([...hard, ...(boss.hardStopFailures || []), ...(out.hardStops || [])])], checklist,
     headline: out.headline, thesis: out.thesis, bullishPoints: out.bullishPoints || [], bearishPoints: out.bearishPoints || [],
-    plan: pc.plan, waitFor: out.waitFor, trigger: fin.decision === "WAIT" ? cleanTrigger(out.trigger, d.price) : null,
-    invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
+    plan: fin.plan, sizePct: boss.available && fin.final !== "NO" ? boss.plan?.sizePct ?? null : null,
+    waitFor: watch ? `${watch.triggers.map((t) => `${t.condition} (${t.field} ${t.threshold})`).join("; ")}${watch.expiresHours ? `; within ${watch.expiresHours} hours` : ""}` : out.waitFor,
+    watch, trigger: fin.trigger, invalidation: out.invalidation, keyRisk: out.keyRisk, guardNotes: g.notes,
     committee: { data, news, debate: dbt, trader: { decision: out.decision, model: opts.model, ms: tr.ms, tokens: tr.tokens }, boss },
   };
 }
@@ -533,9 +593,7 @@ async function analyzeOne(ai, symbol, opts) {
   const t0 = Date.now();
   const d = await buildDossier(symbol, opts.tier || null);
   const base = symbol.replace(/USDT$/, ""), info = assetInfo(base);
-  const c = await runCommittee(ai, d, { desk: "spot", rules: RULES, identity: { symbol: base, name: info?.name || null }, opts,
-    keyFacts: (x) => ({ ...compact(x), atrPct: x.chart.atrPct, levels: x.levels, market: x.market, matchingGroups: x.livePerformance?.matchingGroups,
-      aiCommittee: x.livePerformance?.aiCommittee }) });
+  const c = await runCommittee(ai, d, { desk: "spot", rules: RULES, identity: { symbol: base, name: info?.name || null }, opts });
   return { symbol, ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
 }
 
@@ -659,11 +717,13 @@ export const aiTracker = tracker;
 const telegram = (text, opts = { kind: "ai", force: true }) => sendTelegram(text, opts);
 export const LABEL = { TAKE: "TAKE", WAIT: "WAIT", SKIP: "NO TRADE" };
 const ICON = { TAKE: "🟢", WAIT: "🟡", SKIP: "🔴" };
-export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
+const FINAL_LABEL = { YES: "YES", WATCH: "WATCH", NO: "NO TRADE" };
+export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${x.final ? FINAL_LABEL[x.final] || x.final : LABEL[x.decision] || x.decision}: ${x.symbol.replace(/USDT$/, "")}${intro ? " " + intro : ""}`,
   x.headline, x.committee ? tgCommittee(x) : null,
   `Chance: ${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct >= 0 ? "+" : ""}${x.expectedValuePct}% per trade · ${x.confidence} confidence · setup ${x.setupScore}/10`,
-  x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.plan.rewardRisk} | hold ${x.plan.holdHours}h` : null,
-  x.decision === "WAIT" && x.waitFor ? `Trigger: ${x.waitFor}` : null,
+  x.decision === "TAKE" ? `Entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} (${x.plan.stopPct}%) | target ${x.plan.target1} (+${x.plan.target1Pct}%) | R:R ${x.realistic?.rewardRisk ?? x.plan.rewardRisk} | hold ${x.plan.holdHours}h${x.sizePct != null ? ` | size ${x.sizePct}% of normal` : ""}` : null,
+  x.decision === "WAIT" && x.waitFor ? `${x.watch ? "Watch for" : "Trigger"}: ${x.waitFor}` : null,
+  x.decision === "WAIT" && x.watch ? `Plan if it triggers: entry ${x.plan.entryLow}-${x.plan.entryHigh} | stop ${x.plan.stop} | target ${x.plan.target1}${x.sizePct != null ? ` | size ${x.sizePct}% of normal` : ""}` : null,
   x.decision === "WAIT" && x.trigger ? `Watching: ${x.trigger.event === "breakout" ? `a ${x.trigger.timeframe} close above ${x.trigger.price}` : `a dip to ${x.trigger.price}`} for ${x.trigger.expiresMinutes} min; the AI checks again if it happens.` : null,
   x.hardStops?.length ? `Hard stop: ${x.hardStops.join("; ")}` : null, `Key risk: ${x.keyRisk}`,
   x.committee?.news?.available && x.committee.news.items?.length ? `News: ${x.committee.news.summary}` : null,
@@ -672,12 +732,14 @@ export const tgSingle = (x, intro = "") => [`${ICON[x.decision] || ""} ${LABEL[x
 // "bull 7 vs bear 5, bear won" (the strengths are the sides' own scores; the winner is the trader's call).
 const debateLine = (dbt) => (!dbt || dbt.off ? null
   : `bull ${dbt.bull?.available ? dbt.bull.strength : "n/a"} vs bear ${dbt.bear?.available ? dbt.bear.strength : "n/a"}${dbt.verdict ? `, ${dbt.verdict.winner === "even" ? "even" : dbt.verdict.winner + " won"}` : ""}`);
-// One line on how each member voted: data quality, news risk, the debate, the trader's call, the final boss.
+// One line on how each member voted (data quality, news risk, the debate, the trader, the Final Boss), then the boss's
+// summary and the factor that decided it.
+const bossVote = (b) => (!b?.asked ? "not asked" : !b.available ? "no answer" : `${b.verdict}${b.agreesWithTrader ? "" : " (overturned the trader)"}`);
 const tgCommittee = (x) => {
   const { data, news, debate: dbt, trader, boss } = x.committee;
-  return [`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
-    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`,
-    `boss ${boss?.asked ? (boss.verdict || "no answer") : "not needed"}`].filter(Boolean).join(" · ") + (boss?.asked && boss.verdict === "NO" ? `\nBoss: ${boss.reason}` : "");
+  return [[`Final: ${x.final || (x.decision === "TAKE" ? "YES" : "NO")}`, `data ${data?.available ? data.dataQuality?.rating : "n/a"}`,
+    `news ${news?.available ? `${news.riskLevel} risk` : news?.off ? "off" : "n/a"}`, debateLine(dbt), `trader ${LABEL[trader?.decision] || "?"}`, `boss ${bossVote(boss)}`].filter(Boolean).join(" · "),
+    boss?.available && boss.summary ? `Boss: ${boss.summary}` : null, boss?.available && boss.decidingFactor ? `Deciding factor: ${boss.decidingFactor}` : null].filter(Boolean).join("\n");
 };
 
 // What is saved with an alert after its automatic review: the call, the numbers and how each committee member voted.
@@ -687,7 +749,8 @@ const reviewSummary = (out, tg) => {
     probTargetPct: out.probTargetPct, probStopPct: out.probStopPct, expectedValuePct: out.expectedValuePct, model: out.meta.model, at: Date.now(),
     committee: { data: c.data?.available ? c.data.dataQuality?.rating : null, news: c.news?.available ? c.news.riskLevel : null, newsHardStop: !!c.news?.hardStop,
       debate: debateLine(c.debate), debateWinner: c.debate?.verdict?.winner || null,
-      trader: c.trader?.decision || null, boss: c.boss?.asked ? c.boss.verdict : null, bossReason: c.boss?.asked ? c.boss.reason : null },
+      trader: c.trader?.decision || null, boss: c.boss?.available ? c.boss.verdict : null, bossAgrees: c.boss?.available ? c.boss.agreesWithTrader : null,
+      bossSummary: c.boss?.available ? c.boss.summary : c.boss?.reason || null }, sizePct: out.sizePct ?? null,
     telegram: tg ? (tg.sent ? "sent" : tg.error || tg.skipped) : null };
 };
 
@@ -731,7 +794,7 @@ Work through these steps in order and show them in your answer:
    at most 15 points each way, and say which items moved them.
 4. EXPECTED VALUE per trade = probTargetPct/100 x target% - probStopPct/100 x stop% - alert.costPct. The code recomputes it.
 5. DECIDE. TAKE only with no hard stop, expected value of at least +0.5% per trade, reward:risk 1.5+ and price inside the
-   entry zone now. WAIT must name a price level, a condition and a time limit, with the same price event in trigger
+   entry zone now (the Final Boss wants 2+ with the target capped at levels.resistance). WAIT must name a price level, a condition and a time limit, with the same price event in trigger
    (breakout or pullback, timeframe, minutes): the code watches it and asks the committee again. SKIP for everything else.
 6. PLAN. Entry, stop and targets from dossier.price, dossier.levels or dossier.referencePlan, sized for alert.trackedAs.
    Keep the position small next to the pool (alpha.liquidityNote) and risk at most 1% of the account.
@@ -810,7 +873,7 @@ async function analyzeAlpha(ai, key, opts) {
   const t0 = Date.now();
   const d = await buildAlphaDossier(key, opts.alert || null), t = d.alpha.token;
   const c = await runCommittee(ai, d, { desk: "alpha", rules: ALPHA_RULES, identity: { symbol: d.symbol, name: t.name, chain: t.chain, contract: t.contract }, opts,
-    extraStops: alphaHardStops, keyFacts: (x) => ({ price: x.price, screener: x.screener, alpha: x.alpha, chart: x.chart, levels: x.levels, market: x.market, livePerformance: x.livePerformance }) });
+    extraStops: alphaHardStops });
   return { symbol: d.symbol, alphaId: t.alphaId, kind: "alpha", ...c, dossier: d, meta: committeeMeta(opts, c, t0) };
 }
 // Automatic review of a new Alpha alert (server.js), saved with the alert. Telegram follow-up only when Alpha alerts

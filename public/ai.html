@@ -73,7 +73,7 @@ details.notice div{margin-top:8px}
 </div></div>
 <main class="wrap">
 <header>
- <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, Market Flow taker data, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, smart-money wallets, BTC) and hands it to an AI committee: a <b>data analyst</b> checks the numbers, a <b>news researcher</b> searches the web, a <b>bull</b> and a <b>bear</b> argue for and against, a <b>trader</b> decides, and for a TAKE the <b>final boss</b> answers <b>YES or NO</b>. Code checks every plan and overrides calls that break the rules.</p></div>
+ <div><div class="eyebrow">Gemini · screener signals · live market data</div><h1>AI Trade Desk</h1><p class="lede">Pick a coin the ignition screener flagged. The desk gathers everything that matters about it (the signal, Market Flow taker data, 15m / 1h / 4h chart, support and resistance, order book, futures positioning, whale and DEX flows, smart-money wallets, BTC) and hands it to an AI committee: a <b>data analyst</b> checks the numbers, a <b>news researcher</b> searches the web, a <b>bull</b> and a <b>bear</b> argue for and against, a <b>trader</b> decides, and the <b>Final Boss</b> audits all of it and answers <b>YES, WATCH or NO</b>. Code checks every plan and overrides calls that break the rules.</p></div>
 </header>
 <nav class="sectags" id="secTags" aria-label="Sections of this page"></nav>
 <div class="notice" id="keyNotice" style="display:none"><b>Gemini is not set up.</b> Add <span class="mono">GEMINI_API_KEY=your_key</span> to the <span class="mono">.env</span> file in the project folder and restart <span class="mono">node server.js</span>. You can still open any coin's data with "Data only".</div>
@@ -95,14 +95,14 @@ details.notice div{margin-top:8px}
  </section>
  <section class="panel" id="resultPanel" data-sec="analysis">
   <div class="section-head"><div><h2 id="resTitle">Analysis</h2><p id="resSub">Choose a coin on the left, or analyze all of them at once.</p></div></div>
-  <div class="result" id="result"><div class="empty">No analysis yet.<br>Each analysis is an AI committee: 5 Gemini requests with the debate (3 without), one more when the trader says TAKE (the final boss). Results are kept for 3 minutes.</div></div>
+  <div class="result" id="result"><div class="empty">No analysis yet.<br>Each analysis is an AI committee: 6 Gemini requests with the debate (4 without), the last one the Final Boss's audit. Results are kept for 3 minutes.</div></div>
  </section>
 </div>
 <section class="panel" data-sec="record" id="recordPanel" style="margin-top:14px">
  <div class="section-head"><div><h2>AI track record</h2><p>Every AI answer is followed like a trade with its own plan: bought at the price of the answer, closed at its stop, its target or the end of its holding time, after costs. NO answers are followed too ("if bought anyway"), so you can see whose no was right. The committee sees this record in its prompts.</p></div><span class="chip" id="usageChip">AI today: …</span></div>
  <div class="result" id="record"><div class="empty">Loading…</div></div>
 </section>
-<div class="foot" data-sec="">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Then the AI members work in turn: the data analyst reports data quality, evidence and red flags; the news researcher searches the web for delistings, hacks, unlocks and listings (with sources); the bull makes the case for the trade and the bear attacks it; the trader decides as the referee, with deep thinking, under rules that include how often this kind of signal won in the past; and a TAKE goes to the final boss (a stronger model), who says YES only if every test passes. Before the boss, code enforces: TAKE only for coins that are igniting now, with expected value of +0.5% or more per trade and reward:risk of at least 1.5, never for coins that already ran or with a hard stop (also a confirmed bad news item); plans must fit the levels; confidence is capped for early signals, demo data and weak markets. If the boss cannot answer, there is no TAKE. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
+<div class="foot" data-sec="">How it decides: code first builds a dossier from live data and computes every number (trend, ATR, support and resistance, reward:risk, order-book depth, futures crowding, exchange flows). Then the AI members work in turn: the data analyst reports data quality, evidence and red flags; the news researcher searches the web for delistings, hacks, unlocks and listings (with sources); the bull makes the case for the trade and the bear attacks it; the trader decides as the referee, with deep thinking, under rules that include how often this kind of signal won in the past; and the Final Boss (a stronger model) audits the whole committee on every analysis: hard stops, reward:risk to the nearest resistance, expected value with time-outs, probability adjustments, contradictions and missing data. It answers YES, WATCH (with measurable triggers and an expiry) or NO, with a corrected plan and a position size, and can overturn the trader either way. Code still checks every YES and turns it into WATCH unless: no hard stop (the code's own, a confirmed bad news item, or one the boss listed), the coin is igniting now and has not already run, the plan fits the price, realistic reward:risk (target capped at the nearest resistance) is 2 or more, and expected value after costs is +0.5% or more per trade with the boss's chances held within 15 points of the base rate. Confidence is capped for early signals, demo data and weak markets. If the boss cannot answer, there is no YES. Long only, no leverage, risk at most 1% of your account per trade. This is an AI opinion on data, not financial advice.</div>
 </main>
 <script>
 (()=>{
@@ -171,7 +171,7 @@ details.notice div{margin-top:8px}
  function done(){busy=false;drawCandidates();}
 
  async function analyze(symbol){
-  selected=symbol;loading(symbol,"The committee is working: the data analyst"+($("#news").checked?" and the news researcher":"")+" first,"+($("#debate").checked?" then the bull vs bear debate,":"")+" then the trader, then the final boss if it is a TAKE (about 1-2 minutes)…");
+  selected=symbol;loading(symbol,"The committee is working: the data analyst"+($("#news").checked?" and the news researcher":"")+" first,"+($("#debate").checked?" then the bull vs bear debate,":"")+" then the trader, then the Final Boss's audit (about 1-2 minutes)…");
   try{drawResult(await post("/api/ai/analyze",{symbol,...opts()}));}
   catch(e){$("#result").innerHTML=`<div class="callout red">${esc(e.message)}</div>`;}
   finally{done();loadCandidates();loadRecord();}
@@ -217,7 +217,8 @@ details.notice div{margin-top:8px}
  function drawResult(x){
   const p=x.plan||{},take=x.decision==="TAKE";
   $("#resTitle").textContent=x.symbol;$("#resSub").textContent=x.meta&&x.meta.cached?"Saved result from "+ago(x.meta.at)+" (re-run with Analyze after 3 minutes)":"Fresh analysis";
-  const changed=x.modelDecision&&x.modelDecision!==x.decision?`<span class="sub">The trader said ${esc(LBL[x.modelDecision]||x.modelDecision)}; ${x.committee&&x.committee.boss&&x.committee.boss.verdict==="NO"?"the final boss said NO":"the rules changed it"} (see below)</span>`:"";
+  const bo=(x.committee&&x.committee.boss)||{};
+  const changed=x.modelDecision&&x.modelDecision!==x.decision?`<span class="sub">The trader said ${esc(LBL[x.modelDecision]||x.modelDecision)}; ${bo.available&&!bo.agreesWithTrader?"the Final Boss overturned it":"the rules changed it"} (see below)</span>`:"";
   const fin=x.final||(take?"YES":"NO");
   const al=(x.dossier&&x.dossier.alert)||{};
   const how=(x.hardStops||[]).length||(x.checklist||[]).length?`<div class="sec">How the AI decided</div>
@@ -228,10 +229,11 @@ details.notice div{margin-top:8px}
    ${committeeHtml(x)}
    <div class="thesis">${esc(x.thesis)}</div>
    ${(x.guardNotes||[]).length?`<div class="callout">${x.guardNotes.map(esc).join("<br>")}</div>`:""}
-   ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>Wait for:</b> ${esc(x.waitFor)}${x.trigger?`<br><b>Watching:</b> ${evLabel(x.trigger)} for ${x.trigger.expiresMinutes} min. When it happens, the committee checks the coin again and Telegram gets the answer (see "Watching" below).`:""}</div>`:""}
-   <div class="sec">${take?"Trade plan":"Plan if it triggers (not a signal now)"}</div>
+   ${x.decision==="WAIT"&&x.waitFor?`<div class="callout blue"><b>${x.watch?"Watch for":"Wait for"}:</b> ${esc(x.waitFor)}${x.trigger?`<br><b>Watching:</b> ${evLabel(x.trigger)} for ${x.trigger.expiresMinutes} min. When it happens, the committee checks the coin again and Telegram gets the answer (see "Watching" below).`:""}</div>`:""}
+   <div class="sec">${take?"Trade plan":x.watch?"Plan if the watch triggers hit (not a signal now)":"Plan if it triggers (not a signal now)"}${x.sizePct!=null&&x.final!=="NO"?` · size ${num(x.sizePct,0)}% of normal`:""}</div>
    <div class="plan ${take?"":"dim"}">${stat("Entry zone",price(p.entryLow)+" – "+price(p.entryHigh))+stat("Stop loss",price(p.stop),pct(p.stopPct)+" from entry","red")+stat("Target 1",price(p.target1),pct(p.target1Pct),"green")+
-    stat("Target 2",price(p.target2))+stat("Reward : risk",num(p.rewardRisk)+" : 1","",p.rewardRisk>=1.5?"green":p.rewardRisk<1.2?"red":"")+stat("Hold",num(p.holdHours,0)+"h","then exit if neither hit")}</div>
+    stat("Target 2",price(p.target2))+(x.realistic?stat("Reward : risk",num(x.realistic.rewardRisk)+" : 1",x.realistic.cappedAtResistance?`target capped at resistance ${price(x.realistic.target)} (plan ${num(p.rewardRisk)})`:"to the plan's target",x.realistic.rewardRisk>=2?"green":x.realistic.rewardRisk<1.5?"red":"amber")
+    :stat("Reward : risk",num(p.rewardRisk)+" : 1","",p.rewardRisk>=1.5?"green":p.rewardRisk<1.2?"red":""))+stat("Hold",num(p.holdHours,0)+"h","then exit if neither hit")}</div>
    <div class="callout red"><b>Invalidated if:</b> ${esc(x.invalidation)}<br><b>Key risk:</b> ${esc(x.keyRisk)}</div>
    <div class="cols"><div><div class="sec green">For the trade</div><ul>${(x.bullishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div><div><div class="sec red">Against the trade</div><ul>${(x.bearishPoints||[]).map(b=>`<li>${esc(b)}</li>`).join("")||"<li class='muted'>none</li>"}</ul></div></div>
    ${how}
@@ -240,7 +242,7 @@ details.notice div{margin-top:8px}
  }
 
  // The four committee members, one card each: what they found and how they voted.
- const tone={good:"TAKE",partial:"WAIT",poor:"SKIP",none:"TAKE",low:"TAKE",medium:"WAIT",high:"SKIP",YES:"TAKE",NO:"SKIP"};
+ const tone={good:"TAKE",partial:"WAIT",poor:"SKIP",none:"TAKE",low:"TAKE",medium:"WAIT",high:"SKIP",YES:"TAKE",WATCH:"WAIT",NO:"SKIP"};
  const pill=(txt,t)=>`<span class="dec ${t||"WAIT"}">${esc(txt)}</span>`;
  const kTok=v=>v==null?"—":v>=1e6?(v/1e6).toFixed(2)+"M":v>=1000?(v/1000).toFixed(1)+"k":String(v);
  const safeUrl=u=>/^https?:\/\//i.test(String(u||""))?esc(u):"#";
@@ -270,18 +272,24 @@ details.notice div{margin-top:8px}
     ${isBull&&(sd.redFlagAnswers||[]).length?`<ul>${sd.redFlagAnswers.map(r=>`<li>${pill(r.stands?"stands":"answered",r.stands?"SKIP":"TAKE")} ${esc(r.flag)}<span class="sub">${esc(r.answer)}</span></li>`).join("")}</ul>`:""}</details>`;
   const sideBadge=(sd,isBull)=>sd&&sd.available?pill((isBull?"for ":"against ")+sd.strength+"/10",vd&&vd.winner===(isBull?"bull":"bear")?(isBull?"TAKE":"SKIP"):"WAIT"):pill(db.off?"off":"n/a");
   const traderCard=`<p>${esc(x.headline||"")}</p><p class="mono">${x.probTargetPct}% target / ${x.probStopPct}% stop · expected ${x.expectedValuePct>0?"+":""}${x.expectedValuePct}% per trade</p>${vd?`<p><b>Debate:</b> ${vd.winner==="even"?"even":esc(vd.winner)+" won"}. ${esc(vd.reason)}</p>`:""}${c.trader&&c.trader.decision!==x.decision&&c.trader.decision?`<p class="amber">Changed to ${esc(LBL[x.decision])} after the trader: see the notes below.</p>`:""}`;
-  const bossCard=!b.asked?`<p class="muted">${esc(b.reason||"Not needed: no TAKE to approve.")}</p>`
-   :b.available===false?`<p class="amber">No answer (${esc(b.reason)}), so there is no TAKE. Run it again in a minute.</p>`
-   :`<p><b>${esc(b.reason)}</b></p><p><b>Biggest risk:</b> ${esc(b.biggestRisk)}</p><p><b>${b.verdict==="YES"?"Exit early if":"Would be a YES if"}:</b> ${esc(b.mustBeTrue)}</p>
-    ${(b.checks||[]).length?`<details ${b.verdict==="NO"?"open":""}><summary>The boss's tests</summary><ul>${b.checks.map(t=>`<li>${pill(t.pass?"pass":"fail",t.pass?"TAKE":"SKIP")} <b>${esc(t.test)}</b> <span class="muted">${esc(t.note)}</span></li>`).join("")}</ul></details>`:""}`;
-  const card=(role,name,model,badge,body)=>`<div class="member"><span class="role">${role}${model?" · "+esc(model):""}</span><h4>${name}${badge}</h4>${body}</div>`;
+  const cn=b.corrected||null,sevTone={high:"SKIP",medium:"WAIT",low:"TAKE"};
+  const bossCard=!b.asked?`<p class="muted">${esc(b.reason||"Not asked.")}</p>`
+   :b.available===false?`<p class="amber">No answer (${esc(b.reason)}), so there is no YES. Run it again in a minute.</p>`
+   :`<p><b>${esc(b.summary)}</b></p><p><b>Deciding factor:</b> ${esc(b.decidingFactor)}</p>
+    <p class="muted">${esc(b.confidence)} confidence · ${b.agreesWithTrader?"agrees with the trader":"overturned the trader"}${b.plan&&b.verdict!=="NO"?` · size ${num(b.plan.sizePct,0)}% of normal`:""}</p>
+    ${(b.hardStopFailures||[]).length?`<p class="red"><b>Hard-stop failures:</b> ${b.hardStopFailures.map(esc).join("; ")}</p>`:""}
+    ${(b.watchTriggers||[]).length?`<p><b>Watch for${b.watchExpiresHours?` (next ${num(b.watchExpiresHours,0)} h)`:""}:</b></p><ul>${b.watchTriggers.map(t=>`<li>${esc(t.condition)}<span class="sub mono">${esc(t.field)} ${esc(t.threshold)}</span></li>`).join("")}</ul>`:""}
+    ${cn?`<p class="mono" style="font-size:11.5px">Corrected: ${num(cn.pTargetPct,0)}% target / ${num(cn.pStopPct,0)}% stop / ${num(cn.pTimeoutPct,0)}% time-out · realistic target ${price(cn.realisticTarget)} · R:R ${num(cn.realisticRr)} · EV ${pct(cn.expectedValuePct,2)}</p>`:""}
+    ${(b.auditFindings||[]).length?`<details ${b.auditFindings.some(f=>f.severity==="high")?"open":""}><summary>Audit: ${b.auditFindings.length} finding${b.auditFindings.length===1?"":"s"}</summary><ul>${b.auditFindings.map(f=>`<li>${pill(f.severity,sevTone[f.severity])} ${esc(f.issue)}<span class="sub mono">${esc(f.field)}</span><span class="sub">${esc(f.correction)}</span></li>`).join("")}</ul></details>`:""}`;
+  const aq=(b.available&&b.agentQuality)||{};
+  const card=(role,name,model,badge,body,q)=>`<div class="member"><span class="role">${role}${model?" · "+esc(model):""}${q==="weak"?' · <span class="amber">boss: weak</span>':q==="ok"?" · boss: ok":""}</span><h4>${name}${badge}</h4>${body}</div>`;
   const nTrader=db.off?3:5;
   return `<div class="sec">The committee</div><div class="crew">`+
-   card("1 · Data analyst","Checks the numbers",m.dataModel,d.available?pill("data "+((d.dataQuality&&d.dataQuality.rating)||"?"),tone[d.dataQuality&&d.dataQuality.rating]):pill("n/a"),dataCard)+
-   card("2 · News researcher","Searches the web",m.newsModel,n.available?pill((n.riskLevel||"none")+" risk",tone[n.riskLevel]):pill(n.off?"off":"n/a"),newsCard)+
-   (db.off?"":card("3 · Bull","The case for",m.debateModel,sideBadge(db.bull,true),sideCard(db.bull,true))+card("4 · Bear","The case against",m.debateModel,sideBadge(db.bear,false),sideCard(db.bear,false)))+
-   card(nTrader+" · Trader","Makes the call",m.model,pill(LBL[c.trader&&c.trader.decision]||"?",c.trader&&c.trader.decision),traderCard)+
-   card((nTrader+1)+" · Final boss","YES or NO",m.bossModel,b.asked&&b.verdict?pill(b.verdict,tone[b.verdict]):pill(b.asked?"no answer":"not needed","WAIT"),bossCard)+`</div>`;
+   card("1 · Data analyst","Checks the numbers",m.dataModel,d.available?pill("data "+((d.dataQuality&&d.dataQuality.rating)||"?"),tone[d.dataQuality&&d.dataQuality.rating]):pill("n/a"),dataCard,aq.dataAnalyst)+
+   card("2 · News researcher","Searches the web",m.newsModel,n.available?pill((n.riskLevel||"none")+" risk",tone[n.riskLevel]):pill(n.off?"off":"n/a"),newsCard,aq.news)+
+   (db.off?"":card("3 · Bull","The case for",m.debateModel,sideBadge(db.bull,true),sideCard(db.bull,true),aq.bull)+card("4 · Bear","The case against",m.debateModel,sideBadge(db.bear,false),sideCard(db.bear,false),aq.bear))+
+   card(nTrader+" · Trader","Makes the call",m.model,pill(LBL[c.trader&&c.trader.decision]||"?",c.trader&&c.trader.decision),traderCard,aq.trader)+
+   card((nTrader+1)+" · Final Boss","Audits it all: YES, WATCH or NO",m.bossModel,b.available&&b.verdict?pill(b.verdict,tone[b.verdict]):pill(b.asked?"no answer":"not asked","WAIT"),bossCard)+`</div>`;
  }
  function drawBatch(b){
   $("#resTitle").textContent="All ignition coins";$("#resSub").textContent=(b.meta&&b.meta.cached?"Saved result from "+ago(b.meta.at):"Fresh triage")+(b.meta&&b.meta.model?" · "+b.meta.model:"");
@@ -307,7 +315,7 @@ details.notice div{margin-top:8px}
   $("#usageChip").className="chip"+(u.limit&&u.requests>=u.limit?" red":u.limit&&u.requests>=0.8*u.limit?" amber":"");
   $("#usageChip").title=u.limit?`${u.left} requests left today (UTC). At the limit, automatic reviews and trigger re-checks pause; your own analyses still run. AI_DAILY_REQUESTS in .env.`:"No daily limit (AI_DAILY_REQUESTS=0).";
   const g=(s,k)=>(sc.groups||[]).find(x=>x.section===s&&x.key===k)||{n:0};
-  const yes=g("final","yes"),no=g("final","no"),blocked=g("boss","no");
+  const yes=g("final","yes"),no=sc.notYes||{n:0},blocked=g("boss","blocked");
   const avgTxt=x=>x.n?`<b class="${col(x.avgNetPct)}">${pct(x.avgNetPct,2)}</b>`:"—";
   const watch=`<div class="sec">Watching (WAIT triggers)</div>`+(tr.armed.length?`<div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Waiting for</th><th>Time</th><th>The AI said</th><th></th></tr></thead><tbody>${tr.armed.map(t=>`<tr>
     <td><b>${esc(t.symbol.replace(/USDT$/,""))}</b>${t.kind==="alpha"?' <span class="badge early">Alpha</span>':""}<span class="sub">at the call ${price(t.priceAtCall)}</span></td>
@@ -316,9 +324,9 @@ details.notice div{margin-top:8px}
    :`<p class="meta">Nothing to watch right now. When the AI says WAIT with a clear price event, it is watched here and the committee checks again when it happens.</p>`)+
    (tr.past.length?`<details><summary>Recent triggers (${tr.past.length})</summary><ul>${tr.past.map(t=>`<li><b>${esc(t.symbol.replace(/USDT$/,""))}</b> ${evLabel(t)}: <span class="${t.status==="hit"?"green":"muted"}">${esc(t.status)}</span>${t.hitAt?" "+esc(ago(t.hitAt)):""}${t.result?(t.result.checked?` → ${esc(LBL[t.result.decision]||t.result.decision)} (${esc(t.result.final)}): ${esc(t.result.headline||"")}`:` → no AI check (${esc(t.result.reason||t.result.error||"")})`):""}</li>`).join("")}</ul></details>`:"");
   const head=`<div class="recgrid">${stat("Final YES",yes.n?avgTxt(yes)+" per trade":"no results yet",yes.n?`${yes.n} trades · ${yes.hitTargetPct}% hit target`:"each call is followed for its holding time")+
-   stat("Final NO, if bought",no.n?avgTxt(no)+" per trade":"—",no.n?`${no.n} calls · ${no.hitTargetPct}% would have hit target`:"")+
+   stat("WATCH / NO, if bought",no.n?avgTxt(no)+" per trade":"—",no.n?`${no.n} calls · ${no.hitTargetPct}% would have hit target`:"")+
    stat("Edge: YES − NO",sc.edgePct==null?"—":`<b class="${col(sc.edgePct)}">${pct(sc.edgePct,2)}</b>`,"above 0 = the committee picks better than its rejects")+
-   stat("Boss blocked",blocked.n?avgTxt(blocked)+" per trade":"—",blocked.n?`${blocked.n} trades; below 0 = the boss saved money`:"trades the final boss said NO to")}</div>`;
+   stat("Boss stopped a TAKE",blocked.n?avgTxt(blocked)+" per trade":"—",blocked.n?`${blocked.n} trades; below 0 = the boss saved money`:"trader TAKEs the Final Boss did not approve")}</div>`;
   const groups=(sc.groups||[]).length?`<details ${sc.resolved>=10?"open":""}><summary>Results by committee member (${sc.resolved} resolved)</summary><div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Calls</th><th>Hit target</th><th>Hit stop</th><th>In profit</th><th>Avg after costs</th></tr></thead><tbody>${sc.groups.map(x=>`<tr><td>${esc(x.label)}</td><td class="mono">${x.n}</td><td class="mono">${x.hitTargetPct}%</td><td class="mono">${x.hitStopPct}%</td><td class="mono">${x.inProfitPct}%</td><td class="mono ${col(x.avgNetPct)}">${pct(x.avgNetPct,2)}</td></tr>`).join("")}</tbody></table></div>
    ${(sc.calibration||[]).length?`<p class="meta"><b>Said vs real chance of the target:</b> ${sc.calibration.map(b=>`said ${esc(b.band)} (avg ${num(b.saidPct,0)}%) → hit ${b.hitPct}% of ${b.n}`).join(" · ")}</p>`:""}</details>`:"";
   const outcome=c=>{const t=c.track||{};if(t.status==="open")return `<span class="muted">open</span><span class="sub">now ${pct((t.last/c.entry-1)*100)} · ${esc(left(c.at+c.holdHours*3600000-Date.now()))}</span>`;
@@ -326,8 +334,8 @@ details.notice div{margin-top:8px}
    return `<span class="${t.netPct>0?"green":"red"}">${t.status==="win"?"target":t.status==="loss"?"stop":"time up"} ${pct(t.netPct,2)}</span>`;};
   const calls=(rec.calls||[]).length?`<div class="sec">Latest AI answers</div><div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Answer</th><th>Members</th><th>Plan</th><th>Result (if bought)</th></tr></thead><tbody>${rec.calls.slice(0,25).map(c=>`<tr>
     <td><b>${esc(c.symbol.replace(/USDT$/,""))}</b>${c.kind==="alpha"?' <span class="badge early">Alpha</span>':""}<span class="sub">${esc(ago(c.at))} · ${esc(SRC[c.source]||c.source)}</span></td>
-    <td><span class="dec ${esc(c.decision)}">${esc(c.final)}</span><span class="sub">${esc(LBL[c.decision]||c.decision)}</span></td>
-    <td class="muted" style="font-size:11px">trader ${esc(LBL[c.trader]||c.trader||"?")}${c.boss?" · boss "+esc(c.boss):""}${c.debate&&c.debate.winner?" · "+esc(c.debate.winner)+" won":""}${c.news?" · news "+esc(c.news):""}${c.data?" · data "+esc(c.data):""}</td>
+    <td><span class="dec ${esc(c.decision)}">${esc(c.final)}</span>${c.sizePct!=null&&c.final==="YES"?`<span class="sub">size ${num(c.sizePct,0)}%</span>`:""}</td>
+    <td class="muted" style="font-size:11px">trader ${esc(LBL[c.trader]||c.trader||"?")}${c.boss?" · boss "+esc(c.boss)+(c.bossAgrees===false?" (overturned)":""):""}${c.debate&&c.debate.winner?" · "+esc(c.debate.winner)+" won":""}${c.news?" · news "+esc(c.news):""}${c.data?" · data "+esc(c.data):""}</td>
     <td class="mono">${pct(c.targetPct)} / ${pct(c.stopPct)}<span class="sub">${num(c.holdHours,0)}h · from ${price(c.entry)}</span></td><td class="mono">${outcome(c)}</td></tr>`).join("")}</tbody></table></div>`
    :`<p class="meta">No AI answers recorded yet. Each analysis from now on is followed here.</p>`;
   $("#record").innerHTML=watch+head+groups+calls;

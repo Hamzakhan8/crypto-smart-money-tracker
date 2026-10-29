@@ -1,6 +1,7 @@
 // The AI committee (ai-committee.js + ai-trade.js runCommittee) with a fake Gemini client: each member gets its own
 // prompt and thinking depth, news sources come from Google's grounding data, the bear answers the bull, the trader
-// judges the debate, the code checks the trader, and only the final boss's YES makes a TAKE. No network, no API key.
+// judges the debate, the code checks the trader, and the Final Boss audits every analysis and gives the final YES / WATCH /
+// NO, which the code still checks. No network, no API key.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -8,9 +9,9 @@ process.env.SCREENER_LIBRARY_ONLY = "1"; // load the screener's logic without st
 const cm = await import("../ai-committee.js");
 const desk = await import("../ai-trade.js");
 
-const ROLE = /^You are the (DATA ANALYST|NEWS RESEARCHER|BULL|BEAR|TRADER|CHIEF RISK OFFICER)/;
+const ROLE = /^You are the (DATA ANALYST|NEWS RESEARCHER|BULL|BEAR|TRADER|Final Boss)/;
 const GROUNDING = { webSearchQueries: ["ABC token news"], groundingChunks: [{ web: { uri: "https://www.binance.com/en/support/announcement/x", title: "binance.com" } }] };
-// answers: { "DATA ANALYST": {...} | Error, "NEWS RESEARCHER": ..., TRADER: ..., "CHIEF RISK OFFICER": ... }
+// answers: { "DATA ANALYST": {...} | Error, "NEWS RESEARCHER": ..., TRADER: ..., "Final Boss": ... }
 function fakeAi(answers) {
   const calls = [];
   return { calls, models: { generateContent: async (params) => {
@@ -19,7 +20,7 @@ function fakeAi(answers) {
     const a = answers[role];
     if (a instanceof Error) throw a;
     return { text: typeof a === "string" ? a : JSON.stringify(a), candidates: [{ groundingMetadata: role === "NEWS RESEARCHER" ? GROUNDING : undefined }],
-      usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: role === "TRADER" || role === "CHIEF RISK OFFICER" ? 500 : 10 } };
+      usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: role === "TRADER" || role === "Final Boss" ? 500 : 10 } };
   } } };
 }
 const alert = desk.alertContext("confirmed");
@@ -37,37 +38,49 @@ const BULL = { strength: 7, thesis: "Buyers in control with room to run.", point
   path: "holds 99.8, runs to 106", redFlagAnswers: [], weakestPoint: "early in the move", wouldChangeMyMind: "buyers under 50%" };
 const BEAR = { strength: 4, thesis: "Most confirmed ignitions still fail.", rebuttals: [{ bullPoint: "buyers in control", verdict: "holds", evidence: "62%" }],
   points: [{ point: "base rate", evidence: "alert.anchorProbStopPct" }], path: "fades back under 97", weakestPoint: "no seller signal", wouldChangeMyMind: "a 4h downtrend" };
-const BOSS_YES = { verdict: "YES", reason: "All six tests pass.", biggestRisk: "BTC turns", mustBeTrue: "exit if buyers drop under 50%", checks: [{ test: "stop", pass: true, note: "3.7x ATR" }] };
+// The Final Boss's answer in the owner's JSON shape.
+const boss = (verdict, o = {}) => ({ verdict, agrees_with_trader: true, confidence: "medium", summary: "Clean ignition; resistance far away.", deciding_factor: "marketFlow.buyRatio5mPct = 62",
+  hard_stop_failures: [], audit_findings: [{ issue: "EV ignores time-outs", field: "expectedValuePct", severity: "low", correction: "1.2 -> 1.1" }],
+  corrected_numbers: { p_target_pct: 40, p_stop_pct: 30, p_timeout_pct: 30, realistic_target: 106, realistic_rr: 2.1, expected_value_pct: 1.2 },
+  plan: { entry_zone: [100, 99.8], stop: 97, targets: [106], max_hold_hours: 12, position_size_pct_of_normal: 75 }, watch_triggers: [], watch_expires_hours: null,
+  agent_quality: { data_analyst: "ok", news: "ok", bull: "weak", bear: "ok", trader: "ok" }, ...o });
+const BOSS_YES = boss("YES");
 const run = (ai, d = dossier(), opts = {}) => {
   cm._test.newsCache.clear();
   return desk.runCommittee(ai, d, { desk: "spot", rules: "RULES: decide carefully.", identity: { symbol: d.symbol.replace(/USDT$/, ""), name: "Abc Protocol" },
-    keyFacts: (x) => ({ price: x.price, atrPct: x.chart.atrPct }), opts: { model: "trader-model", reviewModel: "boss-model", news: true, debate: true, ...opts } });
+    opts: { model: "trader-model", reviewModel: "boss-model", news: true, debate: true, ...opts } });
 };
 
-test("AI committee: every member gets its own prompt; the bear answers the bull; a TAKE needs the final boss's YES", async () => {
+test("AI committee: every member gets its own prompt; the bear answers the bull; the Final Boss audits it all", async () => {
   const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": "```json\n" + JSON.stringify(NEWS) + "\n```", BULL, BEAR,
-    TRADER: { ...trader("TAKE"), debate: { winner: "bull", reason: "the bear's only point is the base rate" } }, "CHIEF RISK OFFICER": BOSS_YES });
+    TRADER: { ...trader("TAKE"), debate: { winner: "bull", reason: "the bear's only point is the base rate" } }, "Final Boss": BOSS_YES });
   const x = await run(ai);
   assert.equal(x.decision, "TAKE"); assert.equal(x.final, "YES");
   // the analyst and the researcher first (together), then the bull, the bear, the trader and the boss, in that order
-  assert.deepEqual(ai.calls.slice(2).map((c) => c.role), ["BULL", "BEAR", "TRADER", "CHIEF RISK OFFICER"]);
+  assert.deepEqual(ai.calls.slice(2).map((c) => c.role), ["BULL", "BEAR", "TRADER", "Final Boss"]);
   assert.deepEqual(ai.calls.slice(0, 2).map((c) => c.role).sort(), ["DATA ANALYST", "NEWS RESEARCHER"]);
   const by = Object.fromEntries(ai.calls.map((c) => [c.role, c.params]));
   assert.deepEqual(by["NEWS RESEARCHER"].config.tools, [{ googleSearch: {} }]);             // the researcher searches the web
   assert.equal(by["NEWS RESEARCHER"].config.responseSchema, undefined);                    // (search and a JSON schema do not mix)
-  assert.ok(by["DATA ANALYST"].config.responseSchema && by["CHIEF RISK OFFICER"].config.responseSchema);
-  assert.equal(by.TRADER.model, "trader-model"); assert.equal(by["CHIEF RISK OFFICER"].model, "boss-model");
+  assert.ok(by["DATA ANALYST"].config.responseSchema && by["Final Boss"].config.responseSchema);
+  assert.equal(by.TRADER.model, "trader-model"); assert.equal(by["Final Boss"].model, "boss-model");
   assert.match(by.TRADER.contents, /DATA ANALYST REPORT[\s\S]*Clean ignition[\s\S]*NEWS REPORT[\s\S]*No relevant news[\s\S]*BULL'S CASE[\s\S]*room to run[\s\S]*BEAR'S CASE[\s\S]*Most confirmed/);
   assert.match(by.BULL.contents, /DATA ANALYST REPORT[\s\S]*NEWS REPORT/); assert.doesNotMatch(by.BULL.contents, /BULL'S CASE/);
   assert.match(by.BEAR.contents, /BULL'S CASE \(JSON\)\n\{"strength":7/);                         // the bear sees the bull's case
   assert.ok(by.TRADER.config.responseSchema.required.includes("debate"));                          // the trader must name the winner
   assert.match(by.TRADER.config.systemInstruction, /THE DEBATE: [\s\S]*The bear spoke last; that is not a reason to agree/);
-  assert.match(by["CHIEF RISK OFFICER"].contents, /DEBATE \(JSON\)\n\{"bull":\{"strength":7[\s\S]*"traderVerdict":\{"winner":"bull"/);
+  assert.match(by["Final Boss"].contents, /DEBATE \(JSON\)\n\{"bull":\{"strength":7[\s\S]*"traderSaidWinner":\{"winner":"bull"/);
   assert.equal(x.committee.debate.verdict.winner, "bull"); assert.equal(x.committee.debate.bear.strength, 4);
-  assert.match(by["CHIEF RISK OFFICER"].contents, /TRADE \(JSON\)[\s\S]*"expectedValuePct":[\d.]+[\s\S]*KEY FACTS/); // the boss sees the EV the code recomputed
+  // the boss gets the full report: the trader, the code's checks (EV and realistic R:R recomputed), every member, the raw data
+  assert.match(by["Final Boss"].contents, /^TRADER \(JSON\)[\s\S]*CODE CHECKS \(JSON\)\n\{"decision":"TAKE","hardStops":\[\],"expectedValuePct":[\d.]+[\s\S]*"realisticRewardRisk"[\s\S]*DATA ANALYST REPORT[\s\S]*NEWS REPORT[\s\S]*DEBATE[\s\S]*RAW DATA \(JSON\)\n\{"symbol":"ABCUSDT"/);
+  assert.match(by["Final Boss"].config.systemInstruction, /^You are the Final Boss, the last reviewer[\s\S]*STEP 5: CORRECTED PLAN[\s\S]*WHERE THINGS ARE IN THIS REPORT/);
+  assert.equal(x.sizePct, 75); assert.deepEqual([x.plan.entryLow, x.plan.entryHigh, x.plan.target1], [99.8, 100, 106]); // the boss's plan (zone sorted)
+  assert.equal(x.realistic.rewardRisk, 2.1); assert.equal(x.committee.boss.agentQuality.bull, "weak");
   assert.equal(x.committee.news.sources[0].url, GROUNDING.groundingChunks[0].web.uri);
   assert.equal(x.committee.boss.asked, true); assert.equal(x.committee.data.dataQuality.rating, "good");
-  assert.match(desk.tgSingle({ ...x, symbol: "ABCUSDT" }), /Final: YES · data good · news none risk · bull 7 vs bear 4, bull won · trader TAKE · boss YES/);
+  const tg = desk.tgSingle({ ...x, symbol: "ABCUSDT" });
+  assert.match(tg, /^🟢 YES: ABC\n[\s\S]*Final: YES · data good · news none risk · bull 7 vs bear 4, bull won · trader TAKE · boss YES\nBoss: Clean ignition/);
+  assert.match(tg, /R:R 2.1 \| hold 12h \| size 75% of normal/);
 });
 
 test("AI committee: model settings per role (Gemini 3 thinking levels, Gemini 2.5 budgets, plain temperature otherwise)", async () => {
@@ -79,38 +92,59 @@ test("AI committee: model settings per role (Gemini 3 thinking levels, Gemini 2.
   assert.deepEqual(cm.roleConfig("gemini-2.5-flash", "bear", {}), { temperature: 0.4, thinkingConfig: { thinkingBudget: 1024 } });
   assert.deepEqual(cm.roleConfig("my-tuned-model", "news", {}), { temperature: 0.1 });
   // in a run: quick members think "low", the trader and the boss "high"; tokens are counted per member
-  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "CHIEF RISK OFFICER": BOSS_YES });
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES });
   cm._test.newsCache.clear();
-  const x = await desk.runCommittee(ai, dossier(), { desk: "spot", rules: "R", identity: { symbol: "ABC" }, keyFacts: () => ({}),
+  const x = await desk.runCommittee(ai, dossier(), { desk: "spot", rules: "R", identity: { symbol: "ABC" },
     opts: { model: "gemini-3.5-flash", reviewModel: "gemini-3.1-pro-preview" } });
   const lvl = Object.fromEntries(ai.calls.map((c) => [c.role, c.params.config.thinkingConfig?.thinkingLevel]));
-  assert.deepEqual(lvl, { "DATA ANALYST": "LOW", "NEWS RESEARCHER": "LOW", BULL: "LOW", BEAR: "LOW", TRADER: "HIGH", "CHIEF RISK OFFICER": "HIGH" });
+  assert.deepEqual(lvl, { "DATA ANALYST": "LOW", "NEWS RESEARCHER": "LOW", BULL: "LOW", BEAR: "LOW", TRADER: "HIGH", "Final Boss": "HIGH" });
   assert.ok(ai.calls.every((c) => c.params.config.temperature === undefined));
   assert.deepEqual(x.committee.trader.tokens, { in: 1000, out: 100, think: 500 });
 });
 
-test("AI committee: the final boss's NO, or no answer, means no TAKE; a WAIT never reaches the boss", async () => {
-  const no = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"),
-    "CHIEF RISK OFFICER": { ...BOSS_YES, verdict: "NO", reason: "The stop sits inside normal noise." } }));
-  assert.equal(no.decision, "SKIP"); assert.equal(no.final, "NO"); assert.equal(no.modelDecision, "TAKE");
-  assert.ok(no.guardNotes.some((n) => /Final boss said NO: The stop sits inside normal noise/.test(n)));
-  const silent = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE"), "CHIEF RISK OFFICER": new Error("model not found") }));
-  assert.equal(silent.decision, "WAIT"); assert.equal(silent.final, "NO"); assert.equal(silent.committee.boss.available, false);
-  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("WAIT") });
-  const wait = await run(ai);
-  assert.equal(wait.decision, "WAIT"); assert.equal(wait.final, "NO"); assert.equal(wait.committee.boss.asked, false);
-  assert.ok(!ai.calls.some((c) => c.role === "CHIEF RISK OFFICER"));
+test("AI committee: the Final Boss overturns the trader either way; no answer means no YES", async () => {
+  const members = { "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR };
+  const no = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": boss("NO", { agrees_with_trader: false, summary: "The stop sits inside normal noise." }) }));
+  assert.equal(no.decision, "SKIP"); assert.equal(no.final, "NO"); assert.equal(no.modelDecision, "TAKE"); assert.equal(no.committee.boss.agreesWithTrader, false);
+  assert.equal(no.sizePct, null);
+  // the boss turns a trader WAIT into YES when the code's checks pass
+  const up = await run(fakeAi({ ...members, TRADER: trader("WAIT"), "Final Boss": boss("YES", { agrees_with_trader: false }) }));
+  assert.equal(up.decision, "TAKE"); assert.equal(up.final, "YES"); assert.equal(up.modelDecision, "WAIT");
+  // no answer: the code's own call, never a YES
+  const silent = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": new Error("model not found") }));
+  assert.equal(silent.decision, "WAIT"); assert.equal(silent.final, "WATCH"); assert.equal(silent.committee.boss.available, false);
+  assert.ok(silent.guardNotes.some((n) => /could not answer[\s\S]*never a YES/.test(n)));
+  // a YES with the target past the nearest resistance: realistic reward:risk under 2 -> WATCH
+  const capped = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), levels: { resistance: 102, roomToResistancePct: 2 } });
+  assert.equal(capped.final, "WATCH"); assert.equal(capped.realistic.target, 102); assert.ok(capped.realistic.rewardRisk < 2);
+  assert.ok(capped.guardNotes.some((n) => /said YES, but the code made it WATCH: realistic reward:risk 0.72 is under 2/.test(n)), capped.guardNotes.join(" | "));
+  // a YES while BTC is falling (a code hard stop) -> WATCH
+  const btc = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": BOSS_YES }), { ...dossier(), market: { btc1hPct: -1.6, btc4hPct: -2.5 } });
+  assert.equal(btc.final, "WATCH"); assert.ok(btc.guardNotes.some((n) => /made it WATCH: hard stop \(BTC falling/.test(n)));
+  // the boss's chances are held within 15 points of the base rate
+  const greedy = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": boss("YES", { corrected_numbers: { ...BOSS_YES.corrected_numbers, p_target_pct: 90, p_stop_pct: 2 } }) }));
+  assert.equal(greedy.probTargetPct, alert.anchorProbTargetPct + 15); assert.ok(greedy.guardNotes.some((n) => /held within 15 points/.test(n)));
+  // WATCH: the first price trigger is watched; the other conditions are shown and left to the re-check
+  const watch = await run(fakeAi({ ...members, TRADER: trader("TAKE"), "Final Boss": boss("WATCH", { agrees_with_trader: false, watch_expires_hours: 6,
+    watch_triggers: [{ condition: "5m close above the 24h high", field: "price", threshold: "5m close above 101.8" }, { condition: "buyers stay strong", field: "marketFlow.buyRatio5mPct", threshold: ">= 55%" }],
+    plan: { entry_zone: [101.8, 102.2], stop: 99.5, targets: [108], max_hold_hours: 12, position_size_pct_of_normal: 50 } }) }));
+  assert.equal(watch.decision, "WAIT"); assert.equal(watch.final, "WATCH");
+  assert.deepEqual(watch.trigger, { event: "breakout", price: 101.8, timeframe: "5m", expiresMinutes: 360, distPct: 1.8 });
+  assert.match(watch.waitFor, /5m close above the 24h high \(price 5m close above 101.8\); buyers stay strong \(marketFlow.buyRatio5mPct >= 55%\); within 6 hours/);
+  assert.equal(watch.plan.entryLow, 101.8); assert.equal(watch.sizePct, 50); // a WATCH plan may sit at the trigger (within 10%)
+  assert.match(desk.tgSingle({ ...watch, symbol: "ABCUSDT" }), /^🟡 WATCH: ABC[\s\S]*Watch for: 5m close above[\s\S]*Plan if it triggers: entry 101.8-102.2 \| stop 99.5 \| target 108 \| size 50% of normal/);
 });
 
 test("AI committee: a confirmed bad news item is a hard stop; poor data is no TAKE; a failed member is unknown, not good", async () => {
   const bad = { ...NEWS, overall: "negative", riskLevel: "high", hardStop: true, hardStopReason: "Binance adds ABC to the monitoring tag",
     items: [{ date: "2026-10-28", title: "Binance monitoring tag", type: "exchange", impact: "negative", severity: "high", pricedIn: "no", source: "Binance" }] };
-  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": bad, BULL, BEAR, TRADER: trader("TAKE") });
+  const ai = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": bad, BULL, BEAR, TRADER: trader("TAKE"), "Final Boss": BOSS_YES });
   const x = await run(ai);
-  assert.equal(x.decision, "SKIP"); assert.ok(x.hardStops.some((h) => /monitoring tag/.test(h)));
-  assert.ok(!ai.calls.some((c) => c.role === "CHIEF RISK OFFICER"));
-  const poor = await run(fakeAi({ "DATA ANALYST": { ...DATA, dataQuality: { rating: "poor", issues: [{ field: "marketFlow", problem: "missing" }] } }, "NEWS RESEARCHER": NEWS, BULL, BEAR, TRADER: trader("TAKE") }));
-  assert.equal(poor.decision, "SKIP"); assert.ok(poor.guardNotes.some((n) => /rated the data poor/.test(n)));
+  assert.equal(x.final, "WATCH"); assert.ok(x.hardStops.some((h) => /monitoring tag/.test(h))); // never a YES with a hard stop
+  assert.match(ai.calls.find((c) => c.role === "Final Boss").params.contents, /"hardStops":\["news: Binance adds ABC to the monitoring tag"\]/);
+  const poor = await run(fakeAi({ "DATA ANALYST": { ...DATA, dataQuality: { rating: "poor", issues: [{ field: "marketFlow", problem: "missing" }] } }, "NEWS RESEARCHER": NEWS, BULL, BEAR,
+    TRADER: trader("TAKE"), "Final Boss": BOSS_YES }));
+  assert.equal(poor.final, "WATCH"); assert.ok(poor.guardNotes.some((n) => /made it WATCH: [\s\S]*data was rated poor/.test(n)));
   // the analyst and the bull fail, news is switched off: the bear and the trader still work, and are told what is unknown
   const ai2 = fakeAi({ "DATA ANALYST": new Error("quota"), BULL: new Error("busy"), BEAR, TRADER: { ...trader("WAIT"), debate: { winner: "bear", reason: "no bull case" } } });
   const y = await run(ai2, dossier("XYZUSDT"), { news: false });
@@ -122,7 +156,7 @@ test("AI committee: a confirmed bad news item is a hard stop; poor data is no TA
   // the debate switched off: no bull or bear, and the trader is not asked to judge one
   const ai3 = fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, TRADER: trader("WAIT") });
   const z = await run(ai3, dossier("QRSUSDT"), { debate: false });
-  assert.deepEqual(ai3.calls.map((c) => c.role).sort(), ["DATA ANALYST", "NEWS RESEARCHER", "TRADER"]);
+  assert.deepEqual(ai3.calls.map((c) => c.role).sort(), ["DATA ANALYST", "Final Boss", "NEWS RESEARCHER", "TRADER"]); // the boss runs on every analysis
   const t3 = ai3.calls.find((c) => c.role === "TRADER").params;
   assert.ok(!t3.config.responseSchema.required.includes("debate")); assert.doesNotMatch(t3.config.systemInstruction, /THE DEBATE/);
   assert.equal(z.committee.debate.off, true);
@@ -154,13 +188,17 @@ test("AI committee: prompts name the coin, the time window and each member's job
   assert.match(cm.traderPrompt("spot", "MY RULES"), /MY RULES[\s\S]*Add a checklist item "news"/);
   assert.match(cm.bullPrompt("alpha"), /BULL[\s\S]*Binance Alpha token[\s\S]*most are 3-6/);
   assert.match(cm.bearPrompt("spot"), /You also receive the BULL'S CASE[\s\S]*REBUTTALS/);
-  assert.match(cm.bossPrompt("spot"), /When in doubt, NO[\s\S]*the bear's path to the stop[\s\S]*YES only if all six pass/);
+  assert.ok(cm.bossPrompt("spot").startsWith(cm.BOSS_CORE)); // the owner's prompt word for word, then where things are
+  assert.match(cm.bossPrompt("alpha"), /Binance Alpha token[\s\S]*levels\.resistance[\s\S]*FIRST watch trigger a price trigger/);
+  const cb = cm.cleanBoss({ verdict: "MAYBE", confidence: "very", plan: { entry_zone: [2, 1], stop: "x", targets: [3, -1, "4"], position_size_pct_of_normal: 250 }, agent_quality: { bull: "great" } });
+  assert.deepEqual([cb.verdict, cb.confidence, cb.plan.entryZone, cb.plan.stop, cb.plan.targets, cb.plan.sizePct, cb.agentQuality.bull], ["NO", "low", [1, 2], null, [3, 4], 100, null]);
   const x = { symbol: "ABCUSDT", decision: "SKIP", final: "NO", headline: "h", probTargetPct: 40, probStopPct: 30, expectedValuePct: 1.2, confidence: "medium", setupScore: 7,
     plan: { entryLow: 1, entryHigh: 1.01, stop: 0.97, stopPct: -3, target1: 1.06, target1Pct: 6, rewardRisk: 2, holdHours: 12 }, hardStops: [], keyRisk: "k",
     committee: { data: { available: true, dataQuality: { rating: "good" } }, news: { available: true, riskLevel: "low", summary: "Listing on Coinbase next week.", items: [{}] },
-      trader: { decision: "TAKE" }, boss: { asked: true, available: true, verdict: "NO", reason: "Target beyond the 7-day high." } } };
+      trader: { decision: "TAKE" }, boss: { asked: true, available: true, verdict: "NO", agreesWithTrader: false, summary: "Target beyond the 7-day high.", decidingFactor: "levels.roomToResistancePct = 1.2" } } };
   const t = desk.tgSingle(x);
-  assert.match(t, /Final: NO · data good · news low risk · trader TAKE · boss NO\nBoss: Target beyond the 7-day high\./);
+  assert.match(t, /^🔴 NO TRADE: ABC\n/);
+  assert.match(t, /Final: NO · data good · news low risk · trader TAKE · boss NO \(overturned the trader\)\nBoss: Target beyond the 7-day high\.\nDeciding factor: levels.roomToResistancePct = 1.2/);
   assert.match(t, /News: Listing on Coinbase next week\./);
 });
 
@@ -173,7 +211,7 @@ test("AI committee: a WAIT comes with a watched price event; every Gemini reques
   assert.ok(ai.calls.find((c) => c.role === "TRADER").params.config.responseSchema.properties.trigger); // the trader is asked for it
   assert.match(desk.tgSingle({ ...x, symbol: "WWWUSDT" }), /Watching: a 5m close above 101.5 for 45 min; the AI checks again if it happens\./);
   // a TAKE never carries a trigger, even if the model filled one in
-  const t = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, "CHIEF RISK OFFICER": BOSS_YES,
+  const t = await run(fakeAi({ "DATA ANALYST": DATA, "NEWS RESEARCHER": NEWS, BULL, BEAR, "Final Boss": BOSS_YES,
     TRADER: { ...trader("TAKE"), trigger: { event: "breakout", price: 101.5, timeframe: "5m", expiresMinutes: 45 } } }), dossier("VVVUSDT"));
   assert.equal(t.decision, "TAKE"); assert.equal(t.trigger, null);
   // the metered client counts requests and tokens

@@ -11,11 +11,13 @@
 //   4. TRADER          decides TAKE / WAIT / SKIP with probabilities, expected value and a plan, from the dossier, both
 //                      reports and the debate, as its referee. Code then re-checks everything (hard stops, expected
 //                      value, reward:risk, the plan).
-//   5. FINAL BOSS      the chief risk officer, called only for a TAKE that passed the code checks: YES (take it now, as
-//                      planned) or NO. A stronger model by default. It can only say no, never turn a WAIT into a TAKE.
+//   5. FINAL BOSS      audits the whole committee on every analysis (hard stops, reward:risk to the nearest resistance,
+//                      expected value, probability adjustments, contradictions) and gives the final call: YES, WATCH
+//                      (with measurable triggers and an expiry) or NO, with a corrected plan and a position size. It can
+//                      overturn the trader either way; code still turns an unsafe YES into WATCH. A stronger model.
 //
 // Every stage returns JSON in a fixed shape. If a member fails, the committee carries on and says so (unknown, never
-// "fine"); if the final boss cannot answer, there is no TAKE. Each role has its own thinking depth (roleConfig): quick
+// "fine"); if the final boss cannot answer, there is no YES. Each role has its own thinking depth (roleConfig): quick
 // for checking and arguing, deep for deciding and approving. Not financial advice.
 import { Type, ThinkingLevel } from "@google/genai";
 import { generate, jsonFrom, AgentError } from "./agent.js";
@@ -65,8 +67,8 @@ export const DESKS = {
 - market: BTC 1h / 4h / 24h, share of coins surging, taker-flow breadth, BTC regime and narrative ranks.
 - livePerformance: live results of this tier, of past AI calls, and matchingGroups (past alerts with the same
   conditions, with older / newer halves). aiCommittee: this committee's own past answers, each followed with its own
-  plan (final YES, final NO if bought anyway, trades the boss blocked, debate winners, said vs real target chances,
-  recent losing YES calls).
+  plan (final YES, final WATCH / NO if bought anyway, trader TAKEs the boss stopped, debate winners, said vs real target
+  chances, recent losing YES calls).
 - referencePlan: entries, stops, targets and reward:risk computed by code. dataQuality: demo / missing-data notes.`.trim(),
   },
   alpha: {
@@ -285,7 +287,8 @@ export const BEAR_SCHEMA = {
   required: ["strength", "thesis", "rebuttals", "points", "path", "weakestPoint", "wouldChangeMyMind"],
 };
 const reportJson = (x, what) => JSON.stringify(x?.available ? stripMeta(x) : { available: false, note: x?.error || `${what} unavailable` });
-const caseJson = (x) => JSON.stringify(x?.available ? stripMeta(x) : { available: false, note: x?.error || "unavailable" });
+const caseObj = (x) => (x?.available ? stripMeta(x) : { available: false, note: x?.error || "unavailable" });
+const caseJson = (x) => JSON.stringify(caseObj(x));
 const evidenceText = (dossier, data, news) => `DOSSIER (JSON)\n${JSON.stringify(dossier)}\n\nDATA ANALYST REPORT (JSON)\n${reportJson(data, "data report")}\n\nNEWS REPORT (JSON)\n${reportJson(news, "news")}`;
 
 async function argue(ai, side, { desk, model, contents }) {
@@ -309,9 +312,9 @@ export async function debate(ai, { desk, dossier, data, news, model, enabled = t
 // ───────────────────────────── 4. trader ─────────────────────────────
 // rules = the desk's decision rules (ai-trade.js RULES / ALPHA_RULES); schema = the decision schema.
 export const traderPrompt = (deskKey, rules, { debate = false } = {}) => `You are the TRADER on a crypto trading committee. The trade under review: ${DESKS[deskKey].what}.
-A data analyst and a news researcher have prepared reports for you${debate ? ", and a bull and a bear have argued the trade" : ""}. You make the call. If you say
-TAKE, code re-checks your numbers and the chief risk officer (the final boss) gives the final YES or NO, so a TAKE must
-survive a skeptical reader: every claim needs a dossier number.
+A data analyst and a news researcher have prepared reports for you${debate ? ", and a bull and a bear have argued the trade" : ""}. You make the call. Then code
+re-checks your numbers and the Final Boss audits the whole committee and gives the final YES, WATCH or NO; it can
+overturn you in either direction, so every claim needs a dossier number.
 
 ${rules}
 
@@ -337,8 +340,8 @@ THE COMMITTEE'S OWN RECORD (dossier livePerformance.aiCommittee: this committee'
 own plan; ignore it while it says there are too few calls)
 - If final YES calls have lost money on average, or the calibration shows your target chances ran well above what
   really happened, be stricter: move the target chance toward what happened and demand clearer evidence for TAKE.
-- If final NO calls (bought anyway) did clearly better than final YES calls over 10+ each, the committee's own doubts
-  are costing trades: weigh the base rate and the data more, and vague worries less.
+- If final WATCH or NO calls (bought anyway) did clearly better than final YES calls over 10+ each, the committee's own
+  doubts are costing trades: weigh the base rate and the data more, and vague worries less.
 - If one of the recent losing YES calls looks like this setup, name the difference that makes this one better, or do
   not take it.`;
 
@@ -357,85 +360,175 @@ export async function traderDecision(ai, { desk, rules, schema, dossier, data, n
 const stripMeta = (x) => { const { model, ms, at, cached, available, tokens, ...rest } = x; return rest; };
 
 // ───────────────────────────── 5. final boss ─────────────────────────────
-export const bossPrompt = (deskKey) => `You are the CHIEF RISK OFFICER and the final decision maker of a crypto trading committee. The trade: ${DESKS[deskKey].what}.
-The trader proposes to BUY now, and the code checks passed. You answer YES (we take this trade now, exactly as planned)
-or NO (we do not). Capital comes first: a missed trade costs nothing, a bad trade costs money. When in doubt, NO.
+// Runs on every analysis, whatever the trader decided: audits the committee (hard stops, reward:risk to the nearest
+// resistance, expected value with timeouts, probability adjustments, contradictions, missing data, the bull's case) and
+// gives the final call YES / WATCH / NO with a corrected plan. The prompt is the owner's own text, followed by where each
+// number lives in this system's data and what the code checks after the boss.
+export const BOSS_CORE = `You are the Final Boss, the last reviewer in a crypto trading committee. You run on EVERY alert, whatever the Trader decided. Your job is to audit the committee and give the final call. You are not a tiebreaker and you have no bias toward trading or not trading: overturn the Trader in either direction when the evidence supports it.
 
-YOU RECEIVE
-- TRADE: the plan (entry, stop, target, holding time), the trader's probabilities and the expected value RECOMPUTED BY
-  CODE, reward:risk, the code's notes.
-- TRADER'S REASONING: checklist, thesis, points for and against, key risk.
-- DATA ANALYST REPORT: data quality, conflicts, red flags, key numbers.
-- NEWS REPORT: what the web search found (or that it was unavailable).
-- DEBATE: the bull's case for, the bear's case against (it saw the bull's case first), and who the trader said won.
-  It may be missing (switched off).
-- KEY FACTS: the dossier numbers that matter most, and aiCommittee: this committee's own record (its past YES calls,
-  trades you blocked, said vs real target chances).
+INPUTS
+You receive the full committee report: Data Analyst, News Researcher, Bull, Bear, Trader verdict, hard-stop checks, trade plan, and raw data.
 
-RUN THESE TESTS (pass or fail, with the number behind it)
-1. Data: quality is not "poor", and no number the decision depends on is missing or contradictory.
-2. Red flags and the bear: every red flag and conflict from the analyst, and every bear point backed by a number, was
-   answered with evidence, not explained away; the bear's path to the stop is less likely than the bull's path to the
-   target.
-3. News: risk is not high, and no medium-negative item falls inside the holding time unpriced. Unavailable news is
-   acceptable only when everything else is strong.
-4. Probabilities: moved from the base rate only for named evidence; the expected value is at least +0.5% per trade
-   without an optimistic target (e.g. a target beyond nearby resistance with little room); and when the committee's
-   record shows its target chances running above what really happened, the chance here is not just as high.
-5. Stop: at a level that proves the idea wrong, and not inside normal noise (at least about 1x the 1h ATR away).
-6. Market: BTC and the market backdrop do not fight the trade.
-YES only if all six pass. Otherwise NO, and say exactly what would have to be true for a YES.
-Do not re-argue small details. Look for the one thing that would make this trade a mistake. Quote numbers exactly.`;
+STEP 1: HARD STOPS
+List every hard-stop failure (liquidity, delisting/monitoring tag, high-severity negative news, etc.). If any hard stop fails, the verdict cannot be YES. It can only be NO or WATCH.
 
+STEP 2: CONSISTENCY AUDIT
+Check the report for errors and contradictions. At minimum:
+- Recompute reward:risk using the NEAREST resistance as the realistic target, not the screener's fixed target. If the plan's target lies beyond resistance, state the realistic R:R.
+- Recompute expected value: (P_target x target%) - (P_stop x stop%) + (P_timeout x expected timeout%). Flag any mismatch with the stated EV.
+- Check that probability adjustments from the base rate are justified with specific evidence. If not, give your own estimate and explain each adjustment.
+- Flag contradictions between agents and within an agent (e.g. news listed but "no search results").
+- Flag missing or untracked data and say how it lowers confidence.
+- Flag if the Bull did not argue the strongest possible case.
+
+STEP 3: INDEPENDENT JUDGMENT
+Weigh the strongest bull point against the strongest bear point. State which single factor decides the trade, and why.
+
+STEP 4: VERDICT
+Choose exactly one:
+- YES: all hard stops pass, realistic R:R >= 2:1, positive EV after your corrections.
+- WATCH: the setup is invalid now but could become valid. Give specific, measurable trigger conditions (price levels, buyer %, funding, news/tag changes) and an expiry time.
+- NO: structurally broken (e.g. delisting risk, project shutdown) or no plausible path to positive EV.
+
+STEP 5: CORRECTED PLAN
+If YES or WATCH, give a corrected plan: entry zone, stop below real support, target(s) at real resistance levels, R:R, max hold time, and position-size guidance as a % of normal size based on confidence.
+
+RULES
+- Use only data in the report. Never invent numbers. If data is missing, say so.
+- Cite the exact field for every claim (e.g. levels.roomToResistancePct = 4.48).
+- Keep the summary under 80 words.
+- Be calibrated: say "low confidence" when data is partial.
+
+OUTPUT: respond ONLY with valid JSON, no extra text:
+{
+  "verdict": "YES" | "NO" | "WATCH",
+  "agrees_with_trader": true | false,
+  "confidence": "low" | "medium" | "high",
+  "summary": "string, max 80 words",
+  "deciding_factor": "string",
+  "hard_stop_failures": ["string"],
+  "audit_findings": [
+    {"issue": "string", "field": "string", "severity": "low|medium|high", "correction": "string"}
+  ],
+  "corrected_numbers": {
+    "p_target_pct": number, "p_stop_pct": number, "p_timeout_pct": number,
+    "realistic_target": number, "realistic_rr": number, "expected_value_pct": number
+  },
+  "plan": {
+    "entry_zone": [number, number] | null,
+    "stop": number | null,
+    "targets": [number],
+    "max_hold_hours": number | null,
+    "position_size_pct_of_normal": number
+  },
+  "watch_triggers": [
+    {"condition": "string", "field": "string", "threshold": "string"}
+  ],
+  "watch_expires_hours": number | null,
+  "agent_quality": {
+    "data_analyst": "ok|weak", "news": "ok|weak", "bull": "ok|weak", "bear": "ok|weak", "trader": "ok|weak"
+  }
+}`;
+
+export const bossPrompt = (deskKey) => `${BOSS_CORE}
+
+WHERE THINGS ARE IN THIS REPORT
+- The trade: ${DESKS[deskKey].what}. Long only.
+- TRADER: the trader's verdict (TAKE / WAIT / SKIP = no trade), probabilities, plan, trigger, checklist and reasoning.
+- CODE CHECKS: what the code computed from the trader's plan: hardStops (the code's own checks and confirmed news),
+  expectedValuePct, rewardRisk, realisticRewardRisk (target capped at levels.resistance), probabilities held near the
+  base rate, costPct, moved / igniting, and the code's notes.
+- DATA ANALYST REPORT, NEWS REPORT (sources = what Google really returned), DEBATE (bull, then bear who saw the bull's
+  case, and who the trader said won), RAW DATA (the dossier).
+- In RAW DATA: base rates alert.anchorProbTargetPct / alert.anchorProbStopPct (the rest end at the time limit, so
+  p_timeout = 100 - p_target - p_stop); costs alert.costPct per trade (subtract them from the EV); holding time
+  alert.trackedAs.holdHours; nearest resistance levels.resistance (levels.roomToResistancePct away); support
+  levels.support; normal move per candle chart.atrPct; current price price; the committee's own record
+  livePerformance.aiCommittee.
+
+WHAT THE CODE DOES WITH YOUR ANSWER
+- Your probabilities are held within 15 points of the base rates. The code recomputes the expected value from your plan
+  (timeouts counted as flat, costs subtracted) and the reward:risk with the target capped at levels.resistance.
+- A YES becomes WATCH when a hard stop fails, the coin already ran (screener.moved) or is not igniting now, your plan
+  does not fit the price (entry more than 3% from the price, stop not below the entry, target not above it), realistic
+  reward:risk is under 2, the expected value is under +0.5% per trade, or the data was rated poor.
+- For WATCH, make the FIRST watch trigger a price trigger the code can watch: field "price", threshold such as
+  "5m close above 0.0512" or "dips to 1.19" (timeframe 5m, 15m or 1h; within 10% of the price). Other conditions
+  (buyer %, funding, news, tags) are checked by the whole committee when the price trigger fires.`;
+
+const sevs = ["low", "medium", "high"], qual = (v) => (v === "ok" || v === "weak" ? v : null);
+const numOr = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+const arr = (v) => (Array.isArray(v) ? v : []);
 export const BOSS_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    verdict: { type: Type.STRING, enum: ["YES", "NO"] },
-    reason: { type: Type.STRING, description: "The decisive reason, one sentence" },
-    biggestRisk: { type: Type.STRING },
-    mustBeTrue: { type: Type.STRING, description: "For NO: what would have to change for a YES. For YES: what would make you exit early" },
-    checks: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { test: { type: Type.STRING }, pass: { type: Type.BOOLEAN }, note: { type: Type.STRING } }, required: ["test", "pass", "note"] } },
+    verdict: { type: Type.STRING, enum: ["YES", "NO", "WATCH"] },
+    agrees_with_trader: { type: Type.BOOLEAN },
+    confidence: { type: Type.STRING, enum: sevs },
+    summary: { type: Type.STRING, description: "Max 80 words" },
+    deciding_factor: { type: Type.STRING },
+    hard_stop_failures: strArr,
+    audit_findings: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { issue: { type: Type.STRING }, field: { type: Type.STRING },
+      severity: { type: Type.STRING, enum: sevs }, correction: { type: Type.STRING } }, required: ["issue", "field", "severity", "correction"] } },
+    corrected_numbers: { type: Type.OBJECT, properties: { p_target_pct: { type: Type.NUMBER }, p_stop_pct: { type: Type.NUMBER }, p_timeout_pct: { type: Type.NUMBER },
+      realistic_target: { type: Type.NUMBER }, realistic_rr: { type: Type.NUMBER }, expected_value_pct: { type: Type.NUMBER } },
+      required: ["p_target_pct", "p_stop_pct", "p_timeout_pct", "realistic_target", "realistic_rr", "expected_value_pct"] },
+    plan: { type: Type.OBJECT, properties: { entry_zone: { type: Type.ARRAY, items: { type: Type.NUMBER }, nullable: true }, stop: { type: Type.NUMBER, nullable: true },
+      targets: { type: Type.ARRAY, items: { type: Type.NUMBER } }, max_hold_hours: { type: Type.NUMBER, nullable: true }, position_size_pct_of_normal: { type: Type.NUMBER } },
+      required: ["entry_zone", "stop", "targets", "max_hold_hours", "position_size_pct_of_normal"] },
+    watch_triggers: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { condition: { type: Type.STRING }, field: { type: Type.STRING }, threshold: { type: Type.STRING } },
+      required: ["condition", "field", "threshold"] } },
+    watch_expires_hours: { type: Type.NUMBER, nullable: true },
+    agent_quality: { type: Type.OBJECT, properties: Object.fromEntries(["data_analyst", "news", "bull", "bear", "trader"].map((k) => [k, { type: Type.STRING, enum: ["ok", "weak"] }])),
+      required: ["data_analyst", "news", "bull", "bear", "trader"] },
   },
-  required: ["verdict", "reason", "biggestRisk", "mustBeTrue", "checks"],
+  required: ["verdict", "agrees_with_trader", "confidence", "summary", "deciding_factor", "hard_stop_failures", "audit_findings", "corrected_numbers", "plan",
+    "watch_triggers", "watch_expires_hours", "agent_quality"],
 };
 
-const debateBrief = (d) => {
-  if (!d || d.off) return { off: true };
-  const side = (x, extra) => (x?.available ? { strength: x.strength, thesis: x.thesis, points: x.points, path: x.path, weakestPoint: x.weakestPoint, ...extra(x) } : { available: false });
-  return { bull: side(d.bull, (x) => ({ redFlagAnswers: x.redFlagAnswers })), bear: side(d.bear, (x) => ({ rebuttals: x.rebuttals })), traderVerdict: d.verdict || null };
-};
-export async function finalBoss(ai, { desk, trade, reasoning, data, news, debate: dbt, keyFacts, model }) {
+// The boss's JSON, checked and renamed for the rest of the app. Unknown values become safe ones (an unknown verdict = NO).
+export function cleanBoss(j) {
+  const cn = j?.corrected_numbers || {}, pl = j?.plan || {}, aq = j?.agent_quality || {};
+  const ez = arr(pl.entry_zone).map(numOr);
+  return {
+    available: true, verdict: ["YES", "NO", "WATCH"].includes(j?.verdict) ? j.verdict : "NO", agreesWithTrader: j?.agrees_with_trader === true,
+    confidence: sevs.includes(j?.confidence) ? j.confidence : "low", summary: String(j?.summary || "").slice(0, 700), decidingFactor: String(j?.deciding_factor || "").slice(0, 400),
+    hardStopFailures: arr(j?.hard_stop_failures).map((x) => String(x).slice(0, 200)).filter(Boolean).slice(0, 8),
+    auditFindings: arr(j?.audit_findings).slice(0, 12).map((f) => ({ issue: String(f?.issue || "").slice(0, 300), field: String(f?.field || "").slice(0, 120),
+      severity: sevs.includes(f?.severity) ? f.severity : "low", correction: String(f?.correction || "").slice(0, 300) })),
+    corrected: { pTargetPct: numOr(cn.p_target_pct), pStopPct: numOr(cn.p_stop_pct), pTimeoutPct: numOr(cn.p_timeout_pct), realisticTarget: numOr(cn.realistic_target),
+      realisticRr: numOr(cn.realistic_rr), expectedValuePct: numOr(cn.expected_value_pct) },
+    plan: { entryZone: ez.length === 2 && ez.every((x) => x > 0) ? [Math.min(...ez), Math.max(...ez)] : null, stop: numOr(pl.stop) > 0 ? numOr(pl.stop) : null,
+      targets: arr(pl.targets).map(numOr).filter((x) => x > 0).slice(0, 3), maxHoldHours: numOr(pl.max_hold_hours) > 0 ? numOr(pl.max_hold_hours) : null,
+      sizePct: Math.max(0, Math.min(100, numOr(pl.position_size_pct_of_normal) ?? 0)) },
+    watchTriggers: arr(j?.watch_triggers).slice(0, 6).map((t) => ({ condition: String(t?.condition || "").slice(0, 200), field: String(t?.field || "").slice(0, 120), threshold: String(t?.threshold || "").slice(0, 120) })),
+    watchExpiresHours: numOr(j?.watch_expires_hours) > 0 ? numOr(j.watch_expires_hours) : null,
+    agentQuality: { dataAnalyst: qual(aq.data_analyst), news: qual(aq.news), bull: qual(aq.bull), bear: qual(aq.bear), trader: qual(aq.trader) },
+  };
+}
+
+// trader = the trader's call and plan; code = what the code computed from it; dossier = the raw data.
+export async function finalBoss(ai, { desk, trader, code, data, news, debate: dbt, dossier, model }) {
   const t0 = Date.now();
   try {
     const res = await generate(ai, {
       model,
-      contents: `TRADE (JSON)\n${JSON.stringify(trade)}\n\nTRADER'S REASONING (JSON)\n${JSON.stringify(reasoning)}\n\nDATA ANALYST REPORT (JSON)\n${JSON.stringify(data?.available ? stripMeta(data) : { available: false })}\n\n` +
-        `NEWS REPORT (JSON)\n${JSON.stringify(news?.available ? stripMeta(news) : { available: false, note: news?.error || "unavailable" })}\n\nDEBATE (JSON)\n${JSON.stringify(debateBrief(dbt))}\n\n` +
-        `KEY FACTS (JSON)\n${JSON.stringify(keyFacts)}\n\nRun the tests and answer YES or NO.`,
+      contents: `TRADER (JSON)\n${JSON.stringify(trader)}\n\nCODE CHECKS (JSON)\n${JSON.stringify(code)}\n\nDATA ANALYST REPORT (JSON)\n${reportJson(data, "data report")}\n\n` +
+        `NEWS REPORT (JSON)\n${reportJson(news, "news")}\n\nDEBATE (JSON)\n${JSON.stringify(dbt && !dbt.off ? { bull: caseObj(dbt.bull), bear: caseObj(dbt.bear), traderSaidWinner: dbt.verdict || null } : { off: true })}\n\n` +
+        `RAW DATA (JSON)\n${JSON.stringify(dossier)}\n\nAudit the committee and give the final call.`,
       config: { systemInstruction: bossPrompt(desk), ...roleConfig(model, "boss"), responseMimeType: "application/json", responseSchema: BOSS_SCHEMA },
     }, callOpts("boss"));
-    const b = jsonFrom(res, "Final boss");
-    return { available: true, verdict: b.verdict === "YES" ? "YES" : "NO", reason: b.reason, biggestRisk: b.biggestRisk, mustBeTrue: b.mustBeTrue, checks: Array.isArray(b.checks) ? b.checks.slice(0, 8) : [], model, ms: Date.now() - t0, tokens: usage(res) };
+    return { ...cleanBoss(jsonFrom(res, "Final boss")), model, ms: Date.now() - t0, tokens: usage(res) };
   } catch (e) { return { available: false, verdict: null, reason: e.message, model, ms: Date.now() - t0 }; }
 }
 
-// ───────────────────────────── the final call ─────────────────────────────
-// After the code's own checks (decision = TAKE / WAIT / SKIP), before the final boss: a confirmed news hard stop means
-// no trade, and so does a TAKE on data the analyst rated poor. Returns { decision, notes }.
+// ───────────────────────────── code checks around the boss ─────────────────────────────
+// The code's own call on the trader's plan, shown to the boss: a confirmed news hard stop means no trade, and so does a
+// TAKE on data the analyst rated poor. Returns { decision, notes }.
 export function committeeChecks(decision, { news, data } = {}) {
   const notes = [];
   if (news?.hardStop && decision !== "SKIP") { notes.push(`News hard stop: ${news.hardStopReason || "a confirmed high-severity negative item"}. No trade.`); decision = "SKIP"; }
   if (decision === "TAKE" && data?.available && data.dataQuality?.rating === "poor") { notes.push("The data analyst rated the data poor, so there is no TAKE."); decision = "SKIP"; }
   return { decision, notes };
-}
-// The final boss decides a TAKE: YES keeps it, NO means no trade, no answer means no TAKE (WAIT: run it again).
-// Anything that was not a TAKE is a NO without asking. Returns { decision, final: "YES" | "NO", notes }.
-export function bossCall(decision, boss) {
-  const notes = [];
-  if (decision === "TAKE") {
-    if (!boss?.available) { decision = "WAIT"; notes.push(`The final boss could not answer (${boss?.reason || "unavailable"}), so there is no TAKE: run it again in a minute.`); }
-    else if (boss.verdict !== "YES") { decision = "SKIP"; notes.push(`Final boss said NO: ${boss.reason}`); }
-  }
-  return { decision, final: decision === "TAKE" ? "YES" : "NO", notes };
 }
 export const _test = { newsCache };

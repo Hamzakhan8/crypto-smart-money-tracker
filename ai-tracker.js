@@ -2,8 +2,8 @@
 //
 //   • Every committee answer (your analyses, automatic alert reviews, Alpha checks, trigger re-checks) is followed like a
 //     trade with its own plan: bought at the price of the answer, closed at the plan's stop or target (the stop is
-//     checked first inside a candle), or at the last price when its holding time ends, after costs. NO answers are
-//     followed too ("if bought anyway"), so the scorecard shows whether each committee member's no was right.
+//     checked first inside a candle), or at the last price when its holding time ends, after costs. WATCH and NO
+//     answers are followed too ("if bought anyway"), so the scorecard shows whether each committee member's no was right.
 //   • WAIT answers come with a price event (a breakout close above a level, or a pullback to one) and a time limit. The
 //     tracker watches it and calls back when it happens, so the committee can check the coin again.
 //   • Gemini requests are counted against a daily limit (AI_DAILY_REQUESTS), with a warning at 80% and at 100%.
@@ -38,7 +38,8 @@ export function callFromResult(x, { source = "manual", at = Date.now(), depth = 
     entry, stopPx: entry * (1 + p.stopPct / 100), targetPx: entry * (1 + p.target1Pct / 100), stopPct: p.stopPct, targetPct: p.target1Pct,
     holdHours: clamp(Number(p.holdHours) || d.alert?.trackedAs?.holdHours || 12, 1, 24 * 14), costPct: Number(d.alert?.costPct) || 0,
     decision: x.decision, final: x.final || (x.decision === "TAKE" ? "YES" : "NO"), trader: c.trader?.decision || x.modelDecision || null,
-    boss: c.boss?.asked ? (c.boss.available === false ? "none" : c.boss.verdict) : null, bossReason: c.boss?.asked ? String(c.boss.reason || "").slice(0, 200) : null,
+    boss: c.boss?.asked ? (c.boss.available === false ? "none" : c.boss.verdict) : null, bossAgrees: c.boss?.available ? c.boss.agreesWithTrader === true : null,
+    bossReason: c.boss?.asked ? String(c.boss.summary || c.boss.reason || "").slice(0, 300) : null, sizePct: x.sizePct ?? null,
     debate: dbt ? { winner: dbt.verdict?.winner || null, bull: dbt.bull?.available ? dbt.bull.strength : null, bear: dbt.bear?.available ? dbt.bear.strength : null,
       bearPath: dbt.bear?.available ? String(dbt.bear.path || "").slice(0, 200) : null } : null,
     news: c.news?.available ? c.news.riskLevel : null, newsStop: !!c.news?.hardStop, data: c.data?.available ? c.data.dataQuality?.rating || null : null,
@@ -78,12 +79,15 @@ export function applyBars(call, bars, barMs, now = Date.now()) {
 // [section, key, label, test]: each group's results on resolved calls.
 export const GROUPS = [
   ["final", "yes", "Final YES (the trade was taken)", (c) => c.final === "YES"],
-  ["final", "no", "Final NO (if bought anyway)", (c) => c.final !== "YES"],
+  ["final", "watch", "Final WATCH (if bought anyway)", (c) => c.final === "WATCH"],
+  ["final", "no", "Final NO (if bought anyway)", (c) => c.final === "NO"],
   ["trader", "take", "Trader said TAKE", (c) => c.trader === "TAKE"],
   ["trader", "wait", "Trader said WAIT", (c) => c.trader === "WAIT"],
   ["trader", "skip", "Trader said NO TRADE", (c) => c.trader === "SKIP"],
-  ["boss", "yes", "Final boss said YES", (c) => c.boss === "YES"],
-  ["boss", "no", "Final boss said NO (trades it blocked)", (c) => c.boss === "NO"],
+  ["boss", "blocked", "Boss stopped a trader TAKE (if bought anyway)", (c) => c.trader === "TAKE" && c.final !== "YES" && ["YES", "WATCH", "NO"].includes(c.boss)],
+  ["boss", "upgraded", "Boss turned a trader WAIT / NO TRADE into YES", (c) => c.trader !== "TAKE" && c.final === "YES"],
+  ["boss", "agreed", "Boss agreed with the trader", (c) => c.bossAgrees === true],
+  ["boss", "overturned", "Boss overturned the trader", (c) => c.bossAgrees === false],
   ["debate", "bull", "Bull won the debate", (c) => c.debate?.winner === "bull"],
   ["debate", "bear", "Bear won the debate", (c) => c.debate?.winner === "bear"],
   ["debate", "even", "Debate even", (c) => c.debate?.winner === "even"],
@@ -104,16 +108,15 @@ const stat = (g) => (g.length ? { n: g.length, hitTargetPct: share(g, (c) => c.t
 export function scorecard(calls) {
   const done = calls.filter((c) => RESOLVED.includes(c.track.status));
   const groups = GROUPS.map(([section, key, label, fn]) => ({ section, key, label, ...stat(done.filter(fn)) })).filter((g) => g.n > 0);
-  const get = (s, k) => groups.find((g) => g.section === s && g.key === k) || { n: 0 };
-  const yes = get("final", "yes"), no = get("final", "no");
+  const yes = groups.find((g) => g.section === "final" && g.key === "yes") || { n: 0 }, no = stat(done.filter((c) => c.final !== "YES"));
   // Does the trader's stated chance of the target match what happened?
   const calibration = [[0, 20], [20, 30], [30, 40], [40, 101]].map(([lo, hi]) => {
     const g = done.filter((c) => Number.isFinite(c.probTargetPct) && c.probTargetPct >= lo && c.probTargetPct < hi);
     return { band: hi > 100 ? `${lo}%+` : `${lo}-${hi - 1}%`, n: g.length, saidPct: avg(g.map((c) => c.probTargetPct)), hitPct: share(g, (c) => c.track.status === "win") };
   }).filter((b) => b.n > 0);
   return { total: calls.length, open: calls.filter((c) => c.track.status === "open").length, resolved: done.length,
-    // average result of a YES minus that of a NO bought anyway: above 0 = the committee picks better than its rejects
-    edgePct: yes.n && no.n ? r2(yes.avgNetPct - no.avgNetPct) : null, groups, calibration };
+    // average result of a YES minus that of a WATCH or NO bought anyway: above 0 = the committee picks better than its rejects
+    edgePct: yes.n && no.n ? r2(yes.avgNetPct - no.avgNetPct) : null, notYes: no, groups, calibration };
 }
 
 // The committee's own record for its prompts: groups with 5+ resolved calls, the calibration bands with 5+, and the
@@ -126,7 +129,8 @@ export function trackRecord(calls, kind = null, now = Date.now()) {
   const pick = (s, k) => { const g = sc.groups.find((x) => x.section === s && x.key === k); return g && g.n >= 5 ? { n: g.n, hitTargetPct: g.hitTargetPct, hitStopPct: g.hitStopPct, avgNetPct: g.avgNetPct } : null; };
   return {
     resolved: pool.length, scope: pool === same && kind ? `${kind} calls` : "all calls", edgeYesMinusNoPct: sc.edgePct,
-    finalYes: pick("final", "yes"), finalNoIfBought: pick("final", "no"), bossBlocked: pick("boss", "no"), bullWon: pick("debate", "bull"), bearWon: pick("debate", "bear"),
+    finalYes: pick("final", "yes"), finalWatchIfBought: pick("final", "watch"), finalNoIfBought: pick("final", "no"),
+    bossStoppedTakes: pick("boss", "blocked"), bossTurnedIntoYes: pick("boss", "upgraded"), bullWon: pick("debate", "bull"), bearWon: pick("debate", "bear"),
     calibration: sc.calibration.filter((b) => b.n >= 5),
     recentLosingYes: pool.filter((c) => c.final === "YES" && c.track.status === "loss").sort((a, b) => b.at - a.at).slice(0, 3)
       .map((c) => ({ symbol: c.symbol, daysAgo: r2((now - c.at) / DAY, 1), resultPct: c.track.netPct, bearHadSaid: c.debate?.bearPath || null })),
@@ -134,8 +138,8 @@ export function trackRecord(calls, kind = null, now = Date.now()) {
 }
 
 // ───────────────────────────── WAIT triggers ─────────────────────────────
-// Cleans the trader's trigger: breakout = a candle closes above the price (0.05-10% above now); pullback = the price
-// trades down to it (0.05-10% below now). Timeframe 5m / 15m / 1h, time limit 10 minutes to 6 hours. Null if unusable.
+// Cleans a trigger: breakout = a candle closes above the price (0.05-10% above now); pullback = the price trades down to
+// it (0.05-10% below now). Timeframe 5m / 15m / 1h, time limit 10 minutes to 24 hours. Null if unusable.
 export function cleanTrigger(t, price) {
   if (!t || typeof t !== "object" || !(price > 0)) return null;
   const event = ["breakout", "pullback"].includes(t.event) ? t.event : null, px = Number(t.price);
@@ -143,7 +147,25 @@ export function cleanTrigger(t, price) {
   const dist = (px / price - 1) * 100;
   if (event === "breakout" ? !(dist > 0.05 && dist <= 10) : !(dist < -0.05 && dist >= -10)) return null;
   return { event, price: px, timeframe: ["5m", "15m", "1h"].includes(t.timeframe) ? t.timeframe : "5m",
-    expiresMinutes: clamp(Math.round(Number(t.expiresMinutes) || 60), 10, 360), distPct: r2(dist) };
+    expiresMinutes: clamp(Math.round(Number(t.expiresMinutes) || 60), 10, 1440), distPct: r2(dist) };
+}
+// The Final Boss's WATCH triggers are free text ({condition, field, threshold}). The first one that names a price
+// (field "price", or words like close / break / dip / pullback) with a level within 10% of the price becomes a watched
+// trigger: "above / break / reclaim / >" = breakout, "below / dip / pullback / retest / <" = pullback (else by side of
+// the price). Percent thresholds (buyers, funding) are left to the committee's re-check. Null if none can be watched.
+export function triggerFromWatch(list, expiresHours, price) {
+  for (const t of Array.isArray(list) ? list : []) {
+    const text = `${t?.condition || ""} ${t?.threshold || ""}`.toLowerCase(), field = String(t?.field || "").toLowerCase(), th = String(t?.threshold || "");
+    if (/%/.test(th) || !(/price|level|close|resist|support/.test(field) || /close|break|dip|pull ?back|retest|reclaim/.test(text))) continue;
+    const nums = (th.replace(/,/g, "").replace(/\b\d+\s*(m|h|d|min|mins|minutes|hours?)\b/gi, " ").match(/\d*\.?\d+(?:e-?\d+)?/gi) || []).map(Number).filter((x) => x > 0);
+    if (!nums.length) continue;
+    const px = nums.sort((a, b) => Math.abs(a / price - 1) - Math.abs(b / price - 1))[0];
+    const up = /above|break|reclaim|>|over\b|higher/.test(text), down = /below|dip|pull ?back|retest|<|falls? to|drops? to|touch/.test(text);
+    const event = up && !down ? "breakout" : down && !up ? "pullback" : px > price ? "breakout" : "pullback";
+    const c = cleanTrigger({ event, price: px, timeframe: (text.match(/\b(5m|15m|1h)\b/) || [])[1] || "5m", expiresMinutes: Math.round((Number(expiresHours) || 4) * 60) }, price);
+    if (c) return c;
+  }
+  return null;
 }
 // Did the event happen after the trigger was armed? breakout: a candle that closed after arming closed above the price;
 // pullback: a candle that started after arming traded down to it. Returns { at, price } or null.

@@ -14,7 +14,7 @@ const result = (o = {}) => ({
   plan: { stopPct: -3, target1Pct: 6, holdHours: 12 }, dossier: { price: 100, alert: { costPct: 0.3, trackedAs: { holdHours: 12 } }, dataQuality: { demo: false } },
   committee: { data: { available: true, dataQuality: { rating: "good" } }, news: { available: true, riskLevel: "low", hardStop: false },
     debate: { off: false, bull: { available: true, strength: 7 }, bear: { available: true, strength: 4, path: "fades under 97" }, verdict: { winner: "bull" } },
-    trader: { decision: "TAKE" }, boss: { asked: true, available: true, verdict: "YES", reason: "all tests pass" } },
+    trader: { decision: "TAKE" }, boss: { asked: true, available: true, verdict: "YES", agreesWithTrader: true, summary: "all tests pass" } },
   ...o,
 });
 const bar = (t, o, h, l, c) => ({ t, o, h, l, c });
@@ -58,30 +58,32 @@ test("tracker: target, stop (checked first), gaps, the end of the holding time, 
 });
 
 const resolved = (o, status, netPct, at = T0) => { const c = callFromResult(result(o), { at }); c.track = { ...c.track, status, netPct }; return c; };
-test("tracker: the scorecard compares YES with NO (if bought anyway), the boss's blocks, the debate and the stated chances", () => {
-  const no = { decision: "SKIP", final: "NO" };
-  const blocked = { decision: "SKIP", final: "NO", committee: { ...result().committee, boss: { asked: true, available: true, verdict: "NO", reason: "stop inside noise" } } };
-  const calls = [resolved({}, "win", 5.7), resolved({}, "loss", -3.3), resolved({}, "win", 5.7), resolved(no, "loss", -3.3), resolved(blocked, "loss", -3.3),
+test("tracker: the scorecard compares YES with WATCH / NO (if bought anyway), the boss's overturns, the debate and the stated chances", () => {
+  const boss = (verdict, agrees) => ({ ...result().committee, boss: { asked: true, available: true, verdict, agreesWithTrader: agrees, summary: "s" } });
+  const watch = { decision: "WAIT", final: "WATCH", committee: boss("WATCH", false) }; // the trader said TAKE, the boss WATCH
+  const blocked = { decision: "SKIP", final: "NO", committee: boss("NO", false) };
+  const upgraded = { committee: { ...boss("YES", false), trader: { decision: "WAIT" } } };
+  const calls = [resolved({}, "win", 5.7), resolved({}, "loss", -3.3), resolved(upgraded, "win", 5.7), resolved(watch, "loss", -3.3), resolved(blocked, "loss", -3.3),
     callFromResult(result(), { at: T0 })]; // one still open
   const sc = scorecard(calls);
   assert.equal(sc.total, 6); assert.equal(sc.open, 1); assert.equal(sc.resolved, 5);
   const g = (s, k) => sc.groups.find((x) => x.section === s && x.key === k);
   assert.deepEqual([g("final", "yes").n, g("final", "yes").hitTargetPct, g("final", "yes").avgNetPct], [3, 67, 2.7]);
-  assert.deepEqual([g("final", "no").n, g("final", "no").avgNetPct], [2, -3.3]);
+  assert.deepEqual([g("final", "watch").n, g("final", "no").n, sc.notYes.n, sc.notYes.avgNetPct], [1, 1, 2, -3.3]);
   assert.equal(sc.edgePct, 6); // 2.7 - (-3.3)
-  assert.equal(g("boss", "no").n, 1); assert.equal(g("debate", "bull").n, 5);
+  assert.equal(g("boss", "blocked").n, 2); assert.equal(g("boss", "upgraded").n, 1); assert.equal(g("boss", "overturned").n, 3); assert.equal(g("debate", "bull").n, 5);
   assert.deepEqual(sc.calibration, [{ band: "40%+", n: 5, saidPct: 40, hitPct: 40 }]);
 });
 
 test("tracker: the committee's own record for its prompts needs 5+ resolved calls and names recent losing YES calls", () => {
   assert.match(trackRecord([resolved({}, "win", 5.7)]).note, /Too few/);
   const calls = [...Array.from({ length: 4 }, (_, i) => resolved({}, "loss", -3.3, T0 + i * HOUR)), resolved({}, "win", 5.7),
-    ...Array.from({ length: 5 }, () => resolved({ decision: "SKIP", final: "NO" }, "win", 5.7))];
+    ...Array.from({ length: 5 }, () => resolved({ decision: "SKIP", final: "NO", committee: { ...result().committee, trader: { decision: "SKIP" } } }, "win", 5.7))];
   const tr = trackRecord(calls, "spot", T0 + 2 * 86_400_000);
   assert.equal(tr.resolved, 10); assert.equal(tr.scope, "spot calls");
   assert.deepEqual(tr.finalYes, { n: 5, hitTargetPct: 20, hitStopPct: 80, avgNetPct: -1.5 });
   assert.equal(tr.finalNoIfBought.avgNetPct, 5.7); assert.equal(tr.edgeYesMinusNoPct, -7.2);
-  assert.equal(tr.bossBlocked, null); // fewer than 5
+  assert.equal(tr.bossStoppedTakes, null); // fewer than 5
   assert.equal(tr.recentLosingYes.length, 3); assert.equal(tr.recentLosingYes[0].bearHadSaid, "fades under 97");
   assert.equal(tr.recentLosingYes[0].daysAgo, 1.9);
   assert.equal(trackRecord(calls, "alpha").scope, "all calls"); // no Alpha calls yet: uses all
@@ -91,7 +93,7 @@ test("tracker: WAIT triggers are cleaned and detected only after they were armed
   assert.deepEqual(cleanTrigger({ event: "breakout", price: 102, timeframe: "15m", expiresMinutes: 45 }, 100), { event: "breakout", price: 102, timeframe: "15m", expiresMinutes: 45, distPct: 2 });
   assert.equal(cleanTrigger({ event: "breakout", price: 99, timeframe: "5m", expiresMinutes: 30 }, 100), null); // a breakout must be above
   assert.equal(cleanTrigger({ event: "pullback", price: 85, timeframe: "5m", expiresMinutes: 30 }, 100), null); // more than 10% away
-  assert.equal(cleanTrigger({ event: "pullback", price: 98, timeframe: "4h", expiresMinutes: 5000 }, 100).expiresMinutes, 360);
+  assert.equal(cleanTrigger({ event: "pullback", price: 98, timeframe: "4h", expiresMinutes: 5000 }, 100).expiresMinutes, 1440);
   assert.equal(cleanTrigger({ event: "pullback", price: 98, timeframe: "4h" }, 100).timeframe, "5m");
   assert.equal(cleanTrigger(null, 100), null); assert.equal(cleanTrigger({ event: "moon", price: 101 }, 100), null);
   const armedAt = Date.parse("2026-10-29T10:02:00Z"), five = 5 * MIN, b0 = Date.parse("2026-10-29T10:00:00Z");

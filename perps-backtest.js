@@ -72,13 +72,14 @@ for (const sym of hist.chosen) {
     const f = P.features(s, i, ctx);
     for (const sig of sigs) {
       signals++;
-      for (const [rule, ex] of Object.entries(P.EXITS)) {
-        const key = `${sig.setup}|${sig.dir}|${rule}`;
+      const ap = P.aplusOf(sig, f); // an A+ setup is also followed on its own (one position per coin and A+ setup)
+      for (const setup of ap ? [sig.setup, ap] : [sig.setup]) for (const [rule, ex] of Object.entries(P.EXITS)) {
+        const key = `${setup}|${sig.dir}|${rule}`;
         if ((openUntil.get(key) || 0) > s.bars[i + 1].t) continue; // one position per coin, setup, side and exit rule
         const t = P.simulate(s, { i, dir: sig.dir, stop: sig.stop }, ex, COST, dataEnd);
         if (!t) continue;
         openUntil.set(key, t.exitT);
-        trades.push({ setup: sig.setup, rule, f, ...t });
+        trades.push({ setup, rule, f, ...t });
       }
     }
   }
@@ -89,11 +90,14 @@ for (const sym of hist.chosen) {
 const side = (d) => (d > 0 ? "long" : "short");
 const GROUPS = P.CONDITIONS; // shared with the live Perps tab (perps.js)
 const pick = (setup, dir, rule) => trades.filter((t) => t.setup === setup && t.dir === dir && t.rule === rule);
+const ruleOf = (setup) => P.APLUS[setup]?.exit || "main"; // A+ setups are judged with their own exit
 const years = [...new Set(trades.map((t) => new Date(t.t).getUTCFullYear()))].sort();
 const report = { generatedAt: Date.now(), from: hist.from, to: hist.to, split: SPLIT, top: TOP, costPctPerSide: COST, maxOpen: MAX_OPEN,
-  coins: hist.chosen.length, signals, setups: P.SETUPS, exits: Object.fromEntries(Object.entries(P.EXITS).map(([k, v]) => [k, v.label])), results: [] };
-for (const setup of Object.keys(P.SETUPS)) for (const dir of [1, -1]) {
-  const main = pick(setup, dir, "main");
+  coins: hist.chosen.length, signals, setups: P.SETUPS, exits: Object.fromEntries(Object.entries(P.EXITS).map(([k, v]) => [k, v.label])),
+  aplus: Object.fromEntries(Object.entries(P.APLUS).map(([k, a]) => [k, { label: a.label, base: a.setup, side: side(a.dir), exit: a.exit }])), results: [] };
+for (const setup of [...Object.keys(P.APLUS), ...Object.keys(P.SETUPS)]) for (const dir of [1, -1]) {
+  if (P.APLUS[setup] && P.APLUS[setup].dir !== dir) continue;
+  const main = pick(setup, dir, ruleOf(setup));
   if (!main.length) continue;
   const train = P.summary(main.filter((t) => t.t < splitT)), test = P.summary(main.filter((t) => t.t >= splitT));
   const rules = {};
@@ -107,27 +111,27 @@ for (const setup of Object.keys(P.SETUPS)) for (const dir of [1, -1]) {
     return { name, trades: g.length, avgR: P.summary(g).avgR ?? null, olderR: o.avgR ?? null, newerR: n.avgR ?? null,
       holds: o.trades >= 30 && n.trades >= 15 && o.avgR > (train.avgR ?? 0) && n.avgR > (test.avgR ?? 0) ? "better in both" : o.trades >= 30 && n.trades >= 15 && o.avgR < (train.avgR ?? 0) && n.avgR < (test.avgR ?? 0) ? "worse in both" : "unclear" };
   }).filter((g) => g.trades > 0);
-  report.results.push({ setup, side: side(dir), label: P.SETUPS[setup], all: P.summary(main), older: train, newer: test, ...P.verdict(train, test),
+  report.results.push({ setup, side: side(dir), label: P.APLUS[setup]?.label || P.SETUPS[setup], aplus: !!P.APLUS[setup], exit: ruleOf(setup), all: P.summary(main), older: train, newer: test, ...P.verdict(train, test),
     byYear: Object.fromEntries(years.map((y) => [y, P.summary(main.filter((t) => new Date(t.t).getUTCFullYear() === y))])),
     byBtc: Object.fromEntries(["up", "mixed", "down"].map((r) => [r, P.summary(main.filter((t) => t.f.btc === r))])),
     portfolio: P.portfolio(main, MAX_OPEN), rules, groups });
 }
 // One account trading every setup that holds (main exit), at most MAX_OPEN positions, 1% risk each
 const held = report.results.filter((r) => r.ok);
-const heldTrades = trades.filter((t) => t.rule === "main" && held.some((r) => r.setup === t.setup && r.side === side(t.dir)));
+const heldTrades = trades.filter((t) => t.rule === ruleOf(t.setup) && held.some((r) => r.setup === t.setup && r.side === side(t.dir)));
 report.combined = held.length ? { setups: held.map((r) => `${r.setup} ${r.side}`), all: P.portfolio(heldTrades, MAX_OPEN),
   older: P.portfolio(heldTrades.filter((t) => t.t < splitT), MAX_OPEN), newer: P.portfolio(heldTrades.filter((t) => t.t >= splitT), MAX_OPEN),
   byYear: Object.fromEntries(years.map((y) => [y, P.portfolio(heldTrades.filter((t) => new Date(t.t).getUTCFullYear() === y), MAX_OPEN)])) } : null;
-// every main-rule trade, compact (the Perps tab shows a setup's history from these)
-report.trades = trades.filter((t) => t.rule === "main").map((t) => [t.setup, t.dir, t.sym, t.t, t.exitT, +t.entry.toPrecision(6), +t.exit.toPrecision(6), t.why, t.r, t.netPct, t.fundingPct]);
+// every trade with its setup's own exit, compact (the Perps tab shows a setup's history from these)
+report.trades = trades.filter((t) => t.rule === ruleOf(t.setup)).map((t) => [t.setup, t.dir, t.sym, t.t, t.exitT, +t.entry.toPrecision(6), +t.exit.toPrecision(6), t.why, t.r, t.netPct, t.fundingPct]);
 await writeFile(path.join(here, "perps_report.json"), JSON.stringify(report));
 
 // ───────────────────────────── summary ─────────────────────────────
 const pad = (v, n) => String(v ?? "—").padStart(n);
 log(`\nSwing setups on Binance USDⓈ-M perps, ${hist.from} to ${hist.to}: ${TOP} most liquid each month (${hist.chosen.length} coins over time).`);
-log(`Costs: ${COST}% per side + funding. Exit: ${P.EXITS.main.label}. Older = before ${SPLIT}, newer = from ${SPLIT}. R = result in units of the risk.\n`);
-log(`${"setup".padEnd(10)} ${"side".padEnd(5)} ${pad("trades", 6)} ${pad("win%", 5)} ${pad("avg R", 6)} ${pad("PF", 5)} ${pad("older R", 8)} ${pad("newer R", 8)} ${pad("fund%", 6)} ${pad("5-pos acct %", 13)} ${pad("max DD %", 9)}  verdict`);
-for (const r of report.results) log(`${r.setup.padEnd(10)} ${r.side.padEnd(5)} ${pad(r.all.trades, 6)} ${pad(r.all.winRatePct, 5)} ${pad(r.all.avgR, 6)} ${pad(r.all.profitFactor, 5)} ${pad(r.older.avgR, 8)} ${pad(r.newer.avgR, 8)} ${pad(r.all.avgFundingPct, 6)} ${pad(r.portfolio.returnPct, 13)} ${pad(r.portfolio.maxDrawdownPct, 9)}  ${r.verdict}`);
+log(`Costs: ${COST}% per side + funding. Exit: ${P.EXITS.main.label} (A+ setups: ${P.EXITS.wide.label}). Older = before ${SPLIT}, newer = from ${SPLIT}. R = result in units of the risk.\n`);
+log(`${"setup".padEnd(12)} ${"side".padEnd(5)} ${pad("trades", 6)} ${pad("win%", 5)} ${pad("avg R", 6)} ${pad("PF", 5)} ${pad("older R", 8)} ${pad("newer R", 8)} ${pad("fund%", 6)} ${pad("5-pos acct %", 13)} ${pad("max DD %", 9)}  verdict`);
+for (const r of report.results) log(`${(r.aplus ? "A+ " + r.setup : r.setup).padEnd(12)} ${r.side.padEnd(5)} ${pad(r.all.trades, 6)} ${pad(r.all.winRatePct, 5)} ${pad(r.all.avgR, 6)} ${pad(r.all.profitFactor, 5)} ${pad(r.older.avgR, 8)} ${pad(r.newer.avgR, 8)} ${pad(r.all.avgFundingPct, 6)} ${pad(r.portfolio.returnPct, 13)} ${pad(r.portfolio.maxDrawdownPct, 9)}  ${r.verdict}`);
 const best = report.results.map((r) => ({ r, alt: Object.entries(r.rules).filter(([, x]) => x.ok).map(([k]) => k) })).filter((x) => x.alt.length);
 log(`\nOther exits that hold: ${best.length ? best.map((x) => `${x.r.setup} ${x.r.side}: ${x.alt.join(", ")}`).join(" | ") : "none"}`);
 if (report.combined) {
@@ -137,4 +141,4 @@ if (report.combined) {
   log(`  by year: ${Object.entries(c.byYear).map(([y, p]) => `${y} ${p.returnPct ?? 0}%`).join(" · ")}`);
 } else log("\nNo setup holds in both periods with the main exit.");
 log(`\n${report.results.length * Object.keys(P.EXITS).length} setup / side / exit combinations were tested: by luck alone a few can look good. Trust a setup that holds with the main exit, with a large count, and keeps holding in the live tracking.`);
-log(`Report: perps_report.json (${report.trades.length} trades with the main exit)`);
+log(`Report: perps_report.json (${report.trades.length} trades, each setup with its own exit)`);

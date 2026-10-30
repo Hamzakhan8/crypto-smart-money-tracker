@@ -87,7 +87,7 @@ const oiChange = (s, i, back) => { const a = s.bars[i - back]?.oi, b = s.bars[i]
 // What is known at the close of 4h bar i, saved with every signal (the report groups results by these).
 export function features(s, i, ctx = {}) {
   const b = s.bars[i], di = s.dIdx[i], dd = s.daily[di];
-  return { btc: ctx.btcRegime ?? null, oi24h: oiChange(s, i, 6), oi3d: oiChange(s, i, 18), fund8h: s.fund8h[i], fundPct: s.fundPct[i],
+  return { btc: ctx.btcRegime ?? null, atrPct: s.atr[i] > 0 ? s.atr[i] / b.c : null, oi24h: oiChange(s, i, 6), oi3d: oiChange(s, i, 18), fund8h: s.fund8h[i], fundPct: s.fundPct[i],
     topVsAcc: b.top > 0 && b.acc > 0 ? b.top / b.acc : null, taker: b.taker, vol: s.qvAvg[i] > 0 ? b.qv / s.qvAvg[i] : null,
     rs: ctx.rs ?? null, dTrend: dd ? (dd.c > s.dEma50[di] && s.dEma20[di] > s.dEma50[di] ? "up" : dd.c < s.dEma50[di] && s.dEma20[di] < s.dEma50[di] ? "down" : "mixed") : null };
 }
@@ -154,7 +154,29 @@ export const EXITS = {
   t3: { label: "Target 3R or stop, max 14 days", tp: 3, hold: 14 },
   trail: { label: "Stop to break-even at +1R, then trail 2.5 ATR(4h) from +1.5R, max 20 days", tp: null, hold: 20, be: 1, trail: 2.5, trailAfter: 1.5 },
   time5: { label: "No target: stop, or sell after 5 days", tp: null, hold: 5 },
+  wide: { label: "Target 4R or stop, max 14 days", tp: 4, hold: 14 },
 };
+
+// ───────────────────────────── A+ setups ─────────────────────────────
+// A base setup plus the condition that decided it in the test, each with a reason. Found in the Oct 2026 research on
+// Dec 2021 - Sep 2026 (filters picked on the years before 2025, then checked on 2025-26, which they never saw):
+//   weakshort: a 20-day breakdown short made about 0R per trade when the coin was not in its own daily downtrend, and
+//     about +0.5R when it was AND BTC was in a daily uptrend (the coin falls on its own: real weakness, not the market).
+//     Positive in every year 2022-2026. With the wider 4R target: +0.99R before 2025, +0.65R in 2025-26.
+//   squeeze: a 20-day breakout long made about 0R per trade with funding positive, and +0.52R / +0.22R with funding
+//     negative (shorts crowded and paying: the breakout forces them out). 4R target: +0.74R / +0.47R.
+// Both use the wider exit (4R, 14 days): a wider target did better for both in both periods.
+export const APLUS = {
+  weakshort: { setup: "breakout", dir: -1, exit: "wide", label: "Weak-coin breakdown short: a 20-day breakdown on volume while the coin is in its own daily downtrend and BTC is in a daily uptrend",
+    test: (f) => f.btc === "up" && f.dTrend === "down" },
+  squeeze: { setup: "breakout", dir: 1, exit: "wide", label: "Short-squeeze breakout long: a 20-day breakout on volume while funding is negative (shorts crowded and paying)",
+    test: (f) => f.fund8h != null && f.fund8h < 0 },
+};
+// The A+ setup a base signal belongs to (its key), or null. f = features() at the signal's bar.
+export const aplusOf = (sig, f) => Object.entries(APLUS).find(([, a]) => a.setup === sig.setup && a.dir === sig.dir && a.test(f || {}))?.[0] ?? null;
+export const exitOf = (setup) => EXITS[APLUS[setup]?.exit || "main"];
+// A very volatile coin (4h ATR 5%+ of the price) lost money in both periods across the setups.
+export const WILD_ATR = 0.05;
 
 const firstAfter = (rows, t) => { let lo = 0, hi = rows.length; while (lo < hi) { const m = (lo + hi) >> 1; if (rows[m][0] <= t) lo = m + 1; else hi = m; } return lo; };
 // One trade. sig = { i (signal bar), dir, stop }. costPct = fee + slippage per side, in %. dataEnd = when the history
@@ -210,6 +232,7 @@ export const CONDITIONS = [
   ["Top traders more on the trade's side than everyone", (t) => t.f.topVsAcc != null && (t.dir > 0 ? t.f.topVsAcc > 1.05 : t.f.topVsAcc < 0.95)],
   ["Volume 2x its average", (t) => t.f.vol >= 2],
   ["Coin strong vs BTC (top 10) / weak (bottom 10) for shorts", (t) => t.f.rs && (t.dir > 0 ? t.f.rs.rank <= 10 : t.f.rs.rank > t.f.rs.n - 10)],
+  ["Very volatile coin (4h ATR 5%+ of the price)", (t) => t.f.atrPct >= WILD_ATR],
 ];
 export const conditionsMet = (dir, f) => CONDITIONS.filter(([, fn]) => { try { return !!fn({ dir, f }); } catch { return false; } }).map(([name]) => name);
 
@@ -234,6 +257,22 @@ export function judge(setup, dir, f, record) {
   else if (plus.length && !minus.length) verdict = "TAKE";
   else { verdict = "WAIT"; if (!plus.length) reasons.push("No condition that helped this setup in both periods is met now"); }
   return { verdict, reasons, plus: plus.map((g) => g.name), minus: minus.map((g) => g.name) };
+}
+// TAKE / WAIT for an A+ signal: TAKE when its own record holds (made money in both periods with its exit, enough trades,
+// not from 2-3 coins) and the coin is not very volatile; WAIT otherwise. record = the A+ setup's result in perps_report.json.
+export function judgeAplus(key, f, record) {
+  const a = APLUS[key], side = a.dir > 0 ? "long" : "short";
+  const reasons = [`A+ setup: ${a.label}`];
+  if (!record?.all?.trades) return { verdict: "WAIT", reasons: [...reasons, "No backtest report with A+ setups yet: run node perps-backtest.js"], plus: [], minus: [] };
+  const o = record.older?.avgR, n = record.newer?.avgR;
+  reasons.push(`Tested: ${record.all.trades} ${side} trades, ${record.all.avgR >= 0 ? "+" : ""}${record.all.avgR}R per trade (before 2025 ${o ?? "—"}R, 2025-26 ${n ?? "—"}R), ${record.all.winRatePct}% won, exit: ${EXITS[a.exit].label}`);
+  if (!(o > 0 && n > 0)) return { verdict: "WAIT", reasons: [...reasons, "This A+ setup did not make money in both periods in this report"], plus: [], minus: [] };
+  if (record.ok === false) {
+    const conc = [record.older, record.newer].some((x) => x?.top3SharePct > 60);
+    return { verdict: "WAIT", reasons: [...reasons, `Not proven yet (${record.verdict})${conc ? ": in one period most of the profit came from 3 coins" : ""}`], plus: [], minus: [] };
+  }
+  if (f?.atrPct >= WILD_ATR) return { verdict: "WAIT", reasons: [...reasons, `Very volatile coin (4h ATR ${(f.atrPct * 100).toFixed(1)}% of the price): lost money in both periods across the setups`], plus: [], minus: ["Very volatile coin (4h ATR 5%+ of the price)"] };
+  return { verdict: "TAKE", reasons, plus: [a.dir > 0 ? "Funding negative: shorts crowded" : "Coin in its own downtrend while BTC rises"], minus: [] };
 }
 
 // Price levels at the close of bar i, for "check a trade": the 20-day high / low, distances, ATR and EMAs.

@@ -2,6 +2,9 @@
 // gets a verdict, is followed to its target with costs, and "check a trade" explains a coin. No network.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { writeFile, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createPerps } from "../perps-live.js";
 
 const H4 = 14_400_000, DAY = 86_400_000;
@@ -39,7 +42,8 @@ test("perps live: finds the breakout on the closed 4h candle, follows it to the 
   assert.ok(sig, JSON.stringify(a.signals));
   assert.equal(sig.setup, "breakout"); assert.equal(sig.side, "long"); assert.equal(sig.price, 123);
   assert.equal(sig.verdict, "WAIT"); assert.match(sig.reasons[0], /No backtest report/); // no record yet: never TAKE
-  assert.equal(sent.length, 1); assert.match(sent[0][1], /^PERPS WAIT: LONG AAA/);
+  assert.equal(sig.exit, "main"); assert.equal(sig.tp, 2.5); // not an A+ setup (funding not negative): the base exit
+  assert.equal(sent.length, 0); // only TAKE goes to Telegram
   // the same candle again: no duplicate
   await p.scan(); assert.equal(p.api().signals.filter((x) => x.sym === "AAAUSDT").length, 1);
   // next candles: opens at 123, then runs through the 2.5R target
@@ -55,9 +59,36 @@ test("perps live: finds the breakout on the closed 4h candle, follows it to the 
   assert.equal(a.live.closed, 1);
   // check a trade: a short on the coin that just broke out has no tested setup -> WAIT, and what to wait for
   const c = await p.check({ sym: "aaa", side: "short" });
-  assert.equal(c.verdict, "WAIT"); assert.equal(c.sym, "AAAUSDT"); assert.match(c.waitFor[0], /20-day breakdown short/);
+  assert.equal(c.verdict, "WAIT"); assert.equal(c.sym, "AAAUSDT"); assert.match(c.waitFor[0], /Weak-coin breakdown short \(A\+[\s\S]*own daily downtrend \(now up: not yet\)/);
   assert.ok(c.risk.stop > c.risk.entry); // a short's stop is above the entry
   const g = await p.check({ sym: "XAU", side: "long" });
   assert.match(g.reasons[0], /Not a crypto coin/);
   await assert.rejects(p.check({ sym: "NOPE", side: "long" }), /not a Binance USDⓈ-M perpetual/);
+});
+
+test("perps live: an A+ weak-coin breakdown short (coin downtrend, BTC uptrend) is TAKE with the 4R / 14-day exit", async () => {
+  // BBB falls for weeks, bounces a little, then closes through its 20-day low on 5x volume while BTC keeps rising
+  const down = Array.from({ length: 400 }, (_, i) => 200 - i * 0.05 + (i % 6 === 0 ? 0.6 : 0));
+  const bbb = [...down, 180.3, 180.5, 180.7, 180.9, 181.1, 181.3, 177];
+  bars.BBBUSDT = series(bbb, (i) => (i === bbb.length - 1 ? 5e6 : 1e6));
+  const saved = now;
+  now = bars.BBBUSDT[bbb.length - 1].t + H4 + 2 * 60_000;
+  const dir = await mkdtemp(path.join(tmpdir(), "perps-")), reportFile = path.join(dir, "perps_report.json");
+  await writeFile(reportFile, JSON.stringify({ generatedAt: Date.now(), from: "2021-12", to: "2026-09", trades: [], results: [
+    { setup: "weakshort", side: "short", aplus: true, exit: "wide", all: { trades: 334, avgR: 0.73, winRatePct: 51 }, older: { avgR: 0.92 }, newer: { avgR: 0.54 }, ok: true, verdict: "holds" },
+    { setup: "squeeze", side: "long", aplus: true, exit: "wide", all: { trades: 258, avgR: 0.48, winRatePct: 34 }, older: { avgR: 0.53, top3SharePct: 52 }, newer: { avgR: 0.36, top3SharePct: 118 }, ok: false, verdict: "weak: positive but thin" }] }));
+  const sent = [];
+  const p = createPerps({ fetchJson, base: "http://fake", now: () => now, top: 10, reportFile, sendTelegram: async (t, k) => sent.push([k, t]), wantTelegram: (k) => k === "perps" });
+  await p.loadReport();
+  await p.scan();
+  const sig = p.api().signals.find((x) => x.sym === "BBBUSDT");
+  assert.ok(sig, JSON.stringify(p.api().signals.map((x) => [x.sym, x.setup])));
+  assert.equal(sig.setup, "weakshort"); assert.equal(sig.side, "short"); assert.equal(sig.aplus, true); assert.equal(sig.verdict, "TAKE");
+  assert.equal(sig.tp, 4); assert.equal(sig.holdDays, 14);
+  assert.ok(Math.abs(sig.target - (sig.price - 4 * (sig.stop - sig.price))) < 1e-9);
+  assert.equal(sent.length, 1); assert.match(sent[0][1], /^PERPS TAKE: SHORT BBB \(Weak-coin breakdown \(A\+\), 4h close\)/); assert.match(sent[0][1], /\(4R\) \| max 14 days/);
+  // check a trade on it: the same A+ verdict and exit
+  const c = await p.check({ sym: "BBB", side: "short" });
+  assert.equal(c.setup, "weakshort"); assert.equal(c.verdict, "TAKE"); assert.equal(c.risk.tp, 4);
+  delete bars.BBBUSDT; now = saved;
 });

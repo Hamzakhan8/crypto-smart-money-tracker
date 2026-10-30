@@ -151,7 +151,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
 | Binance Alpha confirmed alerts | **On** | about 8 a day |
 | Early 2x high-priority candidates | **On** | a few a day |
-| Perps swing signals (TAKE and WAIT) | **On** | a few a day, after 4h closes |
+| Perps swing signals (TAKE only: the A+ setups that passed the test) | **On** | a few a month, after 4h closes |
 | AI verdict on each new ignition and confirmed Alpha alert | **On** (needs Gemini) | one per alert |
 | Startup message and daily check-in | **On** | one a day |
 | AI desk results you choose to send | On request | tick "send to Telegram" on the AI desk |
@@ -393,19 +393,23 @@ The top of the page shows your closed trades, win rate, total profit or loss in 
 
 **Open:** http://localhost:3000/screener#perps (no API key; uses Binance's futures data, fapi.binance.com)
 
-Swing trades (held up to 10 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `node perps-backtest.js` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
+Swing trades (held up to 14 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `node perps-backtest.js` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
 
 **The tested record:** the app ships with the results of a full run (Dec 2021 to Sep 2026) in `data/perps-report.json`, so verdicts work from the first start. Run `node perps-backtest.js` yourself (1-2 hours the first time) to refresh them with the newest months: your own `perps_report.json` then replaces the shipped copy automatically. Re-run it every month or so.
 
 - **Signals:** after every 4h close (00, 04, 08, 12, 16, 20 UTC), the 50 most liquid perpetuals (by 30-day volume, without stablecoins or perpetuals on stocks, ETFs and commodities) are checked for the two setups worth watching:
   - **20-day breakout / breakdown on volume**, long and short;
   - **crowded fade**: funding at an extreme while open interest piles in and price stalls.
+- **A+ setups** (the versions that held up in the test, see [What the tests say](#7-what-the-tests-say)):
+  - **Weak-coin breakdown short:** a 20-day breakdown on volume while the coin is in its own daily downtrend **and BTC is in a daily uptrend** (the coin is falling on its own). +0.73R per trade over 334 trades, positive in every year 2022-2026. Passes every test.
+  - **Short-squeeze breakout long:** a 20-day breakout on volume while funding is negative (shorts crowded and paying). +0.48R per trade, but not proven yet (in 2025-26 most of its profit came from 3 coins).
+  - Both use a wider exit: **target 4x the risk, or the stop, or 14 days** (better than 2.5R in both test periods).
 - **TAKE / WAIT / SKIP** for every signal:
-  - **TAKE:** the setup made money before 2025 and in 2025-26, and a condition that helped it in both periods (by 0.05R or more) is met now, with none that hurt. Example: a breakdown short in a daily downtrend, or while BTC itself is going up.
-  - **WAIT:** the setup made money, but nothing extra speaks for this one.
+  - **TAKE:** an A+ setup whose own record passed every test (made money before 2025 and in 2025-26, 100+ trades, not from 2-3 coins), on a coin that is not wildly volatile (4h ATR under 5% of the price). Today: the weak-coin breakdown short.
+  - **WAIT:** a tested setup fired, but it has not passed every test (the other signals, and the short-squeeze long for now).
   - **SKIP:** it lost money in the test, or two conditions that hurt are met.
 - **Signal card** (click a row):
-  - entry, stop and target (2.5x the risk), max hold 10 days;
+  - entry, stop and target (4x the risk and 14 days for A+, else 2.5x and 10 days);
   - **position size** for your account and risk, **margin**, the **liquidation price** at your leverage (flagged when it is not well beyond the stop, with the safe leverage);
   - the **funding** you would pay or receive over 10 days;
   - the setup's tested record and its last tested trades;
@@ -417,7 +421,7 @@ Swing trades (held up to 10 days) on Binance USDⓈ-M perpetuals, **long and sho
 - **Your risk settings** (account, risk per trade, leverage, maintenance margin, maximum open positions) are saved in your browser only.
 - **Coins scanned:** price, funding (and where it sits in the coin's own 90 days), open interest change, top traders vs everyone, daily trend, strength vs BTC, distance to the 20-day high and low, and which setups fired, marked when they lost money in the test.
 - **Live results:** every signal is followed with the tested exit after fees and funding, by setup and by verdict, next to the backtest average. That is the real test; give it 4-8 weeks before trading size.
-- **Telegram:** TAKE and WAIT signals (switch "Perps swing signals" in Ignition › Telegram).
+- **Telegram:** TAKE signals only, so a phone alert means an A+ setup (switch "Perps swing signals" in Ignition › Telegram). WAIT signals stay on the page.
 
 Leverage can lose you more than a spot trade, fast. Use isolated margin, size from your risk, and keep the liquidation price well beyond the stop. Research signals, not financial advice.
 
@@ -435,10 +439,12 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
 | **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
 | **BTC rotation** | Oct 2024 to Oct 2026, 107 weekly decisions | Rotation ranking **+28%** (same as holding BTC, +28%); token picks +136%, but almost all of it from one meme-pump week (-9% without it) |
+| **Perps A+: weak-coin breakdown short** | Dec 2021 to Sep 2026, 50 most liquid perps of each month, 0.08% per side + every funding payment, target 4R / stop / 14 days | 334 trades, 51% won, **+0.73R per trade**, profit factor 2.5 (before 2025 +0.92R, 2025-26 +0.54R), **positive in every year 2022-2026**, not from a few coins. **Passes every test.** One account (5 open, 1% risk each): +159%, worst drawdown 15.7% |
+| **Perps A+: short-squeeze breakout long** | same | 258 trades, 34% won, +0.48R per trade (+0.53R / +0.36R), but in 2025-26 most of the profit came from 3 coins and 2024 lost a little: **not proven yet** (WAIT) |
 | **Perps: 20-day breakdown short** | Dec 2021 to Sep 2026, the 50 most liquid USDⓈ-M perps of each month (406 coins), 0.08% per side + every funding payment, target 2.5R / stop / 10 days | 1,976 trades, 41% won, **+0.15R per trade** (before 2025 +0.20R, 2025-26 +0.07R). Holds with a 2R target. Still positive with higher costs (+0.14R) and with the top 30 coins only (+0.13R). Not yet "proven": the newer period is thin |
 | **Perps: the other setups** | same | **Lose after costs:** buying the dip in an uptrend (pullback long, -0.07R) and buying a flush (-0.20R). **Thin:** breakout long, pullback short, crowded fade (+0.03 to +0.09R). The plain-trend benchmark is about zero (longs paid ~0.19% funding per trade) |
 
-**Perps leads to prove live, not proof:** these were found after looking at both periods. A breakdown short when BTC itself is trending up (the coin is weak on its own) did +0.39R / +0.26R (older / newer, 545 trades); a breakout long when funding is negative (shorts crowded) did +0.52R / +0.22R (232 trades).
+**How the A+ setups were found (Oct 2026):** every perps signal of the 4.8 years was saved with 40 market conditions. Conditions were picked on the years **before 2025 only**, then checked on 2025-26, which they never saw. Two survived with a clear reason: a breakdown short works when the coin falls **on its own** (its own daily downtrend while BTC is in a daily uptrend: without the coin's downtrend it made about 0R), and a breakout long works when **shorts are crowded** (funding negative). A wider 4R target did better for both in both periods. Very volatile coins (4h ATR 5%+ of the price) lost money in both periods in almost every setup, so they never get TAKE. The live results are still the real test.
 
 Two real examples:
 - **EVAA (Alpha):** the early tier caught its Oct 26-27 start (+40% the next day), but it had flagged EVAA 34 times in 60 days: 6 winners, 23 stopped out. The confirmed tier missed that start.

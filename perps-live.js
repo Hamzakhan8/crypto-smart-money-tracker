@@ -1,7 +1,8 @@
 // Perps tab (Binance USDⓈ-M perpetuals, swing trades, long and short). The setups tested by perps-backtest.js, found
-// live on CLOSED 4h candles with the same code (perps.js), each with a TAKE / WAIT / SKIP verdict from the setup's
-// tested record and the conditions that helped or hurt it in both test periods, then followed to its result with the
-// tested exit (target 2.5R or stop, at most 10 days) including fees and real funding. "Check a trade" judges your own
+// live on CLOSED 4h candles with the same code (perps.js), each with a TAKE / WAIT / SKIP verdict, then followed to its
+// result with its tested exit including fees and real funding. TAKE is kept for the A+ setups (perps.js APLUS) whose own
+// record holds: they use the wider exit (target 4R or stop, at most 14 days). Other signals are WAIT or SKIP and keep
+// the base exit (2.5R, 10 days); only TAKE goes to Telegram. "Check a trade" judges your own
 // idea on any perpetual the same way. Node.js 18+, no dependencies.
 //
 // Data: Binance's futures API (fapi.binance.com, or BINANCE_FUTURES_URL), no key. Coins: the most liquid USDT
@@ -16,7 +17,16 @@ const MIN = 60_000, HOUR = 3_600_000, H4 = 14_400_000, DAY = 86_400_000;
 export const LIVE_SETUPS = new Set(["breakout", "crowded"]);
 // Lost money in the test: a check that matches these gets SKIP.
 export const AVOID = new Set(["pullback|1", "flush|1"]);
-const SETUP_NAMES = { breakout: "20-day breakout", crowded: "Crowded fade", pullback: "Trend pullback", flush: "Flush reversal", strength: "Relative strength", trend: "Plain trend" };
+const SETUP_NAMES = { weakshort: "Weak-coin breakdown (A+)", squeeze: "Short-squeeze breakout (A+)", breakout: "20-day breakout", crowded: "Crowded fade", pullback: "Trend pullback",
+  flush: "Flush reversal", strength: "Relative strength", trend: "Plain trend" };
+// The verdict of a signal: an A+ setup by its own record; any other setup never above WAIT.
+function verdictFor(sig, f, recordOf) {
+  const ap = P.aplusOf(sig, f);
+  if (ap) return { setup: ap, exit: P.APLUS[ap].exit, ...P.judgeAplus(ap, f, recordOf(ap, sig.dir)) };
+  const j = P.judge(sig.setup, sig.dir, f, recordOf(sig.setup, sig.dir));
+  if (j.verdict === "TAKE") { j.verdict = "WAIT"; j.reasons.push("TAKE is kept for the A+ setups, which did far better in the test"); }
+  return { setup: sig.setup, exit: "main", ...j };
+}
 const r2 = (v, d = 2) => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
 const sideOf = (dir) => (dir > 0 ? "long" : "short");
 const fmtPx = (v) => (!(v > 0) ? "—" : v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(4) : v.toPrecision(4));
@@ -163,21 +173,21 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     save();
   }
   function addSignal({ sym, s, i, sig, f }) {
-    const b = s.bars[i], key = `${sym}|${sig.setup}|${sig.dir}`;
+    const b = s.bars[i], j = verdictFor(sig, f, recordOf), key = `${sym}|${j.setup}|${sig.dir}`;
     if (store.signals.some((x) => x.key === key && (x.t === b.t || x.track.status === "open"))) return; // one at a time, as tested
-    const j = P.judge(sig.setup, sig.dir, f, recordOf(sig.setup, sig.dir));
-    const risk = sig.dir * (b.c - sig.stop);
-    const x = { id: `${key}|${b.t}`, key, sym, base: sym.replace(/USDT$/, ""), setup: sig.setup, side: sideOf(sig.dir), dir: sig.dir, t: b.t, at: now(), price: b.c,
-      stop: sig.stop, target: b.c + sig.dir * P.EXITS.main.tp * risk, riskPct: r2(risk / b.c * 100), verdict: j.verdict, reasons: j.reasons, plus: j.plus, minus: j.minus,
+    const risk = sig.dir * (b.c - sig.stop), ex = P.EXITS[j.exit];
+    const x = { id: `${key}|${b.t}`, key, sym, base: sym.replace(/USDT$/, ""), setup: j.setup, aplus: !!P.APLUS[j.setup], exit: j.exit, tp: ex.tp, holdDays: ex.hold,
+      side: sideOf(sig.dir), dir: sig.dir, t: b.t, at: now(), price: b.c,
+      stop: sig.stop, target: b.c + sig.dir * ex.tp * risk, riskPct: r2(risk / b.c * 100), verdict: j.verdict, reasons: j.reasons, plus: j.plus, minus: j.minus,
       conditions: P.conditionsMet(sig.dir, f), f: { ...f, rs: f.rs }, fund8h: f.fund8h, track: { status: "open" } };
     store.signals.push(x);
     if (store.signals.length > 600) store.signals = store.signals.slice(-600);
-    if (x.verdict !== "SKIP" && sendTelegram && wantTelegram("perps")) sendTelegram(telegramText(x), "perps").catch?.(() => {});
+    if (x.verdict === "TAKE" && sendTelegram && wantTelegram("perps")) sendTelegram(telegramText(x), "perps").catch?.(() => {});
   }
   function telegramText(x) {
     const r = recordOf(x.setup, x.dir);
     return [`PERPS ${x.verdict}: ${x.side.toUpperCase()} ${x.base} (${SETUP_NAMES[x.setup] || x.setup}, 4h close)`,
-      `Entry ~${fmtPx(x.price)} | stop ${fmtPx(x.stop)} (${x.riskPct}%) | target ${fmtPx(x.target)} (2.5R) | max 10 days`,
+      `Entry ~${fmtPx(x.price)} | stop ${fmtPx(x.stop)} (${x.riskPct}%) | target ${fmtPx(x.target)} (${x.tp ?? 2.5}R) | max ${x.holdDays ?? 10} days`,
       r ? `Tested: ${r.all.trades} trades, ${r.all.avgR}R per trade (before 2025 ${r.older.avgR}R, 2025-26 ${r.newer.avgR}R)` : null,
       ...x.plus.map((p) => `+ ${p}`), ...x.minus.map((m) => `- ${m}`),
       x.fund8h != null ? `Funding ${x.fund8h.toFixed(4)}% per 8h (${x.dir * x.fund8h > 0 ? "you pay" : "you receive"})` : null,
@@ -190,7 +200,7 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
         const s = series.get(x.sym) || closedSeries(await coinData(x.sym));
         const i = s.bars.findIndex((b) => b.t === x.t);
         if (i < 0) { if (s.bars[0]?.t > x.t) x.track = { status: "closed", why: "no data", r: null }; continue; }
-        const done = P.simulate(s, { i, dir: x.dir, stop: x.stop }, P.EXITS.main, costPct, null);
+        const done = P.simulate(s, { i, dir: x.dir, stop: x.stop }, P.EXITS[x.exit || "main"], costPct, null);
         if (done) { x.track = { status: "closed", ...done }; continue; }
         const e = s.bars[i + 1];
         if (!e) continue;
@@ -226,8 +236,8 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     const price = +premium.get(sym)?.markPrice || lv.price, out = { sym, base: sym.replace(/USDT$/, ""), side: sideOf(dir), dir, price, at: now(), btc: regime, levels: lv,
       features: { ...f, fundPct: f.fundPct != null ? Math.round(f.fundPct * 100) : null }, conditions: P.conditionsMet(dir, f), waitFor: [] };
     if (live) {
-      const j = P.judge(live.setup, dir, f, recordOf(live.setup, dir));
-      Object.assign(out, { verdict: j.verdict, setup: live.setup, headline: `${SETUP_NAMES[live.setup]} ${sideOf(dir)} ${live.hoursAgo ? `fired ${live.hoursAgo}h ago` : "fired on the last 4h close"}`,
+      const j = verdictFor(live, P.features(s, live.k, ctx), recordOf);
+      Object.assign(out, { verdict: j.verdict, setup: j.setup, exit: j.exit, headline: `${SETUP_NAMES[j.setup]} ${sideOf(dir)} ${live.hoursAgo ? `fired ${live.hoursAgo}h ago` : "fired on the last 4h close"}`,
         reasons: j.reasons, plus: j.plus, minus: j.minus, signalStop: live.stop });
       if (live.hoursAgo) out.reasons.push(`Price then ${fmtPx(s.bars[live.k].c)}, now ${fmtPx(price)}: ${Math.abs(price / s.bars[live.k].c - 1) * 100 > 2 ? "it has moved, the risk to the stop is different now" : "close to the signal price"}`);
     } else if (avoid) {
@@ -246,8 +256,8 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     // what would make it a tested trade (both live setups, this side)
     const volNeed = s.qvAvg[i] > 0 ? 1.5 : null;
     const away = (p) => (dir > 0 ? (p < 0 ? "already above it" : `+${p}% from here`) : p > 0 ? "already below it" : `${p}% from here`);
-    if (dir > 0) out.waitFor.push(`20-day breakout long: a fresh 4h close above ${fmtPx(lv.hi20)} (${away(lv.toHi20Pct)}) on ${volNeed}x its usual volume, with the daily close above its 50-day average. Best when funding is negative (now ${f.fund8h != null ? f.fund8h.toFixed(4) + "%" : "—"})`);
-    else out.waitFor.push(`20-day breakdown short: a fresh 4h close below ${fmtPx(lv.lo20)} (${away(lv.toLo20Pct)}) on ${volNeed}x its usual volume, with the daily close below its 50-day average. Best while BTC itself trends up (now ${regime || "—"})`);
+    if (dir > 0) out.waitFor.push(`Short-squeeze breakout long (A+ setup): a fresh 4h close above ${fmtPx(lv.hi20)} (${away(lv.toHi20Pct)}) on ${volNeed}x its usual volume, the daily close above its 50-day average, AND funding negative (now ${f.fund8h != null ? f.fund8h.toFixed(4) + "%" : "—"}${f.fund8h != null && f.fund8h < 0 ? ": yes" : ": not yet"})`);
+    else out.waitFor.push(`Weak-coin breakdown short (A+, the best tested setup): a fresh 4h close below ${fmtPx(lv.lo20)} (${away(lv.toLo20Pct)}) on ${volNeed}x its usual volume, while the coin is in its own daily downtrend (now ${f.dTrend || "—"}${f.dTrend === "down" ? ": yes" : ": not yet"}) AND BTC is in a daily uptrend (now ${regime || "—"}${regime === "up" ? ": yes" : ": not yet"})`);
     out.waitFor.push(dir > 0 ? `Crowded-fade long: funding at -0.01% per 8h or lower and in the bottom 10% of its 90 days (now ${f.fund8h != null ? f.fund8h.toFixed(4) + "%" : "—"}, ${out.features.fundPct ?? "—"}th percentile), open interest +10% in 3 days (now ${f.oi3d != null ? (f.oi3d * 100).toFixed(1) + "%" : "—"}), then a 4h close back above the 20 EMA`
       : `Crowded-fade short: funding at +0.03% per 8h or higher and in the top 10% of its 90 days (now ${f.fund8h != null ? f.fund8h.toFixed(4) + "%" : "—"}, ${out.features.fundPct ?? "—"}th percentile), open interest +10% in 3 days (now ${f.oi3d != null ? (f.oi3d * 100).toFixed(1) + "%" : "—"}), then a 4h close back below the 20 EMA`);
     // the trade's numbers: your entry and stop, or the signal's stop, or 2.5 ATR(4h)
@@ -259,7 +269,8 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
       sp = dir > 0 ? e - 2.5 * lv.atr : e + 2.5 * lv.atr;
     }
     const riskPct = dir * (e - sp) / e * 100, f8 = fund8hNow(sym) ?? f.fund8h, perDay = f8 != null ? -dir * f8 * 3 : null;
-    out.risk = { entry: e, stop: sp, stopSource: stop > 0 && !bad ? "yours" : out.signalStop ? "the signal's" : "2.5 ATR(4h)", target: e + dir * 2.5 * (dir * (e - sp)), riskPct: r2(riskPct),
+    const ex = P.EXITS[out.exit || "main"];
+    out.risk = { entry: e, stop: sp, stopSource: stop > 0 && !bad ? "yours" : out.signalStop ? "the signal's" : "2.5 ATR(4h)", target: e + dir * ex.tp * (dir * (e - sp)), tp: ex.tp, holdDays: ex.hold, riskPct: r2(riskPct),
       fund8h: f8 != null ? r2(f8, 4) : null, fundingPerDayPct: r2(perDay, 3), funding10dPct: r2(perDay != null ? perDay * 10 : null, 2), funding10dR: perDay != null && riskPct > 0 ? r2(perDay * 10 / riskPct) : null, costPct: 2 * costPct };
     if (riskPct > 15) { out.reasons.push(`The stop is ${r2(riskPct)}% away: wider than any tested setup allows (15%)`); if (out.verdict === "TAKE") out.verdict = "WAIT"; }
     if (out.risk.funding10dR != null && out.risk.funding10dR < -0.25) out.reasons.push(`Funding would cost about ${-out.risk.funding10dR}R over 10 days at today's rate`);
@@ -289,7 +300,7 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
   return {
     start() {
       if (started) return; started = true;
-      console.log(`Perps swing signals: /screener#perps | Binance USDⓈ-M, ${top} most liquid | setups ${[...LIVE_SETUPS].join(", ")} | after each 4h close | Telegram: ${wantTelegram("perps") ? "on" : "off"}`);
+      console.log(`Perps swing signals: /screener#perps | Binance USDⓈ-M, ${top} most liquid | setups ${[...LIVE_SETUPS].join(", ")} (A+: ${Object.keys(P.APLUS).join(", ")}) | after each 4h close | Telegram (TAKE only): ${wantTelegram("perps") ? "on" : "off"}`);
       const boot = async () => { if (stateFile) { try { const s = JSON.parse(await readFile(stateFile, "utf8")); if (s?.version === 1 && Array.isArray(s.signals)) store = s; } catch { /* first run */ } } await loadReport(); };
       boot().finally(() => { if (!demo) setTimeout(tick, 20_000).unref?.(); });
       setInterval(loadReport, 10 * MIN).unref?.(); // picks up a fresh `node perps-backtest.js` report
@@ -299,6 +310,7 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
       return { status: st.status, error: st.error, updatedAt: st.updatedAt, nextScanAt: st.nextScanAt, scanMs: st.scanMs, lastBar: st.lastBar, source: base.replace(/^https?:\/\//, ""),
         coins: universe.length, top, costPctPerSide: costPct, btc: st.btc, excluded: st.excluded, telegramOn: wantTelegram("perps") && telegramConfigured(), demo,
         rows: st.rows, signals: store.signals.slice(-120).reverse(), live: liveStats(), setupNames: SETUP_NAMES, liveSetups: [...LIVE_SETUPS],
+        aplus: Object.fromEntries(Object.entries(P.APLUS).map(([k, a]) => [k, { label: a.label, side: sideOf(a.dir), tp: P.EXITS[a.exit].tp, hold: P.EXITS[a.exit].hold }])),
         report: report ? { ...report, results: Object.values(report.results) } : null };
     },
     // a signal's own tracked result, for the journal's "you vs the signal"

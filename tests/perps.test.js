@@ -152,6 +152,25 @@ test("verdicts: TAKE / WAIT / SKIP from the tested record and the conditions met
   assert.deepEqual(P.conditionsMet(-1, down), ["BTC trend with the trade", "Daily trend with the trade"]);
 });
 
+test("A+ setups: which base signals qualify, their wider exit, and their verdict", () => {
+  const f = { btc: "up", dTrend: "down", fund8h: 0.01, atrPct: 0.02 };
+  assert.equal(P.aplusOf({ setup: "breakout", dir: -1 }, f), "weakshort");                       // breakdown, coin down, BTC up
+  assert.equal(P.aplusOf({ setup: "breakout", dir: -1 }, { ...f, btc: "down" }), null);         // the whole market falling: not weakness of its own
+  assert.equal(P.aplusOf({ setup: "breakout", dir: -1 }, { ...f, dTrend: "mixed" }), null);     // ~0R in the test without the coin's downtrend
+  assert.equal(P.aplusOf({ setup: "breakout", dir: 1 }, { ...f, fund8h: -0.002 }), "squeeze");  // breakout with shorts paying
+  assert.equal(P.aplusOf({ setup: "breakout", dir: 1 }, f), null);
+  assert.equal(P.aplusOf({ setup: "pullback", dir: -1 }, f), null);
+  assert.equal(P.exitOf("weakshort").tp, 4); assert.equal(P.exitOf("weakshort").hold, 14); assert.equal(P.exitOf("breakout").tp, 2.5);
+  const rec = (o) => ({ all: { trades: 334, avgR: 0.73, winRatePct: 51 }, older: { avgR: 0.92, top3SharePct: 24 }, newer: { avgR: 0.54, top3SharePct: 35 }, ok: true, verdict: "holds", ...o });
+  assert.equal(P.judgeAplus("weakshort", f, rec()).verdict, "TAKE");
+  assert.equal(P.judgeAplus("weakshort", { ...f, atrPct: 0.06 }, rec()).verdict, "WAIT");               // a very volatile coin
+  const thin = P.judgeAplus("squeeze", f, rec({ ok: false, verdict: "weak: positive but thin", newer: { avgR: 0.36, top3SharePct: 118 } }));
+  assert.equal(thin.verdict, "WAIT"); assert.match(thin.reasons.join(" "), /most of the profit came from 3 coins/);
+  assert.equal(P.judgeAplus("weakshort", f, rec({ newer: { avgR: -0.1 } })).verdict, "WAIT");           // lost money in one period
+  assert.equal(P.judgeAplus("weakshort", f, null).verdict, "WAIT");                                      // no report yet
+  assert.ok(P.conditionsMet(-1, { ...f, atrPct: 0.06 }).includes("Very volatile coin (4h ATR 5%+ of the price)"));
+});
+
 test("journal: a short gains when price falls; R needs the stop above the entry", async () => {
   const { tradeResult, cleanTrade } = await import("../journal.js");
   const short = { side: "short", entryPrice: 100, exitPrice: 90, stopPrice: 105, sizeUsd: 1000, feesUsd: 1 };

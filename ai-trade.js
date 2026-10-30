@@ -43,13 +43,15 @@ const MIN = 60_000, HOUR = 3_600_000;
 const DOSSIER_TTL = 60_000, RESULT_TTL = 3 * MIN;
 const BATCH_MAX = 12;
 const LEVELS = ["low", "medium", "high"];
-// From the 90-day replay of 96 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener v7 rules, each
+// From the 90-day replay of 139 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener v7 rules, each
 // coin counted only while it had $5M+ 24h volume as live, 0.2% fees + 0.1% slippage). hitTargetPct = target before stop,
 // hitStopPct = stop first, the rest ended flat.
 const REPLAY = {
-  source: "90-day replay of 96 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener-backtest.js, v7 rules)",
+  source: "90-day replay of 139 Binance crypto tokens on 5-minute candles, Aug 1 - Oct 29 2026 (screener-backtest.js, v7 rules)",
   rule: `take profit +${CONFIG.targetPct}%, stop -${CONFIG.stopPct}%, else exit after ${CONFIG.outcomeHours}h; ${CONFIG.feePct}% fees + ${CONFIG.slippagePct}% slippage`,
-  confirmed: { signals: 102, hitTargetPct: 25, hitStopPct: 32, flatPct: 43, avgNetPct: 0.49 }, early: { signals: 230, hitTargetPct: 26, hitStopPct: 36, flatPct: 38, avgNetPct: 0.46 },
+  confirmed: { signals: 114, hitTargetPct: 23, hitStopPct: 37, flatPct: 40, avgNetPct: 0.17 }, early: { signals: 280, hitTargetPct: 26, hitStopPct: 41, flatPct: 34, avgNetPct: 0.26 },
+  // early alerts (score under 65) with 3+ of the 4 quality signs (screener.js EARLY_SIGNS): a small sample
+  earlyAplus: { signals: 44, hitTargetPct: 36, hitStopPct: 27, flatPct: 36, avgNetPct: 1.59, note: "44 alerts: a small sample; all early alerts (score under 65) did +0.23%" },
 };
 const COST_PCT = (CONFIG.feePct || 0) + (CONFIG.slippagePct || 0);
 const MIN_EV_PCT = Number.isFinite(Number(env.AI_MIN_EV_PCT)) && env.AI_MIN_EV_PCT !== "" && env.AI_MIN_EV_PCT !== undefined ? Number(env.AI_MIN_EV_PCT) : 0.5;
@@ -64,6 +66,7 @@ export const BASE_RATES = {
 };
 // A coin that already ran (up 12%+ in 24h, 8%+ in 1h or 8%+ above its 20-day high: the screener's "Already moved") with
 // volume still surging: no alert, but measured. Used instead of BASE_RATES.none when the screener shows that state.
+export const EARLY_APLUS = { ...REPLAY.earlyAplus, source: REPLAY.source };
 export const ALREADY_RAN = { hitTargetPct: 31, hitStopPct: 60, avgNetPct: -0.16,
   source: "90-day replay, Aug 1 - Oct 29 2026: 1,215 times a coin that had already run got a fresh 5m volume burst with buyers 58%+, same rule",
   note: "chasing a coin that already ran: about 6 in 10 hit the stop first; the same in both halves of the period" };
@@ -71,18 +74,19 @@ const ruleFor = (tier) => (tier === "bigmove" && CONFIG.bigmove
   ? { targetPct: CONFIG.bigmove.targetPct, stopPct: CONFIG.bigmove.stopPct, holdHours: CONFIG.bigmove.outcomeHours }
   : { targetPct: CONFIG.targetPct, stopPct: CONFIG.stopPct, holdHours: CONFIG.outcomeHours });
 // What the alert is tracked as and the starting probabilities for the AI.
-export function alertContext(tier, snap = {}, { ran = false } = {}) {
-  const t = BASE_RATES[tier] ? tier : "none", base = t === "none" && ran ? ALREADY_RAN : BASE_RATES[t];
+export function alertContext(tier, snap = {}, { ran = false, earlySigns = null } = {}) {
+  const t = BASE_RATES[tier] ? tier : "none", aplus = t === "early" && earlySigns >= 3;
+  const base = t === "none" && ran ? ALREADY_RAN : aplus ? EARLY_APLUS : BASE_RATES[t];
   const live = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[t] ? snap.stats?.current?.byTier?.[{ confirmed: "ignition", early: "early", bigmove: "bigmove" }[t]] : null;
-  const useLive = !!live && live.resolved >= 30;
+  const useLive = !!live && live.resolved >= 30 && !aplus; // the tier's live results mix every early alert: an A+ one keeps its own replay rate
   return {
-    tier: t, label: { confirmed: "confirmed ignition", early: "early ignition", bigmove: "big-move ignition (small coin waking up)",
+    tier: t, earlySigns: t === "early" ? earlySigns : undefined, label: { confirmed: "confirmed ignition", early: aplus ? `early ignition A+ (${earlySigns}/4 quality signs)` : "early ignition", bigmove: "big-move ignition (small coin waking up)",
       none: ran ? "no ignition signal: the coin already ran (volume still surging)" : "no ignition signal" }[t],
     trackedAs: ruleFor(t), costPct: r(COST_PCT, 2), baseRate: base,
     live: live && live.resolved ? { resolved: live.resolved, hitTargetPct: live.winRatePct, hitStopPct: r((live.losses / live.resolved) * 100, 1), avgNetPct: live.netPct } : null,
     anchorProbTargetPct: Math.round(useLive ? live.winRatePct : base.hitTargetPct),
     anchorProbStopPct: Math.round(useLive ? (live.losses / live.resolved) * 100 : base.hitStopPct),
-    anchorFrom: useLive ? "live results" : t === "none" ? (ran ? "replay of coins that had already run" : "replay of random moments (no signal)") : "replay",
+    anchorFrom: useLive ? "live results" : t === "none" ? (ran ? "replay of coins that had already run" : "replay of random moments (no signal)") : aplus ? "replay of early A+ alerts (small sample)" : "replay",
   };
 }
 // Breadth of the screener's coins: is the market lifting most coins or few?
@@ -278,7 +282,7 @@ export async function buildDossier(symbol, tierHint = null) {
 
   // Reference plan from the alert's own exit rule plus structure / volatility alternatives (long only).
   const tier = tierHint || (cand?.ignition === "ignited" ? ((cand.igScore ?? 0) >= CONFIG.igniteMinScore ? "confirmed" : "early") : cand?.bigmove === "ignited" ? "bigmove" : null);
-  const alert = alertContext(tier, snap, { ran: !tier && cand?.ignition === "ran" }), rule = alert.trackedAs, liveKey = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[alert.tier] || null;
+  const alert = alertContext(tier, snap, { ran: !tier && cand?.ignition === "ran", earlySigns: tier === "early" ? cand?.earlySigns ?? null : null }), rule = alert.trackedAs, liveKey = { confirmed: "ignition", early: "early", bigmove: "bigmove" }[alert.tier] || null;
   alert.timeout = timeoutFor("spot", alert.tier, liveKey ? snap.stats?.current?.byTier?.[liveKey] : null);
   const stopRule = price * (1 - rule.stopPct / 100);
   const stopStructure = support && pct(support, price) > -8 ? support * (1 - (0.15 * (atr1h || 1)) / 100) : null;

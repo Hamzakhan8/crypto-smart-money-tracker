@@ -602,7 +602,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#mwBanner").style.display=data.breadth&&data.breadth.marketWide?"block":"none";
   $("#igBody").innerHTML=rows.length?rows.map(c=>{
    const [txt,k]=STATE[c.ignition];
-   const sub=c.moved?`<span class="sub red">${esc((c.movedWhy||[]).slice(0,2).join(" · "))}</span>`:c.ignition==="heating"&&(c.missing||[]).length?`<span class="sub amber">needs: ${esc(c.missing.slice(0,3).join(", "))}</span>`:c.ignition==="ignited"?`<span class="sub green">${esc(structure(c))}</span>`:"";
+   const sub=c.moved?`<span class="sub red">${esc((c.movedWhy||[]).slice(0,2).join(" · "))}</span>`:c.ignition==="heating"&&(c.missing||[]).length?`<span class="sub amber">needs: ${esc(c.missing.slice(0,3).join(", "))}</span>`:c.ignition==="ignited"?`<span class="sub green">${esc(structure(c))}${(c.igScore??0)<cfg().igniteMinScore&&c.earlySigns!=null?` · early ${c.earlySigns}/4 quality signs${c.earlySigns>=3?" (A+)":""}`:""}</span>`:"";
    const held=c.persist==null?"":` · held ${c.persist}/${c.persistOf}`;
    return `<tr><td><button class="coin-link sym" data-sym="${esc(c.symbol)}">${esc(c.base)} ↗</button>${flags(c)}<span class="sub">${c.rank?"Rank #"+c.rank:"Rank n/a"} · ${price(c.price)}</span></td>
    <td><span class="badge ${k}">${txt}</span>${sub}</td>
@@ -732,11 +732,11 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    const oc=t.outcome,ocTxt=oc==="win"?"WIN":oc==="loss"?"LOSS":oc==="flat"?"FLAT":oc==="unclear"?"UNCLEAR":"PENDING",ocCls=oc==="win"?"green":oc==="loss"?"red":"muted";
    const exit=Number.isFinite(t.exitPct)?` <b class="${col(t.exitPct)}">${pct1(t.exitPct)}</b>`:"";
    since=`<span class="track mono"><b class="${ocCls}">${ocTxt}</b>${exit} · now <b class="${col(now)}">${pct1(now)}</b> · peak ${pct1(hi)} · low ${pct1(lo)}${t.hiW!=null?" (in window)":""}</span>`;}
-  const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?["Early","strong"]:e.tier==="bigmove"?["Big move","strong"]:["Setup","watch"];
+  const tier=e.tier==="ignition"?[e.v>=5?"Confirmed":"Ignition","strong"]:e.tier==="early"?[e.aplus?"Early A+":"Early","strong"]:e.tier==="bigmove"?["Big move","strong"]:["Setup","watch"];
   const old=v&&e.v!==v?'<span class="badge old">older logic</span>':"";
   const ai=e.ai&&e.ai.decision?` <span class="badge ${e.ai.decision==="TAKE"?"strong":e.ai.decision==="WAIT"?"watch":"risk"}" title="${esc(e.ai.headline||"")}${e.ai.expectedValuePct!=null?" · expected "+e.ai.expectedValuePct+"% per trade":""}">AI: ${e.ai.decision==="SKIP"?"NO TRADE":esc(e.ai.decision)}</span>${e.ai.telegram&&e.ai.telegram!=="sent"?` <span class="badge risk" title="${esc(e.ai.telegram)}">Telegram failed</span>`:""}`:e.ai&&e.ai.error?` <span class="badge risk" title="${esc(e.ai.error)}">AI error</span>`:"";
   const took=e.tier!=="setup"&&Date.now()-e.time<2*86400000?`<button class="btn xs took" data-took="${esc(e.id)}" title="Add this trade to your journal">I took it</button>`:"";
-  return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}${took}</div><small class="mono">${when(e.time)}</small></div>`;
+  return `<div class="event" data-ev="${esc(e.id)}"><div><strong><span class="badge tier ${tier[1]}">${tier[0]}</span>${esc(c.base||e.symbol)} · ${e.score}/100${ai}${old}</strong><small>${e.quality?`<span class="${e.quality.n>=3?"green":"muted"}" title="${esc((e.quality.has||[]).join(" · ")||"no quality signs")}">${e.quality.n}/4 quality signs${e.quiet?" · not sent to Telegram":""}</span>${(c.reasons||[]).length?" · ":""}`:""}${esc((c.reasons||[]).slice(0,3).join(" · "))}</small>${since}${took}</div><small class="mono">${when(e.time)}</small></div>`;
  }
  function draw(){
   const cs=data.candidates||[],min=cfg().minScore,reg=data.regime||{},u=data.universe||{};

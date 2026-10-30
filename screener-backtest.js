@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 process.env.SCREENER_LIBRARY_ONLY = "1";
 const core = await import("./screener.js");
-const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight,
+const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight, earlyQuality,
   DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO, isNonCryptoInfo } = core;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -200,7 +200,7 @@ function replay(series) {
       };
       const ctx = scoreToken(tm, null, null, null, null, qv24, change24h).score;
       cands.push({
-        s: s.name, i, t: tGrid[i], f, change24h, distToHigh: tm.distToHigh,
+        s: s.name, i, t: tGrid[i], f, change24h, distToHigh: tm.distToHigh, rvolD: tm.rvol,
         ig: ignitionScore(f, ctx, null, null).score,
         out: RULES.map(([T, S]) => follow(s, i, T, S)),
       });
@@ -259,11 +259,15 @@ async function main() {
   const earlyTier = select(cands, ignited);
   const v4 = select(cands, (c) => ignited(c) && c.ig >= CONFIG.igniteMinScore); // current confirmed tier
   const v6Early = select(cands, ignitedV6), v6Conf = select(cands, (c) => ignitedV6(c) && c.ig >= CONFIG.igniteMinScore);
+  // early alerts proper (score under the confirmed level), all and with 3+ of the 4 quality signs (Early A+)
+  const signs = (c) => earlyQuality({ buy10: c.f.early?.buy10, rvolD: c.rvolD, closePos5: c.f.early?.closePos5, extPct: c.f.extPct }).n;
+  const earlyOnly = select(cands, (c) => ignited(c) && c.ig < CONFIG.igniteMinScore), earlyAplus = select(cands, (c) => ignited(c) && c.ig < CONFIG.igniteMinScore && signs(c) >= 3);
   const W1 = [40, 8, 6, 6, 6, 12];
   console.log("OLD vs NEW LOGIC (whole period, live exit rule)");
   console.log(row(["", "Signals", "Win", "Loss", "Flat", "Avg net"], W1));
   for (const [name, ev] of [["v4 logic (before, 15m trigger)", old], ["v6 early tier (no room / 20-day checks)", v6Early], ["v6 confirmed tier", v6Conf],
-    [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4]]) {
+    [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4],
+    [`  early alerts only (score under ${CONFIG.igniteMinScore})`, earlyOnly], ["  Early A+ (3+ of 4 quality signs)", earlyAplus]]) {
     const s = stats(ev);
     console.log(row([name, s.n, fmtW(s), s.n ? ((s.losses / s.n) * 100).toFixed(0) + "%" : "—", s.n ? ((s.flat / s.n) * 100).toFixed(0) + "%" : "—", fmtP(s.net)], W1));
   }
@@ -340,7 +344,8 @@ async function main() {
   console.log("\nNot included: spread, funding, open interest, narratives. Universe = today's top tokens by volume (delisted coins are missing), which flatters results a little.");
   await writeFile(path.join(here, "backtest_report.json"), JSON.stringify({
     generatedAt: new Date().toISOString(), days: DAYS, tokens: series.map((s) => s.name), split: day(split), config: CONFIG,
-    oldVsNew: { v4: stats(old), v6early: stats(v6Early), v6confirmed: stats(v6Conf), early: stats(earlyTier), confirmed: stats(v4) },
+    oldVsNew: { v4: stats(old), v6early: stats(v6Early), v6confirmed: stats(v6Conf), early: stats(earlyTier), confirmed: stats(v4), earlyOnly: stats(earlyOnly), earlyAplus: stats(earlyAplus),
+      earlyAplusHalves: { older: stats(earlyAplus.filter(isTrain)), newer: stats(earlyAplus.filter((c) => !isTrain(c))) }, earlyOnlyHalves: { older: stats(earlyOnly.filter(isTrain)), newer: stats(earlyOnly.filter((c) => !isTrain(c))) } },
     grid: results.map((r) => ({ ...r, p: { earlyRvol: r.p.earlyRvol, minBuy: r.p.minBuy, requireTrend: r.p.requireTrend, maxRsi: r.p.maxRsi } })),
     exitRules: RULES.map(([T, S], r) => ({ target: T, stop: S, ...stats(v4, r) })),
     signals: v4.map((c) => ({ token: c.s, time: new Date(c.t).toISOString(), igScore: c.ig, outcome: c.out[0].o, resultPct: +c.out[0].r.toFixed(2) })),

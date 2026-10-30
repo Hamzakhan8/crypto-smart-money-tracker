@@ -49,6 +49,23 @@ test("classifyIgnition v7: no ignition right under a recent high or below the 20
   assert.equal(sc.classifyIgnition({ ...ok, distTo12hHigh: -0.2, distTo24hHigh: -0.2, aboveSma20d: false }, 2, -0.02, off).state, "ignited");
 });
 
+test("early ignition quality signs: 3+ of 4 = Early A+, with its own base rate for the AI", () => {
+  const best = { buy10: 72, rvolD: 1.1, closePos5: 0.8, extPct: 0.9 };
+  assert.equal(sc.earlyQuality(best).n, 4);
+  const q = sc.earlyQuality({ ...best, buy10: 60, rvolD: 2.4 });
+  assert.equal(q.n, 2); assert.deepEqual(q.missing.map((m) => m.split(" (")[0]), ["buyers in control", "a fresh start"]);
+  assert.equal(sc.earlyQuality({ buy10: null, rvolD: null, closePos5: null, extPct: null }).n, 0); // unknown = missing
+  assert.equal(sc.earlyQuality({ ...best, extPct: 1.5 }).n, 3); // 1.5% above the 4h average is already stretched
+  const a = desk.alertContext("early", {}, { earlySigns: 3 }), plain = desk.alertContext("early", {}, { earlySigns: 2 });
+  assert.match(a.label, /early ignition A\+ \(3\/4 quality signs\)/); assert.match(a.anchorFrom, /early A\+/);
+  assert.ok(a.anchorProbTargetPct > plain.anchorProbTargetPct && a.anchorProbStopPct < plain.anchorProbStopPct);
+  assert.equal(plain.label, "early ignition");
+  // the tier's live results (every early alert) take over for plain early alerts only
+  const snap = { stats: { current: { byTier: { early: { resolved: 40, winRatePct: 20, losses: 20, netPct: -0.2 } } } } };
+  assert.equal(desk.alertContext("early", snap, { earlySigns: 1 }).anchorFrom, "live results");
+  assert.match(desk.alertContext("early", snap, { earlySigns: 4 }).anchorFrom, /early A\+/);
+});
+
 test("fiveMinFeatures: distance to the prior 12h and 24h highs (last 15 minutes left out)", () => {
   const n = 289, k = { t: [], open: [], high: [], low: [], close: [], qv: [], trades: [], buy: [] };
   for (let i = 0; i < n; i++) {
@@ -195,9 +212,10 @@ test("AI desk: expected value decides; chances stay near the alert's base rate; 
     chart: { trend4h: { state: "uptrend" } }, levels: { roomToResistancePct: 8 }, marketFlow: { available: true, buyRatio5mPct: 62, netFlow5mUsd: 5000 },
     orderBook: { spreadBps: 4, bands: [{ withinPct: 1, bidUsd: 90_000, askUsd: 70_000 }] } };
   const plan = { target1Pct: 6, stopPct: -3, rewardRisk: 2 };
-  const good = desk.decide(d, { decision: "TAKE", probTargetPct: 40, probStopPct: 30 }, plan);
+  const pT = alert.anchorProbTargetPct + 15; // the most the evidence may add to the base rate
+  const good = desk.decide(d, { decision: "TAKE", probTargetPct: pT, probStopPct: 30 }, plan);
   assert.equal(good.decision, "TAKE");
-  assert.equal(good.expectedValuePct, +(0.4 * 6 - 0.3 * 3 - alert.costPct).toFixed(2)); // 2.4 - 0.9 - 0.3 = 1.2
+  assert.equal(good.expectedValuePct, +((pT / 100) * 6 - 0.3 * 3 - alert.costPct).toFixed(2));
   const greedy = desk.decide(d, { decision: "TAKE", probTargetPct: 90, probStopPct: 5 }, plan); // far above the base rate
   assert.equal(greedy.probTargetPct, alert.anchorProbTargetPct + 15);
   assert.ok(greedy.notes.some((n) => /base rate/.test(n)));

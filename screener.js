@@ -112,6 +112,7 @@ const IGNITE_MIN_SCORE = num("SCREENER_IGNITE_MIN_SCORE", 65); // minimum igniti
 const EARLY_RVOL = num("SCREENER_EARLY_RVOL", 3);              // v5 trigger: each of the last two finished 5m candles vs normal
 const EARLY_MIN_MOVE = num("SCREENER_EARLY_MIN_MOVE", 0.2);     // % price rise over those two candles
 const EARLY_ALERTS = env.SCREENER_EARLY_ALERTS !== "0";          // "Early ignition" tier (the confirmed tier needs the score too)
+const EARLY_TG_SIGNS = Math.max(0, Math.min(4, num("SCREENER_EARLY_MIN_SIGNS", 3))); // early alerts go to Telegram (and get an AI review) with this many quality signs (0 = all)
 const MAX_DAILY_RSI = num("SCREENER_MAX_DAILY_RSI", 65);        // overbought on the daily chart = no ignition
 const BTC_4H_MIN = num("SCREENER_BTC_4H_MIN", -0.1);            // % no ignition while BTC is falling over 4 hours
 const MIN_PERSIST = num("SCREENER_MIN_PERSIST", 2);            // of the last 3 five-minute candles, how many must run at 2x normal volume
@@ -225,7 +226,7 @@ const state = {
     btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExtension: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
-    earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+    earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, earlyMinSigns: EARLY_TG_SIGNS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
     room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
     bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
   },
@@ -649,6 +650,21 @@ export function ignitionScore(f, ctxScore, funding, narrative, p = DEFAULT_IGNIT
   const score = clamp(Math.round(Object.values(parts).reduce((a, q) => a + q.pts, 0)), 0, 100);
   return { score, parts };
 }
+// Quality signs of an early ignition (v7.1). In the 90-day replay, early alerts with 3+ of these 4 hit the stop about
+// half as often (16-22% vs 31-42%) and averaged +0.6% to +2.4% per trade vs +0.1% to +0.3% for all early alerts, in both
+// halves of the period and on three versions of the replay; they did not help confirmed alerts. x = { buy10 (% aggressive
+// buying, last 10 min), rvolD (24h volume vs its 20-day average), closePos5 (where the last 5m candle closed, 1 = high),
+// extPct (% above the 4h average) }. Unknown values count as missing.
+export const EARLY_SIGNS = [
+  ["buyers in control (65%+ aggressive buying)", (x) => x.buy10 >= 65],
+  ["a fresh start (daily volume under 1.5x normal)", (x) => x.rvolD != null && x.rvolD < 1.5],
+  ["a strong close (top 30% of the last 5m candle)", (x) => x.closePos5 >= 0.7],
+  ["not stretched (under 1.5% above the 4h average)", (x) => x.extPct != null && x.extPct < 1.5],
+];
+export function earlyQuality(x) {
+  const has = EARLY_SIGNS.filter(([, fn]) => { try { return !!fn(x || {}); } catch { return false; } }).map(([name]) => name);
+  return { n: has.length, has, missing: EARLY_SIGNS.map(([name]) => name).filter((name) => !has.includes(name)) };
+}
 const labelFor = (score) => score >= MIN_SCORE_ALERT ? "Early setup" : score >= 55 ? "Watch closely" : score >= 40 ? "Developing" : "Weak";
 
 function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
@@ -687,6 +703,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
     closePos5: round(fast?.early?.closePos5, 2), btc4h: round(fast?.btc4h, 2),
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
     igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
+    earlySigns: fast?.early ? earlyQuality({ buy10: fast.early.buy10, rvolD: t.rvol, closePos5: fast.early.closePos5, extPct: fast.extPct }).n : null,
     core, bigmove: bm.state, bigMissing: bm.miss,
     big: bm.state ? { r5: round(e5?.r5, 2), prevR5: round(e5?.prevR5, 2), ret10m: round(e5?.ret10, 2), buyRatio10m: round(e5?.buy10, 1) } : null,
     rotation: rotation ? rotation.context(base) : null,
@@ -1146,17 +1163,21 @@ function updateEvents(results) {
   const fresh = [];
   const fire = (c, tier, score, message, lines) => {
     const rule = tier === "bigmove" ? { targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hz: BIG_OUTCOME_MS } : { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS };
+    // early alerts: quality signs; with too few they are tracked and shown, but not sent to Telegram (nor AI-reviewed)
+    const q = tier === "early" ? earlyQuality({ buy10: c.buyRatio10m, rvolD: c.rvol, closePos5: c.closePos5, extPct: c.extPct }) : null;
+    const aplus = !!q && q.n >= 3, quiet = !!q && q.n < EARLY_TG_SIGNS;
     fresh.push({
-      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score,
-      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? "Early ignition" : tier === "bigmove" ? "Big-move ignition" : c.label,
+      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, ...(q ? { quality: q, aplus, quiet } : {}),
+      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? (aplus ? "Early ignition A+" : "Early ignition") : tier === "bigmove" ? "Big-move ignition" : c.label,
       time: now, message, detail: { ...c, ctx: marketContext(now) },
       track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
-    if (!DEMO && tier !== "setup" && telegramWants(tier === "bigmove" ? "bigmove" : "ignition")) { // queued and retried until delivered (telegram.js)
+    if (!DEMO && tier !== "setup" && !quiet && telegramWants(tier === "bigmove" ? "bigmove" : "ignition")) { // queued and retried until delivered (telegram.js)
       const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
         : tier === "bigmove" ? `BIG-MOVE IGNITION: ${c.base} (small coin waking up; research target +${BIG_TARGET_PCT}%, stop -${BIG_STOP_PCT}%)`
-        : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ignition score ${score}/100)`;
+        : aplus ? `EARLY IGNITION A+: ${c.base} (${q.n}/4 quality signs: ${q.has.join(", ")}; ignition score ${score}/100)`
+        : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ${q.n}/4 quality signs; ignition score ${score}/100)`;
       const hz = rule.hz / 3_600_000;
       sendTelegram(tier === "bigmove" ? "bigmove" : "ignition", `${head}\n` +
         `Moved so far: ${sgn(c.ret15m ?? c.big?.ret10m)} ${c.ret15m != null ? "15m" : "10m"} | ${sgn(c.change24h)} 24h\n` +
@@ -1216,7 +1237,7 @@ function updateEvents(results) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
     // AI review: the quick tiers, and big-move alerts when their Telegram alerts are on (the AI gets that tier's rule)
-    for (const ev of fresh) if (ev.tier === "ignition" || ev.tier === "early" || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+    for (const ev of fresh) if (ev.tier === "ignition" || (ev.tier === "early" && !ev.quiet) || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
 }
 
@@ -1357,6 +1378,7 @@ const BUCKETS = [
   ["AI said TAKE", (c) => c.aiDecision === "TAKE"], ["AI said WAIT", (c) => c.aiDecision === "WAIT"], ["AI said SKIP", (c) => c.aiDecision === "SKIP"],
   ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
   ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
+  ["Early: 3-4 quality signs (A+)", (c) => c.earlySigns >= 3], ["Early: 0-2 quality signs", (c) => c.earlySigns != null && c.earlySigns < 3],
   ["Less than 1% under its 12h high", (c) => c.distTo12hHigh != null && c.distTo12hHigh <= 0 && c.distTo12hHigh > -1],
   ["Above its 20-day average", (c) => c.aboveSma === true], ["Below its 20-day average", (c) => c.aboveSma === false],
   ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],

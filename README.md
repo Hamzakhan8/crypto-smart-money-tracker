@@ -147,7 +147,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 
 | Message | Default | About how many |
 |---|---|---|
-| Ignition alerts (early and confirmed) | **On** | a few a day |
+| Ignition alerts (confirmed, and early ones with 3+ quality signs) | **On** | a few a day |
 | Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
 | Binance Alpha confirmed alerts | **On** | about 8 a day |
 | Early 2x high-priority candidates | **On** | a few a day |
@@ -225,6 +225,7 @@ Watches every liquid Binance USDT pair and alerts when volume ignites before pri
 | Tier | Rule (short) | Use it as |
 |---|---|---|
 | **Early ignition** | The last two finished 5-minute candles each trade 3x+ the coin's normal volume for that hour, price rises, mostly aggressive buying, and the quality checks pass | A heads-up |
+| **Early ignition A+** | An early ignition with 3 or 4 of the **quality signs**: buyers in control (65%+ aggressive buying), a fresh start (daily volume under 1.5x normal), a strong close (top 30% of the last 5-minute candle), not stretched (under 1.5% above the 4-hour average) | The early alerts worth acting on: only these go to Telegram by default |
 | **Confirmed ignition** | The same, plus an ignition score of 65+ (volume that keeps running). Usually a few minutes later | The tier worth trading |
 | **Big-move** (research) | A 5m ignition on a smaller coin ($1M-$10M daily volume) whose daily volume is already 1.5x its 20-day average. Target +40% before -10% within 7 days | A watchlist, not a proven edge |
 
@@ -433,8 +434,9 @@ Every tool was replayed on past Binance data with costs included. Short version:
 
 | Tool | Test | Result |
 |---|---|---|
-| **Ignition, confirmed** | 90 days (Aug-Oct 2026), 96 coins, each counted only while it had $5M+ daily volume (as live), +6% / -3% / 12h, after costs | Hit target 25%, hit stop 32%, **+0.49% per trade** (older half -0.35%, newer half +1.03%). Without the v7 room and 20-day checks: -0.12% |
-| **Ignition, early** | same | Hit target 26%, hit stop 36%, **+0.46% per trade** (without the v7 checks: +0.09%) |
+| **Ignition, confirmed** | 90 days (Aug-Oct 2026), 139 coins, each counted only while it had $5M+ daily volume (as live), +6% / -3% / 12h, after costs | Hit target 23%, hit stop 37%, **+0.17% per trade**. Without the v7 room and 20-day checks: -0.27%. (On the 96 most traded coins: +0.49%) |
+| **Ignition, early (all)** | same | Hit target 26%, hit stop 41%, **+0.26% per trade** (without the v7 checks: -0.01%) |
+| **Ignition, Early A+** (early alerts with 3+ quality signs) | same | 44 alerts: hit target 36%, hit stop **27%**, **+1.59% per trade** (first two months +1.49%, last month +1.89%). Early alerts without them: hit stop 46%, +0.23%. The same pattern held on two other versions of the replay. A small sample: the live results decide |
 | **Big-move tier** | 90 days, every Binance USDT pair, +40% / -10% / 7 days | About 1 in 10 reached +40%. **+2.5% per trade** in the Aug-Sep alt rally, **-1.8%** in October |
 | **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
 | **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
@@ -553,6 +555,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_ROOM_12H` / `SCREENER_ROOM_24H` | `1` / `1.5` | No ignition while price sits less than this % under its 12h / 24h high (`0` = off) |
 | `SCREENER_DAILY_TREND` | on | `0` = also alert coins below their 20-day average |
 | `SCREENER_EARLY_ALERTS` | on | `0` = only confirmed alerts |
+| `SCREENER_EARLY_MIN_SIGNS` | `3` | Early alerts go to Telegram (and get an AI review) with at least this many of the 4 quality signs; `0` = all early alerts |
 | `SCREENER_SETUP_ALERTS` | off | `1` = alerts for daily setups (watchlist) |
 | `SCREENER_REGIME_GATE` | off | `1` = hold ignition alerts while BTC is in a daily downtrend |
 | `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |

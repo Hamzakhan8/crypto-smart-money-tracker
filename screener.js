@@ -86,6 +86,7 @@ import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary
 import { createJournal } from "./journal.js";
 import { createPerps } from "./perps-live.js";
 import { createPump } from "./pump.js";
+import { createScalp } from "./scalp.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
 const env = process.env;
@@ -267,6 +268,11 @@ const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
   bundledReport: path.join(here, "data", "perps-report.json"), // shipped results, until you run perps-backtest.js yourself
   sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured,
   top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
+});
+// Scalp tab: 5-minute flush-bounce longs on the top-50 perpetuals, tested by scalp-backtest.js (scalp.js)
+const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
+  bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
 });
 // Pump watch (Ignition tab): once a day after the daily close, coins near their 90-day high on 2x+ volume (pump.js,
 // tested by pump-backtest.js). It gets the coin list and prices from each scan.
@@ -1648,6 +1654,7 @@ export async function handleScreenerRequest(req, res, url) {
     catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
     return true;
   }
+  if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
@@ -1696,6 +1703,8 @@ export function startScreener(baseUrl = "") {
   else console.log(`Binance Alpha ignition: off (${DEMO ? "demo mode" : "ALPHA=0"})`);
   if (perps) perps.start();
   else console.log("Perps swing signals: off (PERPS=0)");
+  if (scalp && !DEMO) { scalp.start(); console.log("Perps scalp (flush bounce, 5m): on, scans a few seconds after each 5-minute close"); }
+  else console.log(`Perps scalp: off (${DEMO ? "demo mode" : "SCALP=0"})`);
 }
 
 // Standalone: `node screener.js` serves the screener on its own port.

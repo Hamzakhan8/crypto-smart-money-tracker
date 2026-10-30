@@ -132,6 +132,8 @@ async function one(sym, kind, period, url, parse) {
   return rows;
 }
 const um = (freq, what, sym, sub, period) => `${ARCHIVE}/data/futures/um/${freq}/${what}/${sym}/${sub ? sub + "/" : ""}${sym}-${sub ? sub + "-" : ""}${what === "fundingRate" ? "fundingRate-" : what === "metrics" ? "metrics-" : ""}${period}.zip`;
+// One month of one coin's candles at any interval, cached (the Scalp backtest reads 5-minute candles this way).
+export const monthKlines = (sym, interval, month) => one(sym, interval, month, um("monthly", "klines", sym, interval, month), parseKlines);
 
 // ───────────────────────────── the download ─────────────────────────────
 // opts: { from: "2021-12", to: "2026-09", top: 50, log, metrics: false = skip open interest (faster first look) }

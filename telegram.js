@@ -30,6 +30,7 @@ export const TG_KINDS = {
   alphaEarly: { label: "Alpha early alerts (about 50 a day)", def: env.ALPHA_TELEGRAM === "all" },
   early2x: { label: "Early 2x high-priority candidates", def: !off(env.EARLY2X_ALERTS) },
   perps: { label: "Perps swing signals (TAKE and WAIT)", def: !off(env.PERPS_TELEGRAM) },
+  scalp: { label: "Perps scalp signals (flush bounce, 5m)", def: !off(env.SCALP_TELEGRAM) },
   ai: { label: "AI verdicts on new alerts", def: !off(env.AI_REVIEW_TELEGRAM) },
   rotation: { label: "BTC rotation: regime or holdings changed", def: env.ROTATION_TELEGRAM === "1" },
   whales: { label: "Whale transfers", def: env.WHALES_TELEGRAM === "1" },

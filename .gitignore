@@ -42,3 +42,6 @@ pump_cache/
 pump_report.json
 pump_state.json
 pump_state.demo.json
+scalp_report.json
+scalp_state.json
+scalp_state.demo.json

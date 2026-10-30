@@ -36,7 +36,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | Tool | Address | What it does |
 |---|---|---|
 | **Market Flow Radar** | http://localhost:3000 | Live leaderboard of buying pressure on Binance spot coins, order books, smart-money wallet signals, AI market brief |
-| **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers) |
+| **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers), plus the daily **Pump watch** list of coins that could pump hard |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
@@ -45,7 +45,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, Final Boss) answers **YES / WATCH / NO** with entry, stop, targets, expected value and position size |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
-**Section tags:** every page has a row of tags under its title (for example *Live watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
+**Section tags:** every page has a row of tags under its title (for example *Live watch · Pump watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
 
 **Filter tabs in every coin list:** each list (Market Flow leaderboard, Live ignition watch, Big-move watch, Alert history, Setup leaderboard, Alpha candidates and alerts, Early 2x candidates and snapshots, AI desk coins) has the same tabs, each with a count:
 
@@ -149,6 +149,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 |---|---|---|
 | Ignition alerts (confirmed, and early ones with 3+ quality signs) | **On** | a few a day |
 | Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
+| Pump watch: the daily list (coins near the 90-day high on 2x+ volume) | **On** | one message a day, a few minutes after 00:00 UTC, only when there are new picks |
 | Binance Alpha confirmed alerts | **On** | about 8 a day |
 | Early 2x high-priority candidates | **On** | a few a day |
 | Perps swing signals (TAKE only: the A+ setups that passed the test) | **On** | a few a month, after 4h closes |
@@ -232,6 +233,23 @@ Watches every liquid Binance USDT pair and alerts when volume ignites before pri
 **Quality checks** (all must pass): daily RSI 65 or lower, price above its 20-day average, room above (not less than 1% under its 12-hour high or 1.5% under its 24-hour high: it waits for the break), not an exhausted spike, not the top tick of the 2-hour range, rising 4-hour trend, BTC not falling over 1 and 4 hours, tight spread, no market-wide surge. Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list never alert. Coins that already ran are marked **Already moved — do not chase**.
 
 **Every alert is tracked as a trade:** take profit at +6%, stop at -3%, otherwise sell after 12 hours (big-move: +40% / -10% / 7 days), judged on 1-minute candles after 0.2% fees and 0.1% slippage. The **performance panel** shows the results per tier and per AI verdict.
+
+#### Pump watch: coins that could pump hard
+
+Press the **Pump watch** tag on the Ignition tab. Once a day, a few minutes after the daily close (00:00 UTC), the app reads the daily candles of every Binance USDT pair with $0.5M+ of volume and lists the coins where **all** of this is true on the day that just closed:
+
+- the close is **within 15% of its 90-day high** (strong coins break out; coins far below their high rarely pump),
+- the day's volume is **2x or more** its 20-day average (new money coming in),
+- the day rose **less than 15%** (it has not already run: chasing coins that are already up a lot lost money in the test),
+- **$1M+** was traded that day.
+
+Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list are left out. A coin is listed at most once every 14 days.
+
+**The plan that was tested:** buy near the daily close, sell at **+100%** or at **-25%**, otherwise sell after **14 days**. Each pick is followed on daily candles with exactly that plan, and the page shows its result.
+
+**Market mood** = the share of coins whose price is up over the last 30 days. In the test, picks made money on average when it was 40% or more and lost money when it was under 40%. The page and the Telegram message say **OK** or **WEAK**. When it says WEAK, skip the picks or use a very small size.
+
+**Be honest with yourself about what it does:** it roughly **doubles the odds** of a big pump. It does not make a pump likely. About 9 in 10 picks do **not** rise 50%, and about 1 in 5 hit the -25% stop. The money comes from the few that double. It also made money only in strong altcoin markets (see [What the tests say](#7-what-the-tests-say)). Use small sizes, and never more than you can lose.
 
 ### 6.3 Alpha (Binance Wallet tokens)
 
@@ -438,6 +456,7 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Ignition, early (all)** | same | Hit target 26%, hit stop 41%, **+0.26% per trade** (without the v7 checks: -0.01%) |
 | **Ignition, Early A+** (early alerts with 3+ quality signs) | same | 44 alerts: hit target 36%, hit stop **27%**, **+1.59% per trade** (first two months +1.49%, last month +1.89%). Early alerts without them: hit stop 46%, +0.23%. The same pattern held on two other versions of the replay. A small sample: the live results decide |
 | **Big-move tier** | 90 days, every Binance USDT pair, +40% / -10% / 7 days | About 1 in 10 reached +40%. **+2.5% per trade** in the Aug-Sep alt rally, **-1.8%** in October |
+| **Pump watch** (daily list) | Jan 2021 to Oct 2026, every Binance USDT pair (577 coins, delisted ones too), daily candles, +100% / -25% / 14 days, 0.3% costs | 4,726 picks (about 15 a week). **Rose +50% within 7 days: 9.4%** (any coin on any day: 4.7%). **Doubled within 14 days: 5.2%** (2.6%). **+5.25% per trade** (any coin: -0.33%). With market mood 40%+: +6.00%; under 40%: +0.20%. **The years not used to find the rule** (2021 to Feb 2024): +50% odds 11.5% vs 5.9%, +8.05% per trade. **But it made money in only 5 of 12 half-years**: big gains in alt rallies (2021 H1 +21.5%, 2024 +8% to +10%, 2026 H2 +6.5%), losses of 5-10% per trade in weak markets (2022, 2025, 2026 H1) |
 | **Alpha, confirmed** | 60 days, every Alpha token not on spot (delisted ones included where Binance still has data) | Hit +40% first 16.7%, **+0.6% per trade** (random entry on the same tokens: 13.8%, -1.2%). The $1M rule was picked after seeing the data, so this may be flattered |
 | **Alpha, early** | same | Hit +40% first 11.2%, **-1.2% per trade**, about 50 alerts a day: no better than a random entry |
 | **BTC rotation** | Oct 2024 to Oct 2026, 107 weekly decisions | Rotation ranking **+28%** (same as holding BTC, +28%); token picks +136%, but almost all of it from one meme-pump week (-9% without it) |
@@ -447,6 +466,8 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Perps: the other setups** | same | **Lose after costs:** buying the dip in an uptrend (pullback long, -0.07R) and buying a flush (-0.20R). **Thin:** breakout long, pullback short, crowded fade (+0.03 to +0.09R). The plain-trend benchmark is about zero (longs paid ~0.19% funding per trade) |
 
 **How the A+ setups were found (Oct 2026):** every perps signal of the 4.8 years was saved with 40 market conditions. Conditions were picked on the years **before 2025 only**, then checked on 2025-26, which they never saw. Two survived with a clear reason: a breakdown short works when the coin falls **on its own** (its own daily downtrend while BTC is in a daily uptrend: without the coin's downtrend it made about 0R), and a breakout long works when **shorts are crowded** (funding negative). A wider 4R target did better for both in both periods. Very volatile coins (4h ATR 5%+ of the price) lost money in both periods in almost every setup, so they never get TAKE. The live results are still the real test.
+
+**How the pump watch was found (Oct 2026):** every coin-day of every Binance USDT pair was saved with 30 measures, and we checked what came before +50% moves within 7 days. Most "obvious" signs were traps: coins that already rose 10-25% in a day, or ran for several days on big volume, had 2-5 times the normal odds of another +50%, but **lost money** as trades, because they also crashed more often. Tight, quiet ranges did not help. What held up was a breakout near the 90-day high on 2x+ volume while the day was still calm. It was found on March 2024 to October 2026, then checked on 2021 to February 2024, which it never saw: it held there too (the odds doubled again). Its results swing with the market, and no filter we tried (market mood, BTC above its 50-day average, the list's own recent results) stopped the losses in bear markets.
 
 Two real examples:
 - **EVAA (Alpha):** the early tier caught its Oct 26-27 start (+40% the next day), but it had flagged EVAA 34 times in 60 days: 6 winners, 23 stopped out. The confirmed tier missed that start.
@@ -467,6 +488,7 @@ Run these in a second terminal (the app can keep running). Each one caches its d
 | `node alpha-backtest.js` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
 | `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
 | `node perps-backtest.js` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
+| `node pump-backtest.js` | Pump watch on the daily candles of every Binance USDT pair since 2021 (delisted ones too), vs any coin on any day, by half-year; writes `pump_report.json`, which the Pump watch panel shows (until then it shows the copy shipped in `data/pump-report.json`) | 5-30 minutes |
 
 Useful options: `--days 45`, `--end 2026-10-28T08` (repeat an earlier window), `--cost 2` (alpha). Re-run them every month: a rule that only worked in one kind of market shows up as one good month and one bad one.
 
@@ -564,6 +586,11 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_BIGMOVE_ALERTS` | on | `0` = big-move alerts off on Telegram by default |
 | `SCREENER_BIGMOVE_TARGET_PCT` / `_STOP_PCT` / `_OUTCOME_HOURS` | `40` / `10` / `168` | Big-move tracking |
 | `SCREENER_BIGMOVE_MIN_VOLUME` / `_MAX_VOLUME` | `1000000` / `10000000` | Daily volume range for big-move coins |
+| `PUMP` | on | `0` = no Pump watch list |
+| `PUMP_TELEGRAM` | on | `0` = the daily Pump watch message off on Telegram by default |
+| `PUMP_NEAR_HIGH_PCT` / `PUMP_MIN_VOLUME_RATIO` / `PUMP_MAX_DAY_PCT` | `15` / `2` / `15` | The Pump watch rule (the test only speaks for these defaults) |
+| `PUMP_MIN_QUOTE_VOLUME` | `1000000` | USDT traded on the day |
+| `PUMP_MOOD_MIN` | `40` | Market mood (% of coins up over 30 days) below which the list says WEAK |
 </details>
 
 <details>
@@ -738,7 +765,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -756,13 +783,14 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
+| `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
 | `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
 | `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `ai_calls.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `pump_state.json`, `ai_calls.json`) are kept out of git.
 
 ---
 

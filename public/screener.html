@@ -169,6 +169,17 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <div class="notice" id="mwBanner" style="display:none;margin:0 18px 12px"><b>Market-wide volume surge:</b> many tokens are surging together, so the ignition bar is raised 50% to avoid alerting on a market move that is not specific to one token.</div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>State</th><th>Volume (5m · 15m)</th><th>Price move</th><th>Buyers (15m)</th><th>Ignition score</th><th>Narrative</th></tr></thead><tbody id="igBody"><tr><td colspan="7" class="empty">Waiting for the first scan…</td></tr></tbody></table></div>
 </section>
+<section data-sec="pump" class="panel" style="margin-bottom:14px" id="pumpPanel">
+ <div class="section-head"><div><h2>Pump watch: coins that could pump hard</h2><p id="pumpHint">Once a day, right after the daily close (00:00 UTC): coins near their 90-day high on 2×+ normal volume that have not run yet.</p></div><span class="chip" id="pumpChip">—</span></div>
+ <p class="perf-note" id="pumpMood"></p>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Why it is on the list</th><th>Entry (daily close)</th><th>Now</th><th>Plan: target · stop</th><th>Time left</th></tr></thead><tbody id="pumpBody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
+ <div class="subhead2"><div><h2>Open picks from earlier days</h2><p>Still inside their 14 days. Results are judged on daily candles, like the test.</p></div></div>
+ <div class="table-wrap"><table class="table cards"><thead><tr><th>Token</th><th>Why it is on the list</th><th>Entry (daily close)</th><th>Now</th><th>Plan: target · stop</th><th>Time left</th></tr></thead><tbody id="pumpOpen"></tbody></table></div>
+ <div class="subhead2"><div><h2>How it did</h2><p id="pumpRecHint">The test on every Binance USDT pair (delisted ones too), and the picks made on this PC. After 0.3% costs.</p></div></div>
+ <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Picks</th><th>Per week</th><th>Rose +50% within 7 days</th><th>Doubled within 14 days</th><th>Hit the -25% stop</th><th>Avg per trade</th><th>In profit</th></tr></thead><tbody id="pumpRec"></tbody></table></div>
+ <p class="perf-note" id="pumpPeriods" style="margin-top:10px"></p>
+ <p class="perf-note" id="pumpClosed"></p>
+</section>
 <section data-sec="big" class="panel" style="margin-bottom:14px" id="bigPanel">
  <div class="section-head"><div><h2>Big-move watch: +40% before -10%</h2><p id="bigHint">Smaller coins whose daily volume is already expanding.</p></div><span class="chip" id="bigCount">—</span></div>
  <div class="sttabs" id="st-big" role="tablist" aria-label="Filter coins"></div>
@@ -638,6 +649,41 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
  REDRAW.big=()=>drawBig();
 
+ // ---------- pump watch (daily, /api/pump) ----------
+ let pump=null;
+ const sp=v=>v==null?"—":(v>0?"+":"")+Number(v).toFixed(0)+"%";
+ const pumpWhy=x=>`volume ${x.volRatio}× its 20-day average · ${Math.abs(x.fromHigh90Pct).toFixed(0)}% under its 90-day high<span class="sub">day ${sp(x.dayPct)} · 30 days ${sp(x.r30Pct)} · ${money(x.qv)} traded</span>`;
+ const pumpRow=(x,rule)=>{const left=Math.max(0,rule.days-(x.daysHeld||0));
+  return `<tr><td><a class="sym" href="https://www.binance.com/en/trade/${encodeURIComponent(x.base)}_USDT" target="_blank" rel="noopener">${esc(x.base)} ↗</a><span class="sub">${esc(new Date(x.t).toISOString().slice(0,10))} close</span></td>
+  <td>${pumpWhy(x)}</td><td class="mono">${price(x.entry)}</td>
+  <td class="mono"><span class="${col(x.nowPct)}">${pct1(x.nowPct)}</span><span class="sub">${x.daysHeld?`best ${pct1(x.peakPct)} · worst ${pct1(x.lowPct)} (daily)`:"vs the close: new today"}</span></td>
+  <td class="mono green">${price(x.target)}<span class="sub red">stop ${price(x.stop)}</span></td>
+  <td class="mono">${left} day${left===1?"":"s"}</td></tr>`;};
+ function drawPump(){
+  const p=pump,panel=$("#pumpPanel");if(!p)return;
+  if(p.status==="off"){$("#pumpChip").textContent="off";$("#pumpMood").textContent=p.error||"";$("#pumpBody").innerHTML=`<tr><td colspan="6" class="empty">${esc(p.error||"Pump watch is off")}</td></tr>`;$("#pumpOpen").innerHTML="";$("#pumpRec").innerHTML="";return;}
+  const rule=p.rule||{},m=p.mood,R=p.report;
+  $("#pumpChip").textContent=p.day==null?(p.error?"error":"first list loading…"):`${(p.today||[]).length} new · list of ${new Date(p.day).toISOString().slice(0,10)}`;
+  $("#pumpHint").innerHTML=`Once a day, right after the daily close (00:00 UTC): coins whose close is within ${rule.nearHighPct}% of their 90-day high, with volume ${rule.minVolRatio}×+ their 20-day average and a day up less than ${rule.maxDayPct}% (not already running), $${(rule.minQuoteVolume/1e6).toFixed(0)}M+ traded. One pick per coin per ${rule.gapDays} days. Tested plan: buy near the daily close, sell at <b>+${rule.targetPct}%</b> or <b>-${rule.stopPct}%</b>, else after ${rule.days} days. Most picks do not pump: this doubles the odds, it does not make them high. Next list ${p.nextAt?new Date(p.nextAt).toLocaleString():"after the next close"}.`;
+  $("#pumpMood").innerHTML=(p.error?`<b class="red">${esc(p.error)}</b><br>`:"")+(m?`<b>Market mood: ${m.share}%</b> of ${m.coins} coins are up over 30 days. `+(m.ok?`<b class="green">OK</b>: in the test, picks made money on average when this was ${rule.moodMin}% or more.`:`<b class="red">WEAK</b>: in the test, picks lost money on average when this was under ${rule.moodMin}%. Skip them or go very small.`):"Market mood: waiting for the first list.");
+  const today=p.today||[];
+  $("#pumpBody").innerHTML=today.length?today.map(x=>pumpRow(x,rule)).join(""):`<tr><td colspan="6" class="empty">${p.day==null?"The first list appears a few minutes after start (it reads every coin's daily candles).":"No coin passed the rule on the last close. Quiet days are normal."}</td></tr>`;
+  const open=p.open||[];
+  $("#pumpOpen").innerHTML=open.length?open.map(x=>pumpRow(x,rule)).join(""):`<tr><td colspan="6" class="empty">No open picks from earlier days.</td></tr>`;
+  const row=(name,s,note="")=>!s||!s.n?`<tr><td>${name}</td><td colspan="7" class="muted">${note||"none yet"}</td></tr>`:
+   `<tr><td>${name}</td><td class="mono">${s.n}</td><td class="mono">${s.perWeek??"—"}</td><td class="mono">${s.up50in7Pct==null?"—":s.up50in7Pct+"%"}</td><td class="mono">${s.up100in14Pct==null?"—":s.up100in14Pct+"%"}</td><td class="mono">${s.stopPct!=null?s.stopPct+"%":s.stops!=null?Math.round(s.stops/s.n*100)+"%":"—"}</td><td class="mono ${col(s.avgPct)}">${pct(s.avgPct)}</td><td class="mono">${s.winPct}%</td></tr>`;
+  const L=p.record||{};
+  $("#pumpRec").innerHTML=(R?row("Any coin, any day (for comparison)",R.random)+row("<b>Pump watch</b>, test",R.watch)+row(`… when market mood was ${rule.moodMin}%+`,R.moodOk)+row(`… when market mood was under ${rule.moodMin}%`,R.moodWeak)
+   +(R.older&&R.older.watch?row(`… years not used to find it (${R.older.from.slice(0,7)} to ${R.older.to.slice(0,7)})`,R.older.watch):"")+row(`… the period it was found on (${R.foundOn.from.slice(0,7)} on)`,R.foundOn.watch):`<tr><td colspan="8" class="muted">No test report yet: run <span class="mono">node pump-backtest.js</span>.</td></tr>`)
+   +row("<b>Live picks on this PC</b>",L.all,"none closed yet: each pick takes up to 14 days")+(L.all&&L.all.n?row(`… live, mood ${rule.moodMin}%+`,L.moodOk)+row(`… live, mood under ${rule.moodMin}%`,L.moodWeak):"");
+  $("#pumpRecHint").innerHTML=R?`Test: ${R.from} to ${R.to}, ${R.coins} Binance USDT coins (delisted ones too), daily candles, the same code as the live list. After ${rule.costPct}% costs per trade.${R.own?"":' <span class="amber">This is the copy shipped with the app; run <span class="mono">node pump-backtest.js</span> for your own.</span>'}`:"";
+  $("#pumpPeriods").innerHTML=R&&R.periods?"<b>Every half-year</b> (pump watch avg per trade vs any coin): "+R.periods.map(x=>`${x.label} <b class="${col(x.watch.avgPct)}">${x.watch.n?pct1(x.watch.avgPct):"—"}</b> <span class="muted">vs ${x.random.n?pct1(x.random.avgPct):"—"} (${x.watch.n||0})</span>`).join(" · "):"";
+  const closed=p.closed||[];
+  $("#pumpClosed").innerHTML=closed.length?"<b>Closed picks on this PC:</b> "+closed.slice(0,20).map(x=>`${esc(x.base)} <b class="${col(x.netPct)}">${pct1(x.netPct)}</b> <span class="muted">(${x.why==="target"?"hit +"+rule.targetPct+"%":x.why==="stop"?"stopped":x.why==="time"?rule.days+" days up":esc(x.why)}, ${new Date(x.t).toISOString().slice(5,10)})</span>`).join(" · "):"";
+ }
+ async function loadPump(){try{const r=await fetch("/api/pump",{cache:"no-store"});if(r.ok){pump=await r.json();drawPump();}}catch{/* next time */}}
+ loadPump();setInterval(loadPump,60000);
+
  // ---------- alert performance ----------
  function drawPerf(){
   const st=data.stats;
@@ -792,8 +838,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   draw();
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
- const TG_ORDER=["ignition","bigmove","alpha","alphaEarly","early2x","perps","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",pump:"one message a day, after the 00:00 UTC close",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){
@@ -904,7 +950,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
-  ignition:[["watch","Live watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
+  ignition:[["watch","Live watch"],["pump","Pump watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   perps:[["signals","Signals"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],

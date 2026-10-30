@@ -85,6 +85,7 @@ import { createAlpha } from "./alpha.js";
 import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
 import { createJournal } from "./journal.js";
 import { createPerps } from "./perps-live.js";
+import { createPump } from "./pump.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
 const env = process.env;
@@ -266,6 +267,14 @@ const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
   bundledReport: path.join(here, "data", "perps-report.json"), // shipped results, until you run perps-backtest.js yourself
   sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured,
   top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
+});
+// Pump watch (Ignition tab): once a day after the daily close, coins near their 90-day high on 2x+ volume (pump.js,
+// tested by pump-backtest.js). It gets the coin list and prices from each scan.
+const pump = LIBRARY_ONLY || env.PUMP === "0" ? null : createPump({
+  fetchJson, base: BN, stateFile: path.join(here, DEMO ? "pump_state.demo.json" : "pump_state.json"), reportFile: path.join(here, "pump_report.json"),
+  bundledReport: path.join(here, "data", "pump-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+  excluded: (b) => { const info = meta.coins.get(b); return BLOCKLIST.has(b) || STABLES.has(b) || NONCRYPTO.has(b) || isNonCryptoInfo(info) ||
+    (info?.tags || []).some((t) => /stable/i.test(t)) || (!ALLOW_MONITORING && isMonitoring(info)); },
 });
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
 export const onAlphaAlert = (fn) => { alphaHooks.push(fn); };
@@ -1507,6 +1516,7 @@ async function scan() {
   updateTracking(priceByBase);
   await trackWithCandles().catch(() => {});
   rotation?.updatePrices(priceByBase);
+  pump?.onTickers(tickers);
   state.stats = computeStats();
   state.lastScanMs = Date.now() - t0;
   state.binancePausedUntil = binancePause();
@@ -1638,6 +1648,7 @@ export async function handleScreenerRequest(req, res, url) {
     catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
     return true;
   }
+  if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
   if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
   if (await handleWhalesRequest(req, res, url)) return true;

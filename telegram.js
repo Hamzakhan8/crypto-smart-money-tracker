@@ -25,6 +25,7 @@ const off = (v) => v === "0" || v === "false" || v === "off";
 export const TG_KINDS = {
   ignition: { label: "Ignition alerts (early and confirmed)", def: !off(env.SCREENER_TELEGRAM) },
   bigmove: { label: "Big-move alerts (+40% before -10%)", def: !off(env.SCREENER_BIGMOVE_ALERTS) },
+  pump: { label: "Pump watch: daily list after the close", def: !off(env.PUMP_TELEGRAM) },
   alpha: { label: "Alpha confirmed alerts", def: !off(env.ALPHA_TELEGRAM) },
   alphaEarly: { label: "Alpha early alerts (about 50 a day)", def: env.ALPHA_TELEGRAM === "all" },
   early2x: { label: "Early 2x high-priority candidates", def: !off(env.EARLY2X_ALERTS) },

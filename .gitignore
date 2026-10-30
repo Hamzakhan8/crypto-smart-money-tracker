@@ -38,3 +38,7 @@ whales_names.json.tmp
 journal.demo.json
 ai_calls.json
 ai_calls.json.tmp
+pump_cache/
+pump_report.json
+pump_state.json
+pump_state.demo.json

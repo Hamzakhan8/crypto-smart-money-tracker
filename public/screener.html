@@ -343,6 +343,26 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop · target</th><th>Size for your risk</th><th>Now</th><th>Result</th></tr></thead><tbody id="sSig"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
   <p class="perf-note" id="sWatch" style="margin-top:10px"></p>
  </section>
+ <section data-sec="bot" class="panel" style="margin-top:14px" id="botPanel">
+  <div class="section-head"><div><h2>Scalp paper bot</h2><p id="botHint">A pretend account that takes every scalp signal on its own, with the tested plan and fees. No money, no API key.</p></div><span class="chip" id="botChip">—</span></div>
+  <div class="kpis" style="padding:0 18px;margin:0 0 6px">
+   <div class="kpi"><div class="label">Balance</div><div class="value" id="bkBal">—</div><div class="hint" id="bkBalHint">—</div></div>
+   <div class="kpi"><div class="label">Trades</div><div class="value" id="bkTrades">—</div><div class="hint" id="bkTradesHint">—</div></div>
+   <div class="kpi"><div class="label">Worst drop</div><div class="value red" id="bkDd">—</div><div class="hint">from the highest balance</div></div>
+   <div class="kpi"><div class="label">Open now</div><div class="value" id="bkOpen">—</div><div class="hint" id="bkOpenHint">—</div></div>
+  </div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Open trade</th><th>Entry · stop · target</th><th>Size</th><th>Now</th><th>Profit / loss</th></tr></thead><tbody id="bOpen"></tbody></table></div>
+  <div class="subhead2"><div><h2>Closed trades</h2><p>Each trade's result after fees, and the balance after it.</p></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Closed</th><th>Coin</th><th>Entry → exit</th><th>Result</th><th>Why</th><th>Balance after</th></tr></thead><tbody id="bClosed"></tbody></table></div>
+  <div class="subhead2"><div><h2>Settings and reset</h2><p>Starts a new paper account with these settings (the old trades are cleared). Later the same bot can trade a real Binance account.</p></div></div>
+  <form class="pform" id="botForm" autocomplete="off" style="padding:0 18px 16px">
+   <label>Start ($)<input id="bfStart" type="number" step="any" min="10" value="100"></label>
+   <label>Risk per trade (%)<input id="bfRisk" type="number" step="0.1" min="0.1" max="5" value="1"></label>
+   <label>Leverage (x)<input id="bfLev" type="number" step="1" min="1" max="20" value="5"></label>
+   <label>Max open trades<input id="bfMax" type="number" step="1" min="1" max="10" value="3"></label>
+   <button class="btn" type="submit" id="bfGo">Reset paper account</button><span id="bfMsg" class="muted" style="font-size:12px"></span>
+  </form>
+ </section>
  <section data-sec="scalp" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Scalp: how it did in the test</h2><p id="sTestHint">From scalp_report.json (node scalp-backtest.js).</p></div></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Trades</th><th>Won</th><th>Average per trade</th><th>In R</th><th>Note</th></tr></thead><tbody id="sTest"></tbody></table></div>
@@ -898,8 +918,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   draw();
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
- const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","spot","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",spot:"about 3 a month: BTC or ETH crossing its 50-day average",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","scalpBot","spot","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",scalpBot:"one per closed paper trade, with the balance",spot:"about 3 a month: BTC or ETH crossing its 50-day average",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){
@@ -1015,7 +1035,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   news:[["mood","Mood"],["top","Top stories"],["list","All news"],["sources","Sources"]],
-  perps:[["signals","Swing signals"],["scalp","Scalp"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
+  perps:[["signals","Swing signals"],["scalp","Scalp"],["bot","Paper bot"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
   journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
@@ -1150,6 +1170,36 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#nSources").innerHTML=(d.sources||[]).map(x=>`<div class="source-row"><span>${esc(x.name)}</span><b class="status-pill ${x.ok?"green":"amber"}" style="white-space:normal">${x.ok?x.count+" stories":esc(x.error||"no answer")}</b></div>`).join("");
  }
  $("#nFilter").onchange=drawN;$("#nSearch").oninput=drawN;
+
+ // ---------- Scalp paper bot (in /api/scalp) ----------
+ const usd=v=>v==null||!Number.isFinite(Number(v))?"—":(Number(v)<0?"-$":"$")+Math.abs(Number(v)).toFixed(2);
+ let botFormSet=false;
+ function drawBot(){
+  const a=sd.paper;if(!a){$("#botChip").textContent=sd.status==="off"?"off":"starting";return;}
+  if(!botFormSet){$("#bfStart").value=a.start;$("#bfRisk").value=a.riskPct;$("#bfLev").value=a.leverage;$("#bfMax").value=a.maxOpen;botFormSet=true;}
+  $("#botChip").textContent=`started ${new Date(a.startedAt).toLocaleDateString()} with $${a.start}`;
+  $("#botHint").innerHTML=`A pretend account that takes every scalp signal on its own: buys at the signal's entry, uses its stop and target, sells after 1 hour if neither is hit, after ${(sd.rule||{}).costPct??0.12}% fees per trade. Each trade risks <b>${a.riskPct}%</b> of the balance (about ${usd(a.balance*a.riskPct/100)} now), at most ${a.leverage}x leverage, up to ${a.maxOpen} trades at once. In the test, 1% risk per trade made about +90% over 27 months (worst drop 12%), so expect small, slow gains, and losing runs. Paper money only.`;
+  $("#bkBal").textContent=usd(a.balance);$("#bkBal").className="value "+col(a.returnPct);
+  $("#bkBalHint").textContent=`${a.returnPct>0?"+":""}${a.returnPct}% since the start · with open trades ${usd(a.equity)}`;
+  $("#bkTrades").textContent=a.trades;$("#bkTradesHint").textContent=a.trades?`${a.winPct}% won · ${a.targets} target, ${a.stops} stop · total ${usd(a.totalPnl)}`:"none yet: it takes the next scalp signal";
+  $("#bkDd").textContent=a.maxDrawdownPct?`-${a.maxDrawdownPct}%`:"0%";
+  $("#bkOpen").textContent=a.open.length;$("#bkOpenHint").textContent=`max ${a.maxOpen}${a.skipped&&(a.skipped.busy||a.skipped.small)?` · skipped ${a.skipped.busy} (full), ${a.skipped.small} (too small)`:""}`;
+  $("#bOpen").innerHTML=a.open.length?a.open.map(x=>`<tr><td>${pSide("long")} <b>${esc(x.base)}</b><span class="sub">opened ${hm(x.openedAt)} · close by ${hm(x.closeBy)}</span></td>
+   <td class="mono">${pPx(x.entry)}<span class="sub red">stop ${pPx(x.stop)}</span><span class="sub green">target ${pPx(x.target)}</span></td>
+   <td class="mono">${usd(x.notional)}<span class="sub">${pPx(x.qty)} coins · margin ${usd(x.margin)} · risk ${usd(x.riskUsd)}</span></td>
+   <td class="mono">${pPx(x.price)}</td><td class="mono ${col(x.uPnl)}">${usd(x.uPnl)}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">No open trade. The bot buys at the next scalp signal.</td></tr>`;
+  $("#bClosed").innerHTML=a.closed.length?a.closed.map(x=>`<tr><td class="mono">${new Date(x.closedAt).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td><td>${pSide("long")} <b>${esc(x.base)}</b></td>
+   <td class="mono">${pPx(x.entry)} → ${pPx(x.exit)}</td><td class="mono ${col(x.pnl)}"><b>${usd(x.pnl)}</b><span class="sub">${x.pnlPctOfBalance>0?"+":""}${x.pnlPctOfBalance}% of the balance</span></td>
+   <td>${x.why==="target"?"hit the target":x.why==="stop"?"hit the stop":x.why==="time"?"1 hour up":esc(x.why||"")}</td><td class="mono">${usd(x.balanceAfter)}</td></tr>`).join(""):`<tr><td colspan="6" class="empty">No closed trade yet.</td></tr>`;
+ }
+ $("#botForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(!confirm("Start a new paper account? The paper bot's trades so far are cleared."))return;
+  $("#bfMsg").textContent="Resetting…";
+  try{const r=await fetch("/api/scalp/paper/reset",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({start:+$("#bfStart").value,riskPct:+$("#bfRisk").value,leverage:+$("#bfLev").value,maxOpen:+$("#bfMax").value})});
+   const j=await r.json();if(j.error)throw new Error(j.error);sd.paper=j.paper;botFormSet=false;drawBot();$("#bfMsg").textContent="New paper account started.";}
+  catch(err){$("#bfMsg").textContent="Not reset: "+err.message;}
+ });
  // ---------- Scalp tab (/api/scalp) ----------
  let sd={};
  async function loadS(){try{sd=await getJson("/api/scalp");}catch(e){$("#sErrors").style.display="block";$("#sErrors").textContent="Scalp: "+e.message;return;}drawS();}
@@ -1184,6 +1234,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#sTestHint").innerHTML=R?`${R.from} to ${R.to}, every 5-minute candle of the 50 most liquid perps of each month (${R.coins} coins had a signal), after ${rule.costPct}% fees per trade.${R.own?"":' <span class="amber">The copy shipped with the app; run <span class="mono">node scalp-backtest.js</span> for your own.</span>'}`:"";
   $("#sMonths").innerHTML=R&&R.months?`<b>Risking 1% of the account per trade</b> (size from the stop): ${R.all.totalR>0?"+":""}${R.all.totalR}% over the whole test, worst drop ${R.all.maxDrawdownR}% of the account, longest losing run ${R.all.longestLosingStreak} trades. The stop was ${R.all.medianRiskPct}% below the entry on a typical trade and ${R.all.p90RiskPct}%+ on 1 in 10 (deep wicks): size every trade from its stop.<br><b>Every month</b> (avg per trade, trades): `+R.months.map(m=>`${m.m.slice(2)} <b class="${col(m.avgPct)}">${pct1(m.avgPct)}</b> <span class="muted">(${m.n})</span>`).join(" · "):"";
   $("#sFailed").innerHTML="<b>Tested and not used</b> (same coins and period, after 0.12% fees, avg per trade): breakout of the 4-hour range on 3x volume -0.12% to -0.15%; pullback to the 20 EMA in a trend -0.10% to -0.14%; snapback from 2.5 standard deviations -0.05% to -0.12%; Bollinger squeeze breakout -0.10% to -0.17%; following a BTC jump on lagging coins about -0.05%; fading a spike up about 0%. They roughly break even before fees, and fees turn them into losses.";
+  drawBot();
   const w=d.watching||[];
   $("#sWatch").innerHTML=w.length?"<b>Watching for a bounce</b> (half a setup: a flush just happened; if it bounces the signal is <b class=\"green\">LONG</b>): "+w.map(x=>`<b>${esc(x.base)}</b> fell ${pct1(x.flushPct)} at ${hm(x.t)} (${x.dropAtr}× its normal range, ${x.volRatio}× volume): a signal comes if the ${hm(x.t+300000)} candle closes green above <b>${pPx(x.bounceAbove)}</b>, decided at ${hm(x.decidedAt)}`).join(" · "):(d.status==="ok"?"No flush on the last candle: nothing half-way to a signal right now.":"");
   const cs=d.coins||[];$("#sCoinChip").textContent=`${cs.length} coins · ${cs.filter(c=>c.volatile).length} volatile enough`;

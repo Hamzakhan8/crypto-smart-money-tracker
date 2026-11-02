@@ -1666,6 +1666,14 @@ export async function handleScreenerRequest(req, res, url) {
     return true;
   }
   if (url.pathname === "/api/spot") { jsonResponse(res, 200, spot ? spot.api() : { status: "off", error: "The Spot plan is off (SPOT=0 in .env)" }); return true; }
+  if (url.pathname === "/api/scalp/paper/reset" && req.method === "POST") { // start the paper bot again (this site only)
+    const sameSite = String(req.headers["content-type"] || "").includes("application/json") && (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    if (!scalp) { jsonResponse(res, 200, { error: "The Scalp scan is off (SCALP=0 in .env)" }); return true; }
+    let body = ""; for await (const chunk of req) { body += chunk; if (body.length > 2000) break; }
+    let b = {}; try { b = JSON.parse(body || "{}"); } catch { /* defaults */ }
+    jsonResponse(res, 200, { paper: await scalp.resetPaper(b) }); return true;
+  }
   if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }

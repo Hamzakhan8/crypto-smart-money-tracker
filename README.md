@@ -482,6 +482,14 @@ Most of them break even **before** fees, so fees turn them into losses. That is 
 
 **What the page shows:** each signal with its entry, stop and target, the **position size for your risk** (from your Perps › Risk settings: account, risk %, leverage) and whether the liquidation price is safely beyond the stop, the price now, and the result once closed. Below: the test results, every month of the test, and the coins scanned (with which ones are volatile enough to signal). Telegram sends each new signal (switch "Perps scalp signals" in Ignition › Telegram).
 
+**Scalp paper bot** (Perps tab, **Paper bot** tag): a pretend account that starts with **$100** and takes **every** scalp signal on its own, so you can see what the signals would really have done with an account, without money or an API key.
+- It buys at the signal's entry, uses the signal's stop and target, sells after 1 hour if neither is hit, and pays the same 0.12% fees as the test.
+- Each trade risks **1%** of the balance (about $1 with $100): the size comes from the stop, so a wide stop means a small position. At most **5x** leverage (the position can never be bigger than balance x 5) and at most **3** trades at once; a signal that comes while 3 are open is skipped.
+- The page shows the balance, the return since the start, the win rate, the worst drop, open trades with their live profit, and every closed trade with the balance after it. Telegram sends each closed trade and the new balance (switch "Scalp paper bot" in Ignition › Telegram).
+- **Settings and reset:** change the start, the risk per trade, the leverage and the maximum open trades, and start again from zero.
+- What to expect: in the test, 1% risk per trade made about **+90% over 27 months**, with a worst drop of 12% and a losing run of 17 trades. So with $100 the gains are small (cents to about $1.50 a trade) and slow. Let it run for a few weeks before deciding anything.
+- **Real account later:** the bot sends every trade through one "broker" part (`paper-bot.js`). Trading a real Binance account means replacing that part with one that places the real orders (entry, stop and take-profit), using an API key that cannot withdraw, an IP whitelist, a daily loss limit and a stop switch. Do this only after the paper bot has made money for several weeks.
+
 **Be ready for this:**
 - It is **rare**: about 20 signals a month across 50 coins, mostly when the market drops fast. Many days have none.
 - The stop is **wide for a scalp**: about 3% below entry on a typical trade, and 10%+ on 1 in 10 (deep wicks). Always size from the stop, never a fixed amount: with a 3% stop and 1% account risk, the position is about a third of the account.
@@ -751,6 +759,8 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCALP_TELEGRAM` | on | `0` = scalp signals off on Telegram by default |
 | `SCALP_MIN_DROP_ATR` / `SCALP_MIN_VOLUME_RATIO` / `SCALP_MIN_ATR_PCT` | `2.5` / `4` / `0.6` | The flush bounce rule (the test only speaks for these defaults) |
 | `SCALP_COST_PCT` | `0.12` | Fees + slippage per trade (in and out), in %, for the tracked results |
+| `SCALP_PAPER_START` / `SCALP_PAPER_RISK_PCT` / `SCALP_PAPER_LEVERAGE` / `SCALP_PAPER_MAX_OPEN` | `100` / `1` / `5` / `3` | The paper bot's first account (change them later on the page with "Reset paper account") |
+| `SCALP_BOT_TELEGRAM` | on | `0` = the paper bot's closed-trade messages off on Telegram by default |
 </details>
 
 <details>
@@ -897,7 +907,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp section (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp section (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Scalp paper bot (position size, margin cap, opening and closing trades after fees), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -917,6 +927,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
 | `news.js` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
 | `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
+| `paper-bot.js` | The Scalp paper bot: account, position size from the risk, margin check, trades from the scalp signals, and the broker part a real account would replace |
 | `scalp.js` | Scalp (in the Perps tab): the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
 | `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
 | `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |

@@ -13,6 +13,7 @@
 // short version of this one (selling a spike up). Research signals, not financial advice.
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { EXCLUDED, weekendShare } from "./perps-history.js";
+import { newAccount, stepBot, accountView } from "./paper-bot.js";
 
 const M5 = 300_000, MIN = 60_000, HOUR = 3_600_000, DAY = 86_400_000;
 const env = process.env;
@@ -91,6 +92,7 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
     if (loaded) return; loaded = true;
     try { const s = JSON.parse(await readFile(stateFile, "utf8")); if (s?.version === 1) store = s; } catch { /* first run */ }
     for (const x of store.signals) lastSig.set(x.sym, Math.max(lastSig.get(x.sym) || 0, x.t));
+    if (!store.paper) store.paper = newAccount({}, now()); // the paper bot starts with the first run (default $100)
     for (const [file, own] of [[reportFile, true], [bundledReport, false]]) {
       if (!file) continue;
       try { report = { ...JSON.parse(await readFile(file, "utf8")), own }; break; } catch { /* next */ }
@@ -162,11 +164,13 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
       });
       if (syms.length && failed > syms.length / 2) throw new Error(`5-minute candles failed for ${failed}/${syms.length} coins`);
       store.signals = store.signals.slice(0, 500);
+      const bot = stepBot(store.paper, store.signals, { now: now(), costPct: p.costPct }); // the paper bot takes and closes trades
       st.coins = coins.sort((a, b) => (b.atrPct ?? 0) - (a.atrPct ?? 0));
       st.watching = watching;
       Object.assign(st, { status: "ok", error: null, updatedAt: now(), scanMs: now() - t0, lastCandle: Math.floor(now() / M5) * M5 - M5 });
       await save();
       if (sendTelegram && wantTelegram("scalp")) for (const s of fresh.filter((y) => y.status === "open")) sendTelegram(telegramText(s), "scalp");
+      if (sendTelegram && wantTelegram("scalpBot")) for (const t of bot.closed) sendTelegram(botText(t), "scalpBot");
     } catch (e) {
       if (st.error !== e.message) console.log(`Perps scalp: scan failed: ${e.message}${/451|403/.test(e.message) ? " (Binance futures is blocked on this connection)" : ""}`); // once per new error
       st.status = st.updatedAt ? "ok" : "error"; st.error = e.message;
@@ -186,6 +190,14 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
       `Close by ${hhmm(s.closeBy)} UTC if neither is hit (1 hour)\nWhy: one 5m candle fell ${Math.abs(s.flushPct)}% (${s.dropAtr}x its normal range) on ${s.volRatio}x volume, then the next closed back above its middle.\n` +
       `Size from your risk: with a ${s.riskPct}% stop, risking 1% of the account = a position of about ${Math.round(100 / s.riskPct)}% of the account. Research signal only.`;
   }
+  function botText(t) {
+    const a = store.paper, why = t.why === "target" ? "hit the target" : t.why === "stop" ? "hit the stop" : t.why === "time" ? "closed after 1 hour" : t.why;
+    return `PAPER BOT (Scalp): closed ${t.base} LONG: ${t.pnl >= 0 ? "+" : "-"}$${Math.abs(t.pnl).toFixed(2)} (${t.pnlPctOfBalance >= 0 ? "+" : ""}${t.pnlPctOfBalance}% of the balance), ${why}.\n` +
+      `Balance $${a.balance.toFixed(2)} (${a.balance >= a.start ? "+" : ""}${((a.balance / a.start - 1) * 100).toFixed(1)}% since the $${a.start} start, ${a.trades.length} trades). Paper money only.`;
+  }
+  // The live price of a coin: from the last scan, else from its latest signal.
+  const priceOf = (sym) => st.coins.find((c) => c.sym === sym)?.price ?? store.signals.find((x) => x.sym === sym)?.price ?? null;
+  async function resetPaper(opts = {}) { await load(); store.paper = newAccount(opts, now()); await save(); return accountView(store.paper, priceOf); }
   function record() {
     const done = store.signals.filter((x) => x.status === "closed" && x.netPct != null && x.why !== "gap");
     if (!done.length) return { n: 0 };
@@ -203,7 +215,8 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
   function api() {
     return { ...st, rule: p, signals: store.signals.slice(0, 60), open: store.signals.filter((x) => x.status === "open").length, record: record(),
       report: report ? { own: report.own, generatedAt: report.generatedAt, from: report.from, to: report.to, coins: report.coins, all: report.all, older: report.older, newer: report.newer,
-        late: report.late, worse: report.worse, calm: report.calm, short: report.short, months: report.months, split: report.split, recent: (report.recent || []).slice(0, 12) } : null };
+        late: report.late, worse: report.worse, calm: report.calm, short: report.short, months: report.months, split: report.split, recent: (report.recent || []).slice(0, 12) } : null,
+      paper: accountView(store.paper, priceOf) };
   }
-  return { start, stop, scan, api, load, signalById: (id) => store.signals.find((x) => x.id === id) || null, priceOf: (sym) => store.signals.find((x) => x.sym === sym)?.price ?? null };
+  return { start, stop, scan, api, load, resetPaper, signalById: (id) => store.signals.find((x) => x.id === id) || null, priceOf: (sym) => store.signals.find((x) => x.sym === sym)?.price ?? null };
 }

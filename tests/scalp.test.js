@@ -96,6 +96,10 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
   assert.equal(done.status, "closed"); assert.equal(done.why, "target"); assert.equal(done.entry, e);
   assert.ok(Math.abs(done.netPct - ((1.5 * risk) / e * 100 - SCALP.costPct)) < 0.01);
   assert.equal(a.record.n, 1); assert.equal(a.record.targets, 1);
+  // the paper bot took the signal and closed it with the same result
+  assert.equal(a.paper.trades, 1); assert.equal(a.paper.closed[0].why, "target");
+  assert.ok(Math.abs(a.paper.closed[0].pnl - a.paper.closed[0].notional * done.netPct / 100) < 0.01);
+  assert.ok(a.paper.balance > 100 && a.paper.balance < 102, "about 1.5R on a 1% risk");
   assert.equal(sent.length, 1, "closing sends nothing");
 });
 

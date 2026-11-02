@@ -274,6 +274,7 @@ const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
 const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
   bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+  extraSignals: () => perps?.paperSignals?.() || [], // the paper bot also takes the Perps A+ TAKE trades
 });
 // Coins the daily lists leave out: stablecoins, tokenized stocks and gold, wrapped tokens, the blocklist, and coins on
 // Binance's Monitoring list (unless SCREENER_ALLOW_MONITORING=1).

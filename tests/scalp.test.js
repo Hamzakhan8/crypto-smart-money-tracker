@@ -65,6 +65,7 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
     if (u.pathname === "/fapi/v1/ticker/24hr") return [...Object.keys(coins), "USDCUSDT"].map((s) => ({ symbol: s, quoteVolume: "9000000" }));
     if (u.pathname === "/fapi/v1/klines" && q("interval") === "1d") return Array.from({ length: 31 }, (_, k) => [START - (31 - k) * DAY, "1", "1", "1", "1", "0", 0, String(1e8 + (sym === "BTCUSDT" ? 1 : 0))]);
     if (u.pathname === "/fapi/v1/klines") { const B = coins[sym].filter((b) => b.t + M5 <= clock); return [...B, forming(B)].slice(-Number(q("limit"))).map(kl); }
+    if (u.pathname === "/futures/data/openInterestHist") { const tf = rev.t - M5; return [[tf - 3 * M5, 1000], [tf - 2 * M5, 1000], [tf - M5, 995], [tf, 990], [tf + M5, 965]].map(([t, v]) => ({ timestamp: t, sumOpenInterest: String(v) })); }
     throw new Error("not mocked: " + u.pathname);
   };
   const sent = [];
@@ -79,8 +80,9 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
   assert.equal(a.signals.length, 1);
   const sig = a.signals[0];
   assert.equal(sig.sym, "AAAUSDT"); assert.equal(sig.status, "open"); assert.equal(sig.t, rev.t);
+  assert.equal(sig.oiChg15, -3.5); assert.equal(sig.liquidations, true, "open interest fell 3.5% during the flush");
   assert.equal(sent.length, 1); assert.equal(sent[0][0], "scalp");
-  assert.match(sent[0][1], /SCALP: LONG \(BUY\) AAAUSDT/); assert.match(sent[0][1], /Stop/); assert.match(sent[0][1], /Close by/);
+  assert.match(sent[0][1], /SCALP: LONG \(BUY\) AAAUSDT/); assert.match(sent[0][1], /Liquidations confirmed/); assert.match(sent[0][1], /Stop/); assert.match(sent[0][1], /Close by/);
   await s.scan();
   assert.equal(s.api().signals.length, 1, "the same signal is not sent twice");
   assert.equal(sent.length, 1);

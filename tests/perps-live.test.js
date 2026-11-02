@@ -90,5 +90,10 @@ test("perps live: an A+ weak-coin breakdown short (coin downtrend, BTC uptrend) 
   // check a trade on it: the same A+ verdict and exit
   const c = await p.check({ sym: "BBB", side: "short" });
   assert.equal(c.setup, "weakshort"); assert.equal(c.verdict, "TAKE"); assert.equal(c.risk.tp, 4);
+  // the paper bot sees it as a short, entry once the next 4h candle has opened
+  const ps = p.paperSignals().find((x) => x.sym === "BBBUSDT");
+  assert.deepEqual([ps.strategy, ps.side, ps.setup, ps.status], ["perps", "short", "weakshort", "open"]);
+  assert.equal(ps.at, sig.t + 4 * 3_600_000); assert.equal(ps.stop, sig.stop);
+  assert.ok(!p.paperSignals().some((x) => x.sym === "AAAUSDT"), "WAIT signals are not traded");
   delete bars.BBBUSDT; now = saved;
 });

@@ -77,7 +77,7 @@ const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
 
 // The live tab. fetchJson from the screener; base = Binance futures API.
 export function createScalp({ fetchJson, base = "https://fapi.binance.com", stateFile = null, reportFile = null, bundledReport = null, sendTelegram = null,
-  wantTelegram = () => false, now = () => Date.now(), demo = false, p = SCALP, delayMs = 4_000 }) {
+  wantTelegram = () => false, now = () => Date.now(), demo = false, p = SCALP, delayMs = 4_000, extraSignals = () => [] }) {
   base = base.replace(/\/$/, "");
   const st = { status: demo ? "off" : "starting", error: demo ? "Scalp signals use live Binance futures data only (not in demo mode)" : null,
     updatedAt: null, scanMs: null, universeAt: null, coins: [], lastCandle: null };
@@ -160,11 +160,20 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
             status: "open", entry: null, price };
           store.signals.unshift(s); fresh.push(s);
           follow(s, x, price);
+          // liquidations: open interest over the 15 minutes up to the flush's close (from Binance's 5-minute history).
+          // In the test, flushes where it fell 2%+ bounced a little better in both periods (small samples): a label only.
+          try {
+            const oi = (await get(`/futures/data/openInterestHist?symbol=${sym}&period=5m&limit=12`)).map((r) => [+r.timestamp, +r.sumOpenInterest]).filter((r) => r[1] > 0);
+            const tf = sig.t - M5, at = (t) => { let b = null; for (const r of oi) if (r[0] <= t && (!b || r[0] > b[0])) b = r; return b && t - b[0] <= 10 * MIN ? b[1] : null; };
+            const a0 = at(tf - 2 * M5), a1 = at(tf + M5);
+            if (a0 && a1) { s.oiChg15 = r2((a1 / a0 - 1) * 100, 2); s.liquidations = s.oiChg15 <= -2; }
+          } catch { /* no open-interest history: no label */ }
         }
       });
       if (syms.length && failed > syms.length / 2) throw new Error(`5-minute candles failed for ${failed}/${syms.length} coins`);
       store.signals = store.signals.slice(0, 500);
-      const bot = stepBot(store.paper, store.signals, { now: now(), costPct: p.costPct }); // the paper bot takes and closes trades
+      let extra = []; try { extra = extraSignals() || []; } catch { /* the swing side is not ready */ }
+      const bot = stepBot(store.paper, [...store.signals, ...extra], { now: now(), costPct: p.costPct }); // the paper bot takes and closes trades (scalp + Perps A+)
       st.coins = coins.sort((a, b) => (b.atrPct ?? 0) - (a.atrPct ?? 0));
       st.watching = watching;
       Object.assign(st, { status: "ok", error: null, updatedAt: now(), scanMs: now() - t0, lastCandle: Math.floor(now() / M5) * M5 - M5 });
@@ -187,16 +196,16 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
   }
   function telegramText(s) {
     return `SCALP: LONG (BUY) ${s.sym} (flush bounce, 5m)\nBuy now near ${fmtPx(s.ref)}\nStop ${fmtPx(s.stop)} (-${s.riskPct}%)\nTarget ${fmtPx(s.target)} (+${r2(s.riskPct * p.targetR, 2)}%)\n` +
-      `Close by ${hhmm(s.closeBy)} UTC if neither is hit (1 hour)\nWhy: one 5m candle fell ${Math.abs(s.flushPct)}% (${s.dropAtr}x its normal range) on ${s.volRatio}x volume, then the next closed back above its middle.\n` +
+      `Close by ${hhmm(s.closeBy)} UTC if neither is hit (1 hour)\n${s.liquidations ? `Liquidations confirmed: open interest fell ${Math.abs(s.oiChg15)}% in 15 minutes (these bounced a little better in the test).\n` : ""}Why: one 5m candle fell ${Math.abs(s.flushPct)}% (${s.dropAtr}x its normal range) on ${s.volRatio}x volume, then the next closed back above its middle.\n` +
       `Size from your risk: with a ${s.riskPct}% stop, risking 1% of the account = a position of about ${Math.round(100 / s.riskPct)}% of the account. Research signal only.`;
   }
   function botText(t) {
-    const a = store.paper, why = t.why === "target" ? "hit the target" : t.why === "stop" ? "hit the stop" : t.why === "time" ? "closed after 1 hour" : t.why;
-    return `PAPER BOT (Scalp): closed ${t.base} LONG: ${t.pnl >= 0 ? "+" : "-"}$${Math.abs(t.pnl).toFixed(2)} (${t.pnlPctOfBalance >= 0 ? "+" : ""}${t.pnlPctOfBalance}% of the balance), ${why}.\n` +
+    const a = store.paper, why = t.why === "target" ? "hit the target" : t.why === "stop" ? "hit the stop" : t.why === "time" ? (t.strategy === "perps" ? "time limit" : "closed after 1 hour") : t.why;
+    return `PAPER BOT (${t.strategy === "perps" ? "Perps A+" : "Scalp"}): closed ${t.base} ${String(t.side || "long").toUpperCase()}: ${t.pnl >= 0 ? "+" : "-"}$${Math.abs(t.pnl).toFixed(2)} (${t.pnlPctOfBalance >= 0 ? "+" : ""}${t.pnlPctOfBalance}% of the balance), ${why}.\n` +
       `Balance $${a.balance.toFixed(2)} (${a.balance >= a.start ? "+" : ""}${((a.balance / a.start - 1) * 100).toFixed(1)}% since the $${a.start} start, ${a.trades.length} trades). Paper money only.`;
   }
   // The live price of a coin: from the last scan, else from its latest signal.
-  const priceOf = (sym) => st.coins.find((c) => c.sym === sym)?.price ?? store.signals.find((x) => x.sym === sym)?.price ?? null;
+  const priceOf = (sym) => st.coins.find((c) => c.sym === sym)?.price ?? store.signals.find((x) => x.sym === sym)?.price ?? (() => { try { return extraSignals().find((x) => x.sym === sym)?.price ?? null; } catch { return null; } })();
   async function resetPaper(opts = {}) { await load(); store.paper = newAccount(opts, now()); await save(); return accountView(store.paper, priceOf); }
   function record() {
     const done = store.signals.filter((x) => x.status === "closed" && x.netPct != null && x.why !== "gap");

@@ -56,3 +56,20 @@ test("bot: open trades show their profit at the live price", () => {
   assert.ok(Math.abs(v.open[0].uPnl - v.open[0].qty * 0.3) < 1e-3);
   assert.ok(v.equity > v.balance);
 });
+
+test("bot: Perps A+ shorts sized from the stop above, results with fees and funding from the signal, separate limits per strategy", () => {
+  const a = newAccount({ start: 100, riskPct: 1, leverage: 5, maxOpen: 1 }, T0);
+  const short = { ...sig("BBB", T0 + 5 * M, 10, 10.5), strategy: "perps", side: "short", target: 8, setup: "weakshort" };
+  const scalp = sig("AAA", T0 + 5 * M, 10, 9.7), scalp2 = sig("CCC", T0 + 6 * M, 10, 9.7);
+  let r = stepBot(a, [short, scalp, scalp2], { now: T0 + 10 * M });
+  assert.deepEqual(r.opened.map((x) => x.base).sort(), ["AAA", "BBB"], "one per strategy (max 1 each); CCC skipped");
+  const pos = a.open.find((x) => x.base === "BBB");
+  assert.equal(pos.side, "short"); assert.ok(Math.abs(pos.riskUsd - 1) < 1e-9 && Math.abs(pos.notional - 20) < 1e-9, "stop 5% above: $20 short risks $1");
+  const v = accountView(a, (sym) => (sym === "BBBUSDT" ? 9.5 : 10));
+  assert.ok(Math.abs(v.open.find((x) => x.base === "BBB").uPnl - 1) < 1e-9, "a short gains when the price falls");
+  Object.assign(short, { status: "closed", why: "target", exit: 8, netPct: 19.5, exitT: T0 + 3 * 24 * 60 * M }); // +20% minus fees, funding received
+  r = stepBot(a, [short, scalp, scalp2], { now: T0 + 4 * 24 * 60 * M });
+  const t = a.trades.find((x) => x.base === "BBB");
+  assert.ok(Math.abs(t.pnl - 20 * 0.195) < 1e-9, "the signal's own net result (fees and funding) is used");
+  assert.equal(accountView(a).byStrategy.perps.trades, 1);
+});

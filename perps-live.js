@@ -313,6 +313,14 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
         aplus: Object.fromEntries(Object.entries(P.APLUS).map(([k, a]) => [k, { label: a.label, side: sideOf(a.dir), tp: P.EXITS[a.exit].tp, hold: P.EXITS[a.exit].hold }])),
         report: report ? { ...report, results: Object.values(report.results) } : null };
     },
+    // TAKE signals for the paper bot (paper-bot.js): entry once the next 4h candle has opened, the tracked result (after
+    // fees and funding) once closed
+    paperSignals() {
+      return store.signals.filter((x) => x.verdict === "TAKE").map((x) => ({ id: "perps:" + x.id, strategy: "perps", sym: x.sym, base: x.base, side: x.side, setup: x.setup,
+        at: x.t + H4, entry: x.track.entry ?? null, stop: x.stop, target: x.target, closeBy: x.t + H4 + (x.holdDays || 10) * DAY,
+        status: x.track.status, why: x.track.why || null, exit: x.track.exit ?? null, exitT: x.track.exitT ?? null, netPct: x.track.status === "closed" ? x.track.netPct ?? null : null,
+        price: +premium.get(x.sym)?.markPrice || x.track.last || null }));
+    },
     // a signal's own tracked result, for the journal's "you vs the signal"
     signalById(id) {
       const x = store.signals.find((y) => y.id === id);

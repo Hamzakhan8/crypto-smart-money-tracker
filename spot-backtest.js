@@ -1,4 +1,4 @@
-// Test of the Spot tab's strategy (spot-trend.js, the same code): hold BTC and ETH, half each, only while each one's daily
+// Test of the Spot plan's strategy (spot-trend.js, the same code): hold BTC and ETH, half each, only while each one's daily
 // close is above its 50-day average, else USDT. Compared with simply holding, by year, by half, and with other
 // average lengths and costs. Node.js 18+, no dependencies.
 //
@@ -7,7 +7,7 @@
 //   BINANCE_SPOT_URL=https://data-api.binance.vision node spot-backtest.js   # if api.binance.com is blocked
 //
 // Decided at each daily close, held to the next close, 0.15% cost per switch (0.1% fee + slippage). Writes
-// spot_report.json, which the Spot tab shows (until then it shows the copy in data/). Past results do not guarantee
+// spot_report.json, which the Spot plan (Ignition tab) shows (until then it shows the copy in data/). Past results do not guarantee
 // future results. Research tool, not financial advice.
 import { writeFile } from "node:fs/promises";
 import path from "node:path";

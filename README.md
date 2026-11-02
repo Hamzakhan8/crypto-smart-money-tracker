@@ -23,7 +23,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
    - [Trade journal](#69-trade-journal)
    - [Perps swing signals (futures)](#610-perps-swing-signals-futures)
    - [Perps scalp signals (5 minutes to 1 hour)](#611-perps-scalp-signals-5-minutes-to-1-hour)
-   - [Spot trend plan (BTC + ETH)](#612-spot-trend-plan-btc--eth)
+   - [Spot plan (BTC + ETH, and every coin)](#612-spot-plan-btc--eth-and-every-coin)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -38,8 +38,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | Tool | Address | What it does |
 |---|---|---|
 | **Market Flow Radar** | http://localhost:3000 | Live leaderboard of buying pressure on Binance spot coins, order books, smart-money wallet signals, AI market brief |
-| **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers), plus the daily **Pump watch** list of coins that could pump hard |
-| **Spot** | http://localhost:3000/screener#spot | The best spot strategy in a 6-year test: hold BTC and ETH only while each is above its 50-day average, else USDT. Today's plan, the price that flips it, and a Telegram message when it switches |
+| **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers), plus the **Spot plan** (the best spot strategy in a 6-year test: BTC + ETH only above their 50-day average, and the same check on every liquid coin) and the daily **Pump watch** list of coins that could pump hard |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
@@ -485,9 +484,9 @@ Most of them break even **before** fees, so fees turn them into losses. That is 
 - **Act fast:** entering one candle (5 minutes) late cut the result from +0.97% to +0.60% per trade in the test.
 - **Losing runs happen:** the test once had 17 losses in a row. Risking 1% per trade, the worst drop was 12% of the account.
 
-### 6.12 Spot trend plan (BTC + ETH)
+### 6.12 Spot plan (BTC + ETH, and every coin)
 
-**Open:** http://localhost:3000/screener#spot (the **Spot** tab).
+**Open:** the Ignition tab, **Spot plan** tag.
 
 **The rule:** hold BTC and ETH, half each, but only while each one's **daily close is above its 50-day average**. When a coin closes below it, sell that half to USDT; buy back when it closes above again. Check once a day after the 00:00 UTC close; it switches about 3 times a month for the two coins together.
 
@@ -512,6 +511,18 @@ Most altcoins kept falling against BTC over these years, so strategies that hold
 
 **The page:** each coin's state (HOLD or CASH), its close and 50-day average, since when, and the close that would flip it; the plan in percent; every switch; the full test. `node spot-backtest.js` refreshes the test with the newest days.
 
+**All coins: trend check.** The same idea for every spot coin trading $2M+ a day (up to 100), checked after each daily close. For each coin: how far it is above or below its own 50-day average, whether it has been **stronger than BTC** over the same 50 days (its price in BTC above its average), and its 30-day change. **BUY OK** needs all three: above its own average, stronger than BTC, and BTC above its own average. Filter the list by BUY OK, above or under the average.
+
+Tested on every Binance coin, 2021-2026, holding each altcoin only while it was BUY OK:
+
+| Coins | BUY OK only | Simply above its own average |
+|---|---|---|
+| Top 20 by volume | +125% (worst drop -54%) | +66% (-76%) |
+| Top 50 | +48% (-62%) | +1% (-78%) |
+| Top 100 | +78% (-68%) | +41% (-79%) |
+
+So the BUY OK filter makes altcoin buys much safer, but every version did far worse than the BTC + ETH plan (+692%) and lost money in 2025 and 2026. Use it to choose **which** altcoin to buy if you want one, with small size; keep the main money in the BTC + ETH plan.
+
 ---
 
 ## 7. What the tests say
@@ -532,7 +543,8 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Perps A+: short-squeeze breakout long** | same | 258 trades, 34% won, +0.48R per trade (+0.53R / +0.36R), but in 2025-26 most of the profit came from 3 coins and 2024 lost a little: **not proven yet** (WAIT) |
 | **Perps: 20-day breakdown short** | Dec 2021 to Sep 2026, the 50 most liquid USDⓈ-M perps of each month (406 coins), 0.08% per side + every funding payment, target 2.5R / stop / 10 days | 1,976 trades, 41% won, **+0.15R per trade** (before 2025 +0.20R, 2025-26 +0.07R). Holds with a 2R target. Still positive with higher costs (+0.14R) and with the top 30 coins only (+0.13R). Not yet "proven": the newer period is thin |
 | **Perps scalp: flush bounce** (Scalp tab) | Jul 2024 to Sep 2026, every 5-minute candle of the 50 most liquid perps of each month, 0.12% fees per trade, target 1.5R / stop / 1 hour | 541 trades on 180 coins (about 20 a month), 60% won, **+0.97% per trade (+0.17R)**. Before Oct 2025 (where the filters were picked) +0.47%; from Oct 2025 (never seen) +1.30%. Entering 5 minutes late: +0.60%. Worse fill and 0.2% fees: +0.60%. 20 of 27 months in profit; top 3 coins 24% of the profit. Risking 1% a trade: +90% in total, worst drop 12%, longest losing run 17. The same setup on calm coins about 0%, the short version about 0% |
-| **Spot: BTC + ETH 50-day trend** (Spot tab) | Jan 2021 to Oct 2026, Binance daily candles, 0.15% cost per switch | **+702%** (43% a year), worst drop -56%, Sharpe 1.13, about 3 switches a month; holding BTC + ETH: +190%, -77%. Ahead in both halves and with double fees; 40-60-day averages all +600-715%. Trails holding in bull years, loses much less in bad ones. Altcoin strategies (rotation, breakouts, dip buying, top-10 basket) lost money |
+| **Spot plan: BTC + ETH 50-day trend** (Ignition tab) | Jan 2021 to Oct 2026, Binance daily candles, 0.15% cost per switch | **+702%** (43% a year), worst drop -56%, Sharpe 1.13, about 3 switches a month; holding BTC + ETH: +190%, -77%. Ahead in both halves and with double fees; 40-60-day averages all +600-715%. Trails holding in bull years, loses much less in bad ones. Altcoin strategies (rotation, breakouts, dip buying, top-10 basket) lost money |
+| **Spot plan: the same check on all coins** | same years, every Binance USDT coin, held only while above its 50-day average, stronger than BTC and BTC up | Top 20 +125%, top 50 +48%, top 100 +78% (worst drops -54% to -68%); without the BTC filters +66%, +1%, +41%. Every version lost money in 2025 and 2026 |
 | **Perps scalp: six other 5-minute setups** | same | **All lose after fees** (-0.05% to -0.17% per trade): range breakouts, EMA pullbacks, snapbacks, squeezes, BTC lead-lag, fading spikes |
 | **Perps: the other setups** | same | **Lose after costs:** buying the dip in an uptrend (pullback long, -0.07R) and buying a flush (-0.20R). **Thin:** breakout long, pullback short, crowded fade (+0.03 to +0.09R). The plain-trend benchmark is about zero (longs paid ~0.19% funding per trade) |
 
@@ -559,7 +571,7 @@ Run these in a second terminal (the app can keep running). Each one caches its d
 | `node alpha-backtest.js` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
 | `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
 | `node perps-backtest.js` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
-| `node spot-backtest.js` | The Spot tab's BTC + ETH 50-day trend rule since 2021, vs holding, by year and half, other average lengths, double fees; writes `spot_report.json`, which the Spot tab shows (until then it shows `data/spot-report.json`) | under a minute |
+| `node spot-backtest.js` | The Spot plan's BTC + ETH 50-day trend rule since 2021, vs holding, by year and half, other average lengths, double fees; writes `spot_report.json`, which the Spot plan shows (until then it shows `data/spot-report.json`) | under a minute |
 | `node scalp-backtest.js` | The Scalp tab's flush bounce on every 5-minute candle of the top-50 perps since July 2024 (delisted coins included), with late-entry and worse-fill checks, calm coins and the short version for comparison; writes `scalp_report.json`, which the Scalp tab shows (until then it shows `data/scalp-report.json`) | 20-40 minutes, about 650 MB |
 | `node pump-backtest.js` | Pump watch on the daily candles of every Binance USDT pair since 2021 (delisted ones too), vs any coin on any day, by half-year; writes `pump_report.json`, which the Pump watch panel shows (until then it shows the copy shipped in `data/pump-report.json`) | 5-30 minutes |
 
@@ -699,7 +711,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `SPOT` | on | `0` = turn the Spot tab off |
+| `SPOT` | on | `0` = turn the Spot plan off |
 | `SPOT_TELEGRAM` | on | `0` = the switch messages off on Telegram by default |
 | `SPOT_AVG_DAYS` | `50` | The average length (the test only speaks for 40-60) |
 </details>
@@ -859,7 +871,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp tab (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot tab (the trend rule, the simulation, and the daily plan with its switch messages), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp tab (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -877,7 +889,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
-| `spot-trend.js` | Spot tab: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), and the daily plan |
+| `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
 | `scalp.js` | Scalp tab: the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
 | `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
 | `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |

@@ -2,7 +2,7 @@
 // against a made-up Binance spot API in memory. No network.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SPOT, trendState, simulate, curveStats, createSpot } from "../spot-trend.js";
+import { SPOT, trendState, simulate, curveStats, coinCheck, createSpot } from "../spot-trend.js";
 
 const DAY = 86_400_000, START = Date.parse("2026-08-01T00:00:00Z");
 
@@ -66,6 +66,36 @@ test("spot live: the plan after the daily close, Telegram only when a coin switc
   assert.equal(a.switches.length, 1);
   assert.equal(sent.length, 1); assert.equal(sent[0][0], "spot");
   assert.match(sent[0][1], /BTC: SELL to USDT/); assert.match(sent[0][1], /USDT 100%/);
+});
+
+test("all-coins check: above its own average, stronger than BTC, and BUY OK only while BTC is up", async () => {
+  const n = 50, btcUp = Array.from({ length: 60 }, (_, i) => 100 + i), btcDown = Array.from({ length: 60 }, (_, i) => 200 - i);
+  const strong = Array.from({ length: 60 }, (_, i) => 10 * 1.02 ** i), lagging = Array.from({ length: 60 }, (_, i) => 10 + i * 0.01);
+  assert.deepEqual([coinCheck(strong, btcUp, n).above, coinCheck(strong, btcUp, n).strongerThanBtc], [true, true]);
+  assert.deepEqual([coinCheck(lagging, btcUp, n).above, coinCheck(lagging, btcUp, n).strongerThanBtc], [true, false], "up, but less than BTC");
+  assert.equal(coinCheck(strong, btcUp.slice(1), n), null, "days must line up");
+
+  // live: BTC falling (CASH), AAA strong, BBB weak; then the same with BTC rising
+  const mk = (f, len = 130) => Array.from({ length: len }, (_, i) => [START + i * DAY, f(i)]);
+  const run = async (btcF) => {
+    const series = { BTC: mk(btcF), ETH: mk((i) => 2000 + i), AAA: mk((i) => 1 * 1.01 ** i), BBB: mk((i) => 5 - i * 0.02), NEW: mk((i) => 1, 60) };
+    const clock = series.BTC.at(-1)[0] + DAY + 5 * 60_000;
+    const fetchJson = async (url) => { const u = new URL(url), c = u.searchParams.get("symbol").replace(/USDT$/, ""), lim = Number(u.searchParams.get("limit"));
+      return series[c].slice(-lim).map(([t, x]) => [t, "0", "0", "0", String(x), "0", t + DAY - 1, "3000000"]); };
+    const sp = createSpot({ fetchJson, base: "http://fake", now: () => clock, excluded: (b) => b === "USDC" });
+    sp.onTickers(new Map(["BTC", "ETH", "AAA", "BBB", "NEW", "USDC"].map((b) => [b, { lastPrice: "1", quoteVolume: "5000000" }])));
+    for (let i = 0; i < 80 && sp.api().all == null; i++) await new Promise((r) => setTimeout(r, 5));
+    return sp.api().all;
+  };
+  let all = await run((i) => 90000 - i * 100);
+  assert.equal(all.btcUp, false);
+  assert.deepEqual(all.rows.map((x) => x.coin), ["AAA", "BBB"], "not BTC/ETH (the plan has them), not a new listing, not USDC");
+  assert.deepEqual([all.rows[0].above, all.rows[0].strongerThanBtc, all.rows[0].ok], [true, true, false]);
+  assert.match(all.rows[0].why.join(), /BTC is under its average/);
+  all = await run((i) => 50000 + i * 10);
+  assert.equal(all.btcUp, true);
+  assert.equal(all.rows[0].coin, "AAA"); assert.equal(all.rows[0].ok, true);
+  assert.equal(all.rows[1].ok, false); assert.match(all.rows[1].why.join(), /under its own average/);
 });
 
 test("spot: off in demo mode, says so", () => {

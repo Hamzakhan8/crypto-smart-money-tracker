@@ -275,18 +275,22 @@ const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
   bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
 });
-// Spot tab: hold BTC and ETH only while each is above its 50-day average (spot-trend.js, tested by spot-backtest.js)
+// Coins the daily lists leave out: stablecoins, tokenized stocks and gold, wrapped tokens, the blocklist, and coins on
+// Binance's Monitoring list (unless SCREENER_ALLOW_MONITORING=1).
+const notListed = (b) => { const info = meta.coins.get(b); return BLOCKLIST.has(b) || STABLES.has(b) || NONCRYPTO.has(b) || isNonCryptoInfo(info) ||
+  (info?.tags || []).some((t) => /stable/i.test(t)) || (!ALLOW_MONITORING && isMonitoring(info)); };
+// Spot plan (Ignition tab): hold BTC and ETH only while each is above its 50-day average, plus the same check on the
+// top 100 coins (spot-trend.js, tested by spot-backtest.js)
 const spot = LIBRARY_ONLY || env.SPOT === "0" ? null : createSpot({
   fetchJson, base: BN, stateFile: path.join(here, DEMO ? "spot_state.demo.json" : "spot_state.json"), reportFile: path.join(here, "spot_report.json"),
-  bundledReport: path.join(here, "data", "spot-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+  bundledReport: path.join(here, "data", "spot-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO, excluded: notListed,
 });
 // Pump watch (Ignition tab): once a day after the daily close, coins near their 90-day high on 2x+ volume (pump.js,
 // tested by pump-backtest.js). It gets the coin list and prices from each scan.
 const pump = LIBRARY_ONLY || env.PUMP === "0" ? null : createPump({
   fetchJson, base: BN, stateFile: path.join(here, DEMO ? "pump_state.demo.json" : "pump_state.json"), reportFile: path.join(here, "pump_report.json"),
   bundledReport: path.join(here, "data", "pump-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
-  excluded: (b) => { const info = meta.coins.get(b); return BLOCKLIST.has(b) || STABLES.has(b) || NONCRYPTO.has(b) || isNonCryptoInfo(info) ||
-    (info?.tags || []).some((t) => /stable/i.test(t)) || (!ALLOW_MONITORING && isMonitoring(info)); },
+  excluded: notListed,
 });
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
 export const onAlphaAlert = (fn) => { alphaHooks.push(fn); };
@@ -1661,7 +1665,7 @@ export async function handleScreenerRequest(req, res, url) {
     catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
     return true;
   }
-  if (url.pathname === "/api/spot") { jsonResponse(res, 200, spot ? spot.api() : { status: "off", error: "The Spot tab is off (SPOT=0 in .env)" }); return true; }
+  if (url.pathname === "/api/spot") { jsonResponse(res, 200, spot ? spot.api() : { status: "off", error: "The Spot plan is off (SPOT=0 in .env)" }); return true; }
   if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }

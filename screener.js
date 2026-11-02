@@ -87,6 +87,7 @@ import { createJournal } from "./journal.js";
 import { createPerps } from "./perps-live.js";
 import { createPump } from "./pump.js";
 import { createScalp } from "./scalp.js";
+import { createSpot } from "./spot-trend.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
 const env = process.env;
@@ -273,6 +274,11 @@ const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
 const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
   bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+});
+// Spot tab: hold BTC and ETH only while each is above its 50-day average (spot-trend.js, tested by spot-backtest.js)
+const spot = LIBRARY_ONLY || env.SPOT === "0" ? null : createSpot({
+  fetchJson, base: BN, stateFile: path.join(here, DEMO ? "spot_state.demo.json" : "spot_state.json"), reportFile: path.join(here, "spot_report.json"),
+  bundledReport: path.join(here, "data", "spot-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
 });
 // Pump watch (Ignition tab): once a day after the daily close, coins near their 90-day high on 2x+ volume (pump.js,
 // tested by pump-backtest.js). It gets the coin list and prices from each scan.
@@ -1523,6 +1529,7 @@ async function scan() {
   await trackWithCandles().catch(() => {});
   rotation?.updatePrices(priceByBase);
   pump?.onTickers(tickers);
+  spot?.onTickers(tickers);
   state.stats = computeStats();
   state.lastScanMs = Date.now() - t0;
   state.binancePausedUntil = binancePause();
@@ -1654,6 +1661,7 @@ export async function handleScreenerRequest(req, res, url) {
     catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
     return true;
   }
+  if (url.pathname === "/api/spot") { jsonResponse(res, 200, spot ? spot.api() : { status: "off", error: "The Spot tab is off (SPOT=0 in .env)" }); return true; }
   if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }

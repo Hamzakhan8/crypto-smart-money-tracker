@@ -26,6 +26,7 @@ export const TG_KINDS = {
   ignition: { label: "Ignition alerts (early and confirmed)", def: !off(env.SCREENER_TELEGRAM) },
   // big-move and Alpha: off by default since Nov 2026 (both lost money live: big-move 0 of 14, Alpha confirmed 2 of 15)
   bigmove: { label: "Big-move alerts (+40% before -10%)", def: env.SCREENER_BIGMOVE_ALERTS === "1" },
+  spot: { label: "Spot plan: BTC / ETH buy or sell (50-day trend)", def: !off(env.SPOT_TELEGRAM) },
   pump: { label: "Pump watch: daily list after the close (only when market mood is OK)", def: !off(env.PUMP_TELEGRAM) },
   alpha: { label: "Alpha confirmed alerts", def: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all" },
   alphaEarly: { label: "Alpha early alerts (about 50 a day)", def: env.ALPHA_TELEGRAM === "all" },

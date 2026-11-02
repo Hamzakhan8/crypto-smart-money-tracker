@@ -141,7 +141,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabScalp" aria-selected="false" aria-controls="view-scalp">Scalp</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabSpot" aria-selected="false" aria-controls="view-spot">Spot</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabScalp" aria-selected="false" aria-controls="view-scalp">Scalp</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -235,6 +235,27 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <details class="foot" data-sec=""><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, price above its 20-day average, room above (not less than 1% under its 12-hour high or 1.5% under its 24-hour high: it waits for the break), the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
 </div>
 
+<div id="view-spot" role="tabpanel" aria-labelledby="tabSpot" hidden>
+ <details class="notice"><summary><b>How to use it:</b> once a day after the 00:00 UTC close, check the plan. HOLD = keep (or buy) that coin; CASH = keep that half in USDT. It changes about 3 times a month for the two coins together.</summary><div>Of every spot strategy tested on 6 years of Binance data (holding the top coins, rotating into the strongest coins, breakouts, dip buying), this simple trend rule did best, and it held up with other average lengths (40-60 days), in both halves of the period and with double the fees. What to expect: it <b>trails simply holding in strong bull years</b> (it sells on dips that later recover), and it <b>loses much less in bad years</b> (2022: -41% vs -67% for holding; 2025: +42% vs -9%). The worst drop in the test was still -56% (2021-22), so use money you can leave for years. Telegram tells you when a coin switches (Ignition › Telegram, "Spot plan"). Research, not financial advice.</div></details>
+ <div class="error" id="spErrors"></div>
+ <div class="kpis" data-sec="plan" id="spCoins"></div>
+ <section data-sec="plan" class="panel">
+  <div class="section-head"><div><h2>The rule</h2><p id="spRule">Hold BTC and ETH, half each, only while each one's daily close is above its 50-day average.</p></div><span class="chip" id="spChip">—</span></div>
+  <p class="perf-note" id="spPlanNote"></p>
+ </section>
+ <section data-sec="tested" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>How it did in the test</h2><p id="spTestHint">From spot_report.json (node spot-backtest.js).</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>What</th><th>Total</th><th>Per year</th><th>Worst drop</th><th>Sharpe</th></tr></thead><tbody id="spTest"></tbody></table></div>
+  <p class="perf-note" id="spYears" style="margin-top:10px"></p>
+  <p class="perf-note" id="spVariants"></p>
+  <p class="perf-note" id="spAlso"></p>
+ </section>
+ <section data-sec="history" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Switches</h2><p>Every time a coin crossed its 50-day average at a daily close: on this PC since the tab started, then the last ones in the test.</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Day (close)</th><th>Coin</th><th>Switch</th><th>Close</th><th>Where</th></tr></thead><tbody id="spSw"></tbody></table></div>
+ </section>
+ <div class="foot" data-sec="">How it works: a few minutes after every 00:00 UTC daily close, the app reads the last 80 daily candles of BTCUSDT and ETHUSDT on Binance spot. For each coin: if the close is above the average of the last 50 closes, the plan holds it (50% of the money for this plan), otherwise that half sits in USDT. The test (node spot-backtest.js) uses the same code on daily candles since 2021, deciding at each close and holding to the next, with 0.15% cost per switch. Settings: SPOT_AVG_DAYS (50; the test only speaks for 40-60), SPOT_TELEGRAM=0 to stop the messages, SPOT=0 to switch the tab off.</div>
+</div>
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
@@ -863,8 +884,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   draw();
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
- const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","spot","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",spot:"about 3 a month: BTC or ETH crossing its 50-day average",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){
@@ -967,18 +988,20 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way.";
+ LEDES.spot="The best spot strategy in the test: hold BTC and ETH only while each is above its 50-day average, otherwise sit in USDT. Six years of Binance data, after fees: +702% against +190% for simply holding, with a smaller worst drop. Strategies that trade altcoins lost money over the same years. Checked once a day; Telegram tells you when a coin switches.";
  LEDES.scalp="Short trades (5 minutes to 1 hour) on Binance USDⓈ-M perpetuals. Seven common scalp strategies were tested on every 5-minute candle of the 50 most liquid perps since July 2024; after fees only one made money: buying the bounce after a sharp flush on a volatile coin. This tab finds it live, gives entry, stop, target and size, and follows every signal. Signals only: you place the trade.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null;
- const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["scalp","#tabScalp"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",scalp:"Perps scalp signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,spTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["spot","#tabSpot"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["scalp","#tabScalp"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",spot:"Spot trend plan",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",scalp:"Perps scalp signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
   ignition:[["watch","Live watch"],["pump","Pump watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
+  spot:[["plan","Plan now"],["tested","Test results"],["history","Switches"]],
   scalp:[["signals","Signals"],["tested","Test results"],["coins","Coins"]],
   perps:[["signals","Signals"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
@@ -1005,9 +1028,10 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(spTimer);
   if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);}
   if(t==="scalp"){loadS();sTimer=setInterval(loadS,15000);}
+  if(t==="spot"){loadSp();spTimer=setInterval(loadSp,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
@@ -1045,6 +1069,34 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
  async function getJson(url){const r=await fetch(url,{cache:"no-store"});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"HTTP "+r.status);return j;}
 
+
+ // ---------- Spot tab (/api/spot) ----------
+ let spd={};
+ async function loadSp(){try{spd=await getJson("/api/spot");}catch(e){$("#spErrors").style.display="block";$("#spErrors").textContent="Spot: "+e.message;return;}drawSp();}
+ const big=v=>v==null?"—":Number(v)>=1000?Math.round(v).toLocaleString("en-US"):Number(v).toFixed(2);
+ const dshort=t=>t?new Date(t).toISOString().slice(0,10):"—";
+ function drawSp(){
+  const d=spd,R=d.report,rule=d.rule||{},n=rule.avgDays||50;
+  $("#spErrors").style.display=d.error?"block":"none";$("#spErrors").textContent=d.error?"Spot: "+d.error:"";
+  const cs=d.coins||[];
+  $("#spCoins").innerHTML=cs.map(c=>{const on=c.hold===true,known=c.hold!=null;return `<div class="kpi"><div class="label">${esc(c.coin)}</div><div class="value ${on?"green":known?"red":""}">${known?(on?"HOLD":"CASH"):"—"}</div>
+   <div class="hint">${known?`close ${big(c.close)} · ${n}-day avg ${big(c.avg)} (${pct(c.distPct)})${c.since?` · since ${dshort(c.since)}`:""}<br>${on?`sell to USDT if a daily close is under ${big(c.avg)}`:`buy back if a daily close is above ${big(c.avg)}`}${c.price?` · now ${big(c.price)} (${pct(c.nowVsAvgPct)} vs the average)`:""}`:"waiting for the first daily check"}</div></div>`;}).join("")+
+   `<div class="kpi"><div class="label">Plan now</div><div class="value" style="font-size:20px">${esc(d.plan||"—")}</div><div class="hint">${d.day!=null?`as of the ${dshort(d.day+86400000)} 00:00 UTC close · next check ${d.nextAt?new Date(d.nextAt).toLocaleString():"after the next close"}`:"first check a few minutes after start"}</div></div>`;
+  $("#spChip").textContent=d.status==="off"?"off":d.day!=null?"checked "+dshort(d.day+86400000):"starting";
+  $("#spRule").textContent=`Hold BTC and ETH, half each, only while each one's daily close is above its ${n}-day average; otherwise that half waits in USDT. Decided once a day after the 00:00 UTC close.`;
+  $("#spPlanNote").innerHTML=`<b>Using it:</b> put aside the money for this plan (for example $1,000). Each coin gets half. HOLD = that half is in the coin; CASH = that half is in USDT. Act only on daily closes: a price dipping under the average during the day does not count. Expect about 3 switches a month for the two coins, and some quick back-and-forth when the price sits right on the average.`;
+  const row=(name,s)=>s?`<tr><td>${name}</td><td class="mono ${col(s.totalPct)}">${s.totalPct>0?"+":""}${s.totalPct}%</td><td class="mono">${s.perYearPct>0?"+":""}${s.perYearPct}%</td><td class="mono red">-${s.maxDrawdownPct}%</td><td class="mono">${s.sharpe??"—"}</td></tr>`:"";
+  $("#spTest").innerHTML=R?row("<b>This plan</b> (BTC + ETH, 50-day trend)",R.strategy)+row("Holding BTC + ETH (half each), never selling",R.hold)+row("Holding BTC only",R.holdBtc)
+   +(R.halves||[]).map(h=>row(`… this plan ${h.from.slice(0,4)}-${h.to.slice(0,4)} <span class="muted">(holding: ${h.hold.totalPct>0?"+":""}${h.hold.totalPct}%)</span>`,h.strategy)).join("")
+   +row("… with double the fees",R.doubleCost)+row("Same rule, BTC only",R.btcOnly)+row("Same rule, ETH only",R.ethOnly):`<tr><td colspan="5" class="muted">No test report: run <span class="mono">node spot-backtest.js</span>.</td></tr>`;
+  $("#spTestHint").innerHTML=R?`Binance daily candles ${R.from} to ${R.to}, decided at each close, ${rule.costPct}% cost per switch. ${R.strategy.switches} switches (${R.strategy.perMonth} a month), in the market ${R.strategy.timeInMarketPct}% of the time.${R.own?"":' <span class="amber">The copy shipped with the app; run <span class="mono">node spot-backtest.js</span> for your own.</span>'}`:"";
+  $("#spYears").innerHTML=R?"<b>Every year</b> (this plan vs holding BTC + ETH): "+Object.entries(R.strategy.years).map(([y,v])=>`${y} <b class="${col(v)}">${v>0?"+":""}${v}%</b> <span class="muted">vs ${R.hold.years[y]>0?"+":""}${R.hold.years[y]}%</span>`).join(" · ")+". It trails holding in strong bull years and loses much less in bad ones.":"";
+  $("#spVariants").innerHTML=R?"<b>Other average lengths</b> (total): "+R.variants.map(v=>`${v.avgDays} days <b class="${col(v.totalPct)}">${v.totalPct>0?"+":""}${v.totalPct}%</b>`).join(" · ")+". 40-60 days all did well, so 50 is not a lucky pick.":"";
+  $("#spAlso").innerHTML=R&&R.alsoTested?"<b>Tested on every Binance coin and not used</b> (2021-2026, total · worst drop): "+R.alsoTested.map(a=>`${esc(a.name)} <b class="${col(a.totalPct)}">${a.totalPct>0?"+":""}${a.totalPct}%</b> <span class="muted">(-${Math.abs(a.maxDrawdownPct)}%)</span>`).join(" · ")+". Most altcoins kept falling against BTC, so strategies that hold altcoins lost money.":"";
+  const live=(d.switches||[]).map(x=>`<tr><td class="mono">${dshort(x.t+86400000)}</td><td><b>${esc(x.coin)}</b></td><td><span class="badge ${x.hold?"strong":"risk"}">${x.hold?"BUY / HOLD":"SELL to USDT"}</span></td><td class="mono">${big(x.close)}</td><td>this PC</td></tr>`);
+  const test=(R?.recentSwitches||[]).slice(0,12).map(x=>`<tr><td class="mono">${esc(x.day)}</td><td><b>${esc(x.coin)}</b></td><td><span class="badge ${x.hold?"strong":"risk"}">${x.hold?"BUY / HOLD":"SELL to USDT"}</span></td><td class="mono">${big(x.close)}</td><td class="muted">test</td></tr>`);
+  $("#spSw").innerHTML=[...live,...test].join("")||`<tr><td colspan="5" class="empty">No switches yet.</td></tr>`;
+ }
  // ---------- Scalp tab (/api/scalp) ----------
  let sd={};
  async function loadS(){try{sd=await getJson("/api/scalp");}catch(e){$("#sErrors").style.display="block";$("#sErrors").textContent="Scalp: "+e.message;return;}drawS();}

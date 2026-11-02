@@ -182,7 +182,7 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
     if (r.done) Object.assign(s, { status: "closed", why: r.why, exit: r.exit ?? null, pct: r2(r.pct, 2), netPct: r2(r.netPct, 2), candles: r.candles, exitT: r.exitT ?? null });
   }
   function telegramText(s) {
-    return `SCALP LONG ${s.sym} (flush bounce, 5m)\nBuy now near ${fmtPx(s.ref)}\nStop ${fmtPx(s.stop)} (-${s.riskPct}%)\nTarget ${fmtPx(s.target)} (+${r2(s.riskPct * p.targetR, 2)}%)\n` +
+    return `SCALP: LONG (BUY) ${s.sym} (flush bounce, 5m)\nBuy now near ${fmtPx(s.ref)}\nStop ${fmtPx(s.stop)} (-${s.riskPct}%)\nTarget ${fmtPx(s.target)} (+${r2(s.riskPct * p.targetR, 2)}%)\n` +
       `Close by ${hhmm(s.closeBy)} UTC if neither is hit (1 hour)\nWhy: one 5m candle fell ${Math.abs(s.flushPct)}% (${s.dropAtr}x its normal range) on ${s.volRatio}x volume, then the next closed back above its middle.\n` +
       `Size from your risk: with a ${s.riskPct}% stop, risking 1% of the account = a position of about ${Math.round(100 / s.riskPct)}% of the account. Research signal only.`;
   }

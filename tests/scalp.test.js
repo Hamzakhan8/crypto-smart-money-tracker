@@ -80,7 +80,7 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
   const sig = a.signals[0];
   assert.equal(sig.sym, "AAAUSDT"); assert.equal(sig.status, "open"); assert.equal(sig.t, rev.t);
   assert.equal(sent.length, 1); assert.equal(sent[0][0], "scalp");
-  assert.match(sent[0][1], /SCALP LONG AAAUSDT/); assert.match(sent[0][1], /Stop/); assert.match(sent[0][1], /Close by/);
+  assert.match(sent[0][1], /SCALP: LONG \(BUY\) AAAUSDT/); assert.match(sent[0][1], /Stop/); assert.match(sent[0][1], /Close by/);
   await s.scan();
   assert.equal(s.api().signals.length, 1, "the same signal is not sent twice");
   assert.equal(sent.length, 1);

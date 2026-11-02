@@ -425,6 +425,9 @@ server.listen(PORT, HOST, () => {
   console.log(`  BTC rotation           ${base}/screener#rotation`);
   console.log(`  Whale tracker          ${base}/screener#whales`);
   console.log(`  Early 2x movers        ${base}/screener#early2x`);
+  console.log(`  Spot plan, Pump watch  ${base}/screener (Ignition tab, tags "Spot plan" and "Pump watch")`);
+  console.log(`  Perps, Scalp, bot      ${base}/screener#perps (tags "Swing signals", "Scalp", "Paper bot")`);
+  console.log(`  News                   ${base}/screener#news`);
   console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
   startAiDesk(ai); // follows every AI answer and watches WAIT triggers

@@ -31,7 +31,7 @@ export const TG_KINDS = {
   alpha: { label: "Alpha confirmed alerts", def: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all" },
   alphaEarly: { label: "Alpha early alerts (about 50 a day)", def: env.ALPHA_TELEGRAM === "all" },
   early2x: { label: "Early 2x high-priority candidates", def: !off(env.EARLY2X_ALERTS) },
-  perps: { label: "Perps swing signals (TAKE and WAIT)", def: !off(env.PERPS_TELEGRAM) },
+  perps: { label: "Perps swing signals (TAKE only)", def: !off(env.PERPS_TELEGRAM) },
   scalp: { label: "Perps scalp signals (flush bounce, 5m)", def: !off(env.SCALP_TELEGRAM) },
   scalpBot: { label: "Scalp paper bot: each closed trade and the balance", def: !off(env.SCALP_BOT_TELEGRAM) },
   ai: { label: "AI verdicts on new alerts", def: !off(env.AI_REVIEW_TELEGRAM) },

@@ -11,6 +11,7 @@ import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts } from "./screener.js";
 import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource, meterAi, aiCanSpend, startAiDesk } from "./ai-trade.js";
 import { sendTelegram as tgQueue, telegramWants, telegramConfigured } from "./telegram.js";
+import { createNews } from "./news.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -32,6 +33,9 @@ const ai = env.GEMINI_API_KEY ? meterAi(new GoogleGenAI({ apiKey: env.GEMINI_API
 // whether the AI's calls really do better. AI_AUTO_REVIEW=0 turns it off; AI_REVIEWS_PER_HOUR caps the cost (default 12)
 // and AI_DAILY_REQUESTS caps Gemini requests per day (default 400; checked before each review).
 const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
+// News tab (screener page): market news from Google News, Binance announcements and CoinDesk (COINDESK_API_KEY), each
+// marked bullish / bearish / neutral (Gemini when set up, at most one request every 30 minutes; else keyword rules).
+const news = env.NEWS === "0" ? null : createNews({ ai, canSpend: () => aiCanSpend() });
 const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
 let aiReviewTimes = [];
 const aiBudget = () => {
@@ -335,6 +339,7 @@ const jsonResponse = (res, code, data) => {
 // tabs) at /screener, the AI trade desk at /ai, and every API under /api.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (url.pathname === "/api/news") return jsonResponse(res, 200, news ? news.api() : { status: "off", error: "The News tab is off (NEWS=0 in .env)" });
   if (await handleScreenerRequest(req, res, url)) return;
   if (await handleAiRequest(req, res, url, ai)) return;
   if (url.pathname === "/screener" || url.pathname === "/screener/") return serveScreenerPage(res);
@@ -423,6 +428,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
   startScreener(`${base}/screener`);
   startAiDesk(ai); // follows every AI answer and watches WAIT triggers
+  if (news) news.start();
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");
 });

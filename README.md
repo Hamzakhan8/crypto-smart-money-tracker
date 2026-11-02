@@ -24,6 +24,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
    - [Perps swing signals (futures)](#610-perps-swing-signals-futures)
    - [Perps scalp signals (5 minutes to 1 hour)](#611-perps-scalp-signals-5-minutes-to-1-hour)
    - [Spot plan (BTC + ETH, and every coin)](#612-spot-plan-btc--eth-and-every-coin)
+   - [News (bullish or bearish)](#613-news-bullish-or-bearish)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -39,6 +40,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 |---|---|---|
 | **Market Flow Radar** | http://localhost:3000 | Live leaderboard of buying pressure on Binance spot coins, order books, smart-money wallet signals, AI market brief |
 | **Ignition** | http://localhost:3000/screener | Alerts when a coin's volume ignites on 5-minute candles **before** price runs (early, confirmed and big-move tiers), plus the **Spot plan** (the best spot strategy in a 6-year test: BTC + ETH only above their 50-day average, and the same check on every liquid coin) and the daily **Pump watch** list of coins that could pump hard |
+| **News** | http://localhost:3000/screener#news | The most important crypto market news of the last 48 hours, each marked **bullish, bearish or neutral** for the market, and the overall news mood of the last 24 hours (Google News, Binance announcements, CoinDesk with a free key) |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
@@ -103,6 +105,7 @@ Open `.env` in any text editor. Everything is optional; the app works without it
 
 ```ini
 GEMINI_API_KEY=your_key_here        # for the AI (step 4 below)
+COINDESK_API_KEY=your_key_here      # optional: CoinDesk news in the News tab (free key at developers.coindesk.com)
 TELEGRAM_BOT_TOKEN=123456:ABC...    # for Telegram alerts (step 3 below)
 TELEGRAM_CHAT_ID=123456789
 ```
@@ -523,6 +526,18 @@ Tested on every Binance coin, 2021-2026, holding each altcoin only while it was 
 
 So the BUY OK filter makes altcoin buys much safer, but every version did far worse than the BTC + ETH plan (+692%) and lost money in 2025 and 2026. Use it to choose **which** altcoin to buy if you want one, with small size; keep the main money in the BTC + ETH plan.
 
+### 6.13 News (bullish or bearish)
+
+**Open:** http://localhost:3000/screener#news (the **News** tab).
+
+- **Sources** (refreshed every 10 minutes): Google News searches for the crypto market, Bitcoin, Ethereum, regulation and the SEC, ETFs and the Fed (no key needed); Binance's own announcements (news, new listings, delistings); and **CoinDesk's news feed** when you add a free key: get one at developers.coindesk.com and put `COINDESK_API_KEY=your_key` in `.env`. Price pages, predictions and guides are left out.
+- **Top stories:** the same story from several sites is shown once, with how many sites ran it. Importance comes from the source (Reuters, Bloomberg, CoinDesk, The Block, Binance... count more), the topic (Fed, ETFs, hacks, regulation, big exchanges), how many sites ran it, and how fresh it is.
+- **Bullish / bearish / neutral** for the whole crypto market, with the reason: from **Gemini** when your AI works (it reads the new headlines once, at most one request every 30 minutes, and also rates the impact high / medium / low and names the coins); else CoinDesk's own sentiment label; else **keyword rules** (hack, lawsuit, outflows = bearish; ETF inflows, rate cut, listing = bullish). The rules miss context: "Bitcoin steadies after a hack" still reads as bearish, so the AI labels are better.
+- **News mood (24h):** the stories of the last 24 hours weighed by importance, from -1 (all bearish) to +1 (all bullish): Bullish above +0.15, Bearish below -0.15, else Mixed.
+- Filter by bullish, bearish, neutral or Binance announcements, and search (for example "ETF").
+
+News is context, not a trade signal: big news is often priced in within minutes. Use it to understand why the market moves and to avoid buying into bad news.
+
 ---
 
 ## 7. What the tests say
@@ -707,6 +722,16 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 </details>
 
 <details>
+<summary><b>News</b></summary>
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `NEWS` | on | `0` = turn the News tab off |
+| `COINDESK_API_KEY` | none | Your free CoinDesk key: adds CoinDesk's news feed and its sentiment labels |
+| `NEWS_AI` | on | `0` = never use Gemini for the labels (keyword rules only) |
+</details>
+
+<details>
 <summary><b>Spot trend plan</b></summary>
 
 | Setting | Default | Meaning |
@@ -871,7 +896,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp tab (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp tab (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -889,6 +914,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
+| `news.js` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
 | `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
 | `scalp.js` | Scalp tab: the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
 | `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |

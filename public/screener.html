@@ -141,7 +141,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabScalp" aria-selected="false" aria-controls="view-scalp">Scalp</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabScalp" aria-selected="false" aria-controls="view-scalp">Scalp</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -251,6 +251,26 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <details class="foot" data-sec=""><summary>How it works</summary>every ~20 seconds the scanner compares each token's rolling 15-minute volume with its own normal for this hour of the day (14-day median), so busy hours do not look like surges. For the hottest tokens it then checks the last two finished 5-minute candles: an ignition needs both of them at 3× normal volume or more, price up over those 10 minutes, mostly aggressive buying, 1h volume confirming, and the quality checks that held up in the replay: daily RSI 65 or lower, price above its 20-day average, room above (not less than 1% under its 12-hour high or 1.5% under its 24-hour high: it waits for the break), the last candle not an exhausted spike that closed at its high, not the top tick of the 2-hour range, above a rising 4-hour average and not stretched, no long selling wicks, BTC not falling over the last hour or 4 hours, a tight spread, and no market-wide surge. <b>Early ignition</b> alerts fire as soon as that passes; <b>confirmed ignition</b> alerts also need an ignition score of 65+ (it rewards volume that keeps running), which the replay found more accurate but usually a few minutes later. Tokens whose typical 6-hour range is too small to reach the target are skipped, as are stablecoins, tokenized stocks and gold, and wrapped tokens. Daily setups are shown as a watchlist; their alerts are off unless SCREENER_SETUP_ALERTS=1. Tokens that already ran are capped at score 55 and never alert. Every alert is tracked as a trade: take profit at the target, stop at the stop, otherwise sell when the window ends, judged on 1-minute candles and counted after fees and slippage (see the performance panel). Demo mode data is simulated.</details>
 </div>
 
+<div id="view-news" role="tabpanel" aria-labelledby="tabNews" hidden>
+ <details class="notice"><summary><b>How to read it:</b> BULLISH = the story is likely good for the crypto market, BEARISH = likely bad, NEUTRAL = no clear effect. The news mood weighs the last 24 hours' stories by importance.</summary><div>Importance comes from the source (Reuters, Bloomberg, CoinDesk, The Block, Binance... count more), the topic (Fed, ETFs, hacks, regulation, big exchanges), how many sites ran the same story, and how fresh it is. Labels come from Gemini when your AI is set up (it reads each headline once), from CoinDesk's own label when COINDESK_API_KEY is set, otherwise from keyword rules, which miss context ("steadies after a hack" still reads as bearish). News is context, not a trade signal: big news is often priced in within minutes. Research, not financial advice.</div></details>
+ <div class="error" id="nErrors"></div>
+ <div class="kpis" data-sec="mood">
+  <div class="kpi"><div class="label">News mood (24h)</div><div class="value" id="nkMood">—</div><div class="hint" id="nkMoodHint">importance-weighted</div></div>
+  <div class="kpi"><div class="label">Bullish stories</div><div class="value green" id="nkBull">—</div><div class="hint">last 24 hours</div></div>
+  <div class="kpi"><div class="label">Bearish stories</div><div class="value red" id="nkBear">—</div><div class="hint">last 24 hours</div></div>
+  <div class="kpi"><div class="label">Labels by</div><div class="value" id="nkBy" style="font-size:18px">—</div><div class="hint" id="nkByHint">—</div></div>
+ </div>
+ <section data-sec="top" class="panel">
+  <div class="section-head"><div><h2>Top stories</h2><p>The most important market news of the last 48 hours. The same story from several sites is shown once, with how many ran it.</p></div><span class="chip" id="nChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Effect</th><th>Headline</th><th>Source · when</th><th>Why</th></tr></thead><tbody id="nTop"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="list" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>All news</h2><p>Every story found, most important first.</p></div>
+   <div class="filters"><select id="nFilter" aria-label="Which news"><option value="all">All</option><option value="bullish">Bullish</option><option value="bearish">Bearish</option><option value="neutral">Neutral</option><option value="binance">Binance announcements</option></select><input id="nSearch" placeholder="Search, e.g. ETF" aria-label="Search news"></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Effect</th><th>Headline</th><th>Source · when</th><th>Why</th></tr></thead><tbody id="nAll"></tbody></table></div>
+ </section>
+ <section data-sec="sources" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Sources</h2><p>Refreshed every 10 minutes. CoinDesk needs a free key (COINDESK_API_KEY in .env); AI labels need GEMINI_API_KEY.</p></div></div><div class="source-list" id="nSources"></div></section>
+</div>
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
@@ -983,18 +1003,20 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way.";
+ LEDES.news="The most important crypto market news of the last 48 hours, each marked bullish, bearish or neutral for the market, and the overall news mood of the last 24 hours. From Google News, Binance's own announcements and CoinDesk (with a free API key), refreshed every 10 minutes.";
  LEDES.scalp="Short trades (5 minutes to 1 hour) on Binance USDⓈ-M perpetuals. Seven common scalp strategies were tested on every 5-minute candle of the 50 most liquid perps since July 2024; after fees only one made money: buying the bounce after a sharp flush on a volatile coin. This tab finds it live, gives entry, stop, target and size, and follows every signal. Signals only: you place the trade.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null;
- const TABS=[["ignition","#tabIgnition"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["scalp","#tabScalp"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",scalp:"Perps scalp signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["scalp","#tabScalp"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",news:"Market news",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",scalp:"Perps scalp signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
   ignition:[["watch","Live watch"],["spot","Spot plan"],["pump","Pump watch"],["big","Big-move"],["alerts","Alert history"],["perf","Performance"],["board","Setup leaderboard"],["telegram","Telegram"],["health","Data health"]],
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
+  news:[["mood","Mood"],["top","Top stories"],["list","All news"],["sources","Sources"]],
   scalp:[["signals","Signals"],["tested","Test results"],["coins","Coins"]],
   perps:[["signals","Signals"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
@@ -1016,14 +1038,15 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"||t==="scalp"?"Binance USDⓈ-M futures · no API key":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"||t==="scalp"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);
   if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);}
   if(t==="scalp"){loadS();sTimer=setInterval(loadS,15000);}
+  if(t==="news"){loadN();nTimer=setInterval(loadN,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
@@ -1107,6 +1130,30 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  $("#spFilter").onchange=()=>{spMoreOn=false;drawSpAll();};
  $("#spMore").onclick=()=>{spMoreOn=!spMoreOn;drawSpAll();};
  loadSp();setInterval(loadSp,60000);
+
+ // ---------- News tab (/api/news) ----------
+ let nd={};
+ async function loadN(){try{nd=await getJson("/api/news");}catch(e){$("#nErrors").style.display="block";$("#nErrors").textContent="News: "+e.message;return;}drawN();}
+ const ago=t=>{const m=Math.round((Date.now()-t)/60000);return m<60?m+" min ago":m<48*60?Math.round(m/60)+" h ago":Math.round(m/1440)+" days ago";};
+ const nBadge=x=>`<span class="badge ${x.sentiment==="bullish"?"strong":x.sentiment==="bearish"?"risk":""}">${x.sentiment==="bullish"?"BULLISH":x.sentiment==="bearish"?"BEARISH":"NEUTRAL"}</span>${x.impact?`<span class="sub">${esc(x.impact)} impact</span>`:""}`;
+ const nRow=x=>`<tr><td>${nBadge(x)}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:700">${esc(x.title)}</a>${(x.coins||[]).length?`<span class="sub">${x.coins.map(esc).join(", ")}</span>`:""}</td>
+  <td>${esc(x.source)}<span class="sub">${ago(x.t)}${x.coverage>1?` · ${x.coverage} sites ran it`:""}</span></td><td class="muted" style="font-size:12px">${esc(x.why||"")}<span class="sub">by ${esc(x.by)}</span></td></tr>`;
+ function drawN(){
+  const d=nd,m=d.mood||{},items=d.items||[];
+  $("#nErrors").style.display=d.error?"block":"none";$("#nErrors").textContent=d.error?"News: "+d.error:"";
+  $("#nkMood").textContent=m.label||"—";$("#nkMood").className="value "+(m.label==="Bullish"?"green":m.label==="Bearish"?"red":"amber");
+  $("#nkMoodHint").textContent=m.stories?`score ${m.score>0?"+":""}${m.score} (-1 to +1) · ${m.stories} stories, ${m.neutral} neutral`:"waiting for the first refresh";
+  $("#nkBull").textContent=m.bullish??"—";$("#nkBear").textContent=m.bearish??"—";
+  $("#nkBy").textContent=/^AI/.test(d.labeller||"")&&!/failed/.test(d.labeller)?"AI (Gemini)":"Keyword rules";
+  $("#nkByHint").textContent=`${d.labeller||""}${d.updatedAt?` · updated ${new Date(d.updatedAt).toLocaleTimeString()}`:""}`;
+  $("#nChip").textContent=`${items.length} stories`;
+  $("#nTop").innerHTML=items.length?items.slice(0,10).map(nRow).join(""):`<tr><td colspan="4" class="empty">${d.status==="off"?esc(d.error||"off"):"The first news arrives a few seconds after start."}</td></tr>`;
+  const f=$("#nFilter").value,q=$("#nSearch").value.trim().toLowerCase();
+  const rows=items.filter(x=>(f==="all"||(f==="binance"?/binance/i.test(x.from||x.source):x.sentiment===f))&&(!q||x.title.toLowerCase().includes(q)||x.source.toLowerCase().includes(q)));
+  $("#nAll").innerHTML=rows.length?rows.map(nRow).join(""):`<tr><td colspan="4" class="empty">No story matches.</td></tr>`;
+  $("#nSources").innerHTML=(d.sources||[]).map(x=>`<div class="source-row"><span>${esc(x.name)}</span><b class="status-pill ${x.ok?"green":"amber"}" style="white-space:normal">${x.ok?x.count+" stories":esc(x.error||"no answer")}</b></div>`).join("");
+ }
+ $("#nFilter").onchange=drawN;$("#nSearch").oninput=drawN;
  // ---------- Scalp tab (/api/scalp) ----------
  let sd={};
  async function loadS(){try{sd=await getJson("/api/scalp");}catch(e){$("#sErrors").style.display="block";$("#sErrors").textContent="Scalp: "+e.message;return;}drawS();}

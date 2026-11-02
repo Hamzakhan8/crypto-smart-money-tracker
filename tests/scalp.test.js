@@ -73,6 +73,9 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
   let a = s.api();
   assert.equal(a.status, "ok", a.error);
   assert.deepEqual(a.coins.map((c) => c.base).sort(), ["AAA", "BTC"], "gold and stablecoins are left out");
+  const aaa = a.coins.find((c) => c.base === "AAA");
+  assert.ok(aaa.bigDrop.dropAtr >= 2.5 && aaa.bigDrop.volRatio >= 4 && aaa.bigDrop.pct < -3, "the flush shows as the biggest drop of the last 2 hours");
+  assert.ok(!a.coins.find((c) => c.base === "BTC").bigDrop || a.coins.find((c) => c.base === "BTC").bigDrop.dropAtr < 2.5);
   assert.equal(a.signals.length, 1);
   const sig = a.signals[0];
   assert.equal(sig.sym, "AAAUSDT"); assert.equal(sig.status, "open"); assert.equal(sig.t, rev.t);

@@ -1,4 +1,4 @@
-// Scalp tab: 5-minute "flush bounce" longs on the 50 most liquid Binance USDⓈ-M perpetuals. Signals only: the app
+// Scalp (a section of the Perps tab): 5-minute "flush bounce" longs on the 50 most liquid Binance USDⓈ-M perpetuals. Signals only: the app
 // finds the setup on each closed 5-minute candle and tells you entry, stop and target; you place the trade.
 //
 // The setup (tested by scalp-backtest.js with this same code, on every 5-minute candle of the top-50 perps since
@@ -78,7 +78,7 @@ const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
 export function createScalp({ fetchJson, base = "https://fapi.binance.com", stateFile = null, reportFile = null, bundledReport = null, sendTelegram = null,
   wantTelegram = () => false, now = () => Date.now(), demo = false, p = SCALP, delayMs = 4_000 }) {
   base = base.replace(/\/$/, "");
-  const st = { status: demo ? "off" : "starting", error: demo ? "The Scalp tab uses live Binance futures data only (not in demo mode)" : null,
+  const st = { status: demo ? "off" : "starting", error: demo ? "Scalp signals use live Binance futures data only (not in demo mode)" : null,
     updatedAt: null, scanMs: null, universeAt: null, coins: [], lastCandle: null };
   let store = { version: 1, signals: [] }, report = null, universe = [], busy = false, started = false, loaded = false, timer = null;
   const lastSig = new Map(); // sym -> candle time of its last signal (one per coin per hour)
@@ -137,7 +137,13 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
         for (const s of open.filter((y) => y.sym === sym)) follow(s, x, price);
         if (!universe.includes(sym)) return;
         const a = x.atr[last - 1], atrPct = a > 0 ? (a / bars[last - 1].c) * 100 : null;
-        coins.push({ sym, base: sym.replace(/USDT$/, ""), price, atrPct: r2(atrPct, 2), volatile: atrPct >= p.minAtrPct, change1h: r2((bars[last].c / bars[last - 12].c - 1) * 100, 2) });
+        // the biggest down candle of the last 2 hours, in the rule's terms: shows the scan is alive and how close a coin came
+        let big = null;
+        for (let j = Math.max(22, last - 23); j <= last; j++) {
+          const b = bars[j], pa = x.atr[j - 1], d = pa > 0 ? (b.o - b.c) / pa : 0;
+          if (d > 0 && (!big || d > big.dropAtr)) big = { dropAtr: r2(d, 1), volRatio: r2(x.vr[j], 1), pct: r2((b.c / b.o - 1) * 100, 2), t: b.t };
+        }
+        coins.push({ sym, base: sym.replace(/USDT$/, ""), price, atrPct: r2(atrPct, 2), volatile: atrPct >= p.minAtrPct, change1h: r2((bars[last].c / bars[last - 12].c - 1) * 100, 2), bigDrop: big });
         for (const i of [last - 1, last]) { // the last two closed candles, in case a scan was missed
           const sig = flushBounce(x, i, p);
           if (!sig || sig.t <= (lastSig.get(sym) || 0) + (p.holdCandles - 1) * M5) continue;
@@ -157,6 +163,7 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
       await save();
       if (sendTelegram && wantTelegram("scalp")) for (const s of fresh.filter((y) => y.status === "open")) sendTelegram(telegramText(s), "scalp");
     } catch (e) {
+      if (st.error !== e.message) console.log(`Perps scalp: scan failed: ${e.message}${/451|403/.test(e.message) ? " (Binance futures is blocked on this connection)" : ""}`); // once per new error
       st.status = st.updatedAt ? "ok" : "error"; st.error = e.message;
     } finally { busy = false; }
   }

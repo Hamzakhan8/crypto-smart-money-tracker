@@ -43,8 +43,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **News** | http://localhost:3000/screener#news | The most important crypto market news of the last 48 hours, each marked **bullish, bearish or neutral** for the market, and the overall news mood of the last 24 hours (Google News, Binance announcements, CoinDesk with a free key) |
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
-| **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way |
-| **Scalp** | http://localhost:3000/screener#scalp | Scalp trades (5 minutes to 1 hour) on the 50 most liquid perpetuals: the only one of seven tested 5-minute setups that made money after fees (the **flush bounce**), found a few seconds after each 5-minute close, with entry, stop, target, size and its tracked result. Signals only |
+| **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way. Its **Scalp** section: 5-minute flush-bounce trades (5 minutes to 1 hour), the only one of seven tested scalp setups that made money after fees |
 | **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
 | **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, Final Boss) answers **YES / WATCH / NO** with entry, stop, targets, expected value and position size |
@@ -456,7 +455,7 @@ Leverage can lose you more than a spot trade, fast. Use isolated margin, size fr
 
 ### 6.11 Perps scalp signals (5 minutes to 1 hour)
 
-**Open:** http://localhost:3000/screener#scalp (the **Scalp** tab). Signals only: the app never places orders.
+**Open:** the **Perps** tab, **Scalp** tag (http://localhost:3000/screener#scalp opens it there). Signals only: the app never places orders.
 
 **What was tested first.** Seven common scalp strategies were run on every 5-minute candle of the 50 most liquid Binance USDⓈ-M perpetuals of each month, July 2024 to September 2026, long and short, with entry at the next candle and 0.12% fees per trade (taker in and out):
 
@@ -478,6 +477,8 @@ Most of them break even **before** fees, so fees turn them into losses. That is 
 3. **A volatile coin:** its normal 5-minute range is at least **0.6%** of the price. On calm coins the same pattern made about 0%, because the bounce is too small to beat the fees.
 
 **The plan:** buy right away (near the next candle's open), **stop** just under the lower of the two candles' lows, **target 1.5x the risk**, and **close after 1 hour** if neither is hit. One signal per coin per hour.
+
+**Is it working?** The Scalp section's "Last scan" time changes every 5 minutes, and "Scalp: coins scanned" lists about 50 coins with each one's **biggest 5-minute drop of the last 2 hours** (a signal needs 2.5x+ the normal range on 4x+ volume, then a green candle back above its middle). If the scan fails, the error shows at the top of the section and in the terminal. No signal for a few days is normal: from Oct 28 to Oct 31, 2026 the rule found none on the top 50.
 
 **What the page shows:** each signal with its entry, stop and target, the **position size for your risk** (from your Perps › Risk settings: account, risk %, leverage) and whether the liquidation price is safely beyond the stop, the price now, and the result once closed. Below: the test results, every month of the test, and the coins scanned (with which ones are volatile enough to signal). Telegram sends each new signal (switch "Perps scalp signals" in Ignition › Telegram).
 
@@ -557,7 +558,7 @@ Every tool was replayed on past Binance data with costs included. Short version:
 | **Perps A+: weak-coin breakdown short** | Dec 2021 to Sep 2026, 50 most liquid perps of each month, 0.08% per side + every funding payment, target 4R / stop / 14 days | 334 trades, 51% won, **+0.73R per trade**, profit factor 2.5 (before 2025 +0.92R, 2025-26 +0.54R), **positive in every year 2022-2026**, not from a few coins. **Passes every test.** One account (5 open, 1% risk each): +159%, worst drawdown 15.7% |
 | **Perps A+: short-squeeze breakout long** | same | 258 trades, 34% won, +0.48R per trade (+0.53R / +0.36R), but in 2025-26 most of the profit came from 3 coins and 2024 lost a little: **not proven yet** (WAIT) |
 | **Perps: 20-day breakdown short** | Dec 2021 to Sep 2026, the 50 most liquid USDⓈ-M perps of each month (406 coins), 0.08% per side + every funding payment, target 2.5R / stop / 10 days | 1,976 trades, 41% won, **+0.15R per trade** (before 2025 +0.20R, 2025-26 +0.07R). Holds with a 2R target. Still positive with higher costs (+0.14R) and with the top 30 coins only (+0.13R). Not yet "proven": the newer period is thin |
-| **Perps scalp: flush bounce** (Scalp tab) | Jul 2024 to Sep 2026, every 5-minute candle of the 50 most liquid perps of each month, 0.12% fees per trade, target 1.5R / stop / 1 hour | 541 trades on 180 coins (about 20 a month), 60% won, **+0.97% per trade (+0.17R)**. Before Oct 2025 (where the filters were picked) +0.47%; from Oct 2025 (never seen) +1.30%. Entering 5 minutes late: +0.60%. Worse fill and 0.2% fees: +0.60%. 20 of 27 months in profit; top 3 coins 24% of the profit. Risking 1% a trade: +90% in total, worst drop 12%, longest losing run 17. The same setup on calm coins about 0%, the short version about 0% |
+| **Perps scalp: flush bounce** (Perps tab, Scalp section) | Jul 2024 to Sep 2026, every 5-minute candle of the 50 most liquid perps of each month, 0.12% fees per trade, target 1.5R / stop / 1 hour | 541 trades on 180 coins (about 20 a month), 60% won, **+0.97% per trade (+0.17R)**. Before Oct 2025 (where the filters were picked) +0.47%; from Oct 2025 (never seen) +1.30%. Entering 5 minutes late: +0.60%. Worse fill and 0.2% fees: +0.60%. 20 of 27 months in profit; top 3 coins 24% of the profit. Risking 1% a trade: +90% in total, worst drop 12%, longest losing run 17. The same setup on calm coins about 0%, the short version about 0% |
 | **Spot plan: BTC + ETH 50-day trend** (Ignition tab) | Jan 2021 to Oct 2026, Binance daily candles, 0.15% cost per switch | **+702%** (43% a year), worst drop -56%, Sharpe 1.13, about 3 switches a month; holding BTC + ETH: +190%, -77%. Ahead in both halves and with double fees; 40-60-day averages all +600-715%. Trails holding in bull years, loses much less in bad ones. Altcoin strategies (rotation, breakouts, dip buying, top-10 basket) lost money |
 | **Spot plan: the same check on all coins** | same years, every Binance USDT coin, held only while above its 50-day average, stronger than BTC and BTC up | Top 20 +125%, top 50 +48%, top 100 +78% (worst drops -54% to -68%); without the BTC filters +66%, +1%, +41%. Every version lost money in 2025 and 2026 |
 | **Perps scalp: six other 5-minute setups** | same | **All lose after fees** (-0.05% to -0.17% per trade): range breakouts, EMA pullbacks, snapbacks, squeezes, BTC lead-lag, fading spikes |
@@ -587,7 +588,7 @@ Run these in a second terminal (the app can keep running). Each one caches its d
 | `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
 | `node perps-backtest.js` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
 | `node spot-backtest.js` | The Spot plan's BTC + ETH 50-day trend rule since 2021, vs holding, by year and half, other average lengths, double fees; writes `spot_report.json`, which the Spot plan shows (until then it shows `data/spot-report.json`) | under a minute |
-| `node scalp-backtest.js` | The Scalp tab's flush bounce on every 5-minute candle of the top-50 perps since July 2024 (delisted coins included), with late-entry and worse-fill checks, calm coins and the short version for comparison; writes `scalp_report.json`, which the Scalp tab shows (until then it shows `data/scalp-report.json`) | 20-40 minutes, about 650 MB |
+| `node scalp-backtest.js` | The Scalp section's flush bounce on every 5-minute candle of the top-50 perps since July 2024 (delisted coins included), with late-entry and worse-fill checks, calm coins and the short version for comparison; writes `scalp_report.json`, which the Scalp section shows (until then it shows `data/scalp-report.json`) | 20-40 minutes, about 650 MB |
 | `node pump-backtest.js` | Pump watch on the daily candles of every Binance USDT pair since 2021 (delisted ones too), vs any coin on any day, by half-year; writes `pump_report.json`, which the Pump watch panel shows (until then it shows the copy shipped in `data/pump-report.json`) | 5-30 minutes |
 
 Useful options: `--days 45`, `--end 2026-10-28T08` (repeat an earlier window), `--cost 2` (alpha). Re-run them every month: a rule that only worked in one kind of market shows up as one good month and one bad one.
@@ -746,7 +747,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `SCALP` | on | `0` = turn the Scalp tab's live scan off |
+| `SCALP` | on | `0` = turn the Scalp section's live scan off |
 | `SCALP_TELEGRAM` | on | `0` = scalp signals off on Telegram by default |
 | `SCALP_MIN_DROP_ATR` / `SCALP_MIN_VOLUME_RATIO` / `SCALP_MIN_ATR_PCT` | `2.5` / `4` / `0.6` | The flush bounce rule (the test only speaks for these defaults) |
 | `SCALP_COST_PCT` | `0.12` | Fees + slippage per trade (in and out), in %, for the tracked results |
@@ -826,9 +827,9 @@ The Whales tab reads Ethereum from free public nodes. Open **Whales › Data hea
 </details>
 
 <details>
-<summary><b>Perps or Scalp tab: "HTTP 451" or "access blocked"</b></summary>
+<summary><b>Perps tab (swing or scalp): "HTTP 451" or "access blocked"</b></summary>
 
-Binance blocks its futures API in some countries. The Perps and Scalp tabs then show the error and no signals, but the backtest table still works (it uses Binance's public archive, which is not blocked).
+Binance blocks its futures API in some countries. The Perps tab (swing signals and the Scalp section) then shows the error and no signals, but the backtest table still works (it uses Binance's public archive, which is not blocked).
 
 - Use a VPN on the computer that runs the app, then restart it.
 - Or point `BINANCE_FUTURES_URL` in `.env` to a proxy you run in an allowed country.
@@ -896,7 +897,7 @@ If git says *"Your local changes to the following files would be overwritten"*, 
 npm test
 ```
 
-They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp tab (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
+They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp section (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
@@ -916,7 +917,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
 | `news.js` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
 | `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
-| `scalp.js` | Scalp tab: the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
+| `scalp.js` | Scalp (in the Perps tab): the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
 | `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
 | `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |

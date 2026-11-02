@@ -141,7 +141,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabScalp" aria-selected="false" aria-controls="view-scalp">Scalp</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -330,6 +330,29 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Coin</th><th>Setup</th><th>Verdict</th><th>Entry · stop · target</th><th>Now</th><th>Result</th></tr></thead><tbody id="pSig"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
   <div id="pCard"></div>
  </section>
+ <details class="notice" data-sec="scalp" style="margin-top:22px"><summary><b>Read this first:</b> scalping with leverage is the fastest way to lose money. Of the seven 5-minute strategies tested, only this one made money after fees, and it fires only about 20 times a month. Most of the time this page is quiet, and that is fine.</summary><div><b>The setup (long only):</b> one 5-minute candle falls hard (2.5x+ the coin's normal 5-minute range) on 4x+ normal volume, forced selling that is often liquidations; then the next candle closes green and back above the middle of that drop. Only on volatile coins (normal 5-minute range 0.6%+ of the price). <b>The plan:</b> buy right away, stop just under the low of the drop, target 1.5x the risk, and close after 1 hour if neither is hit. The stop is often 2-5% away, so <b>size the position from your risk</b> (the size shown uses your Perps › Risk settings), use isolated margin, and keep the liquidation price far beyond the stop. Expect losing runs: the test had 17 losses in a row once. Signals only: the app never places orders. Research, not financial advice.</div></details>
+ <div class="error" id="sErrors" data-sec="scalp"></div>
+ <div class="kpis" data-sec="scalp">
+  <div class="kpi"><div class="label">Open now</div><div class="value green" id="skOpen">—</div><div class="hint" id="skOpenHint">signals inside their hour</div></div>
+  <div class="kpi"><div class="label">Signals today</div><div class="value" id="skToday">—</div><div class="hint">about 20 a month in the test</div></div>
+  <div class="kpi"><div class="label">Live results</div><div class="value" id="skLive">—</div><div class="hint" id="skLiveHint">after fees, since the tab started</div></div>
+  <div class="kpi"><div class="label">Last scan</div><div class="value" id="skScan">—</div><div class="hint" id="skScanHint">after each 5-minute close</div></div>
+ </div>
+ <section data-sec="scalp" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Scalp signals (5 minutes to 1 hour)</h2><p>Flush bounce on the top-50 perpetuals, found a few seconds after each 5-minute candle closes. The plan: buy now, stop and target below, close within 1 hour. Size uses your Perps › Risk settings.</p></div><span class="chip" id="sChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop · target</th><th>Size for your risk</th><th>Now</th><th>Result</th></tr></thead><tbody id="sSig"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="scalp" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Scalp: how it did in the test</h2><p id="sTestHint">From scalp_report.json (node scalp-backtest.js).</p></div></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Trades</th><th>Won</th><th>Average per trade</th><th>In R</th><th>Note</th></tr></thead><tbody id="sTest"></tbody></table></div>
+  <p class="perf-note" id="sMonths" style="margin-top:10px"></p>
+  <p class="perf-note" id="sFailed"></p>
+ </section>
+ <section data-sec="scalp" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Scalp: coins scanned</h2><p>The 50 most liquid USDⓈ-M perpetuals by 30-day volume, read every 5 minutes. Only volatile ones (normal 5-minute range 0.6%+) can give a signal. "Biggest drop" is the largest 5-minute down candle of the last 2 hours: a signal needs one of 2.5×+ the normal range on 4×+ volume, then a green candle back above its middle.</p></div><span class="chip" id="sCoinChip">—</span></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Price</th><th>Normal 5m range</th><th>Can signal</th><th>Last hour</th><th>Biggest drop (2h)</th></tr></thead><tbody id="sCoins"></tbody></table></div>
+ </section>
+ <div class="foot" data-sec="scalp">How it works: a few seconds after every 5-minute candle closes, the app reads the last 150 five-minute candles of the 50 most liquid Binance USDⓈ-M perpetuals (by 30-day volume; no stablecoins, no perpetuals on stocks, ETFs or commodities). A signal needs a flush candle (open minus close at least 2.5x the coin's ATR(14) before it, and volume at least 4x the average of the 20 candles before it) followed by a green candle that closes above the middle of the flush, on a coin whose ATR is 0.6%+ of the price. It is followed with the tested plan: entry at the next candle's open, stop 0.1 ATR under the lower of the two lows, target 1.5x the risk, otherwise closed at the end of the 12th candle; a candle touching both counts as the stop; 0.12% fees per trade. One signal per coin per hour. Settings: SCALP_MIN_DROP_ATR, SCALP_MIN_VOLUME_RATIO, SCALP_MIN_ATR_PCT, SCALP_COST_PCT, SCALP_TELEGRAM, SCALP=0 to switch the tab off.</div>
  <section data-sec="check" class="panel" style="margin-top:14px">
   <div class="section-head"><div><h2>Check a trade</h2><p>Your own idea on any Binance USDⓈ-M perpetual, judged with the same tested rules: a tested setup now (or in the last 12 hours), a kind of trade that lost money in the test, or nothing tested yet and what to wait for.</p></div></div>
   <form class="pform" id="pCheckForm" autocomplete="off">
@@ -365,31 +388,6 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="note" id="pLeads" style="padding:0 18px 16px;font-size:13px"></div>
  </section>
  <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Binance futures data, no API key.</p></div></div><div class="source-list" id="pHealth"></div></section>
-</div>
-<div id="view-scalp" role="tabpanel" aria-labelledby="tabScalp" hidden>
- <details class="notice"><summary><b>Read this first:</b> scalping with leverage is the fastest way to lose money. Of the seven 5-minute strategies tested, only this one made money after fees, and it fires only about 20 times a month. Most of the time this page is quiet, and that is fine.</summary><div><b>The setup (long only):</b> one 5-minute candle falls hard (2.5x+ the coin's normal 5-minute range) on 4x+ normal volume, forced selling that is often liquidations; then the next candle closes green and back above the middle of that drop. Only on volatile coins (normal 5-minute range 0.6%+ of the price). <b>The plan:</b> buy right away, stop just under the low of the drop, target 1.5x the risk, and close after 1 hour if neither is hit. The stop is often 2-5% away, so <b>size the position from your risk</b> (the size shown uses your Perps › Risk settings), use isolated margin, and keep the liquidation price far beyond the stop. Expect losing runs: the test had 17 losses in a row once. Signals only: the app never places orders. Research, not financial advice.</div></details>
- <div class="error" id="sErrors"></div>
- <div class="kpis" data-sec="signals">
-  <div class="kpi"><div class="label">Open now</div><div class="value green" id="skOpen">—</div><div class="hint" id="skOpenHint">signals inside their hour</div></div>
-  <div class="kpi"><div class="label">Signals today</div><div class="value" id="skToday">—</div><div class="hint">about 20 a month in the test</div></div>
-  <div class="kpi"><div class="label">Live results</div><div class="value" id="skLive">—</div><div class="hint" id="skLiveHint">after fees, since the tab started</div></div>
-  <div class="kpi"><div class="label">Last scan</div><div class="value" id="skScan">—</div><div class="hint" id="skScanHint">after each 5-minute close</div></div>
- </div>
- <section data-sec="signals" class="panel">
-  <div class="section-head"><div><h2>Scalp signals</h2><p>Flush bounce on the top-50 perpetuals, found a few seconds after each 5-minute candle closes. The plan: buy now, stop and target below, close within 1 hour. Size uses your Perps › Risk settings.</p></div><span class="chip" id="sChip">—</span></div>
-  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop · target</th><th>Size for your risk</th><th>Now</th><th>Result</th></tr></thead><tbody id="sSig"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
- </section>
- <section data-sec="tested" class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>How it did in the test</h2><p id="sTestHint">From scalp_report.json (node scalp-backtest.js).</p></div></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Group</th><th>Trades</th><th>Won</th><th>Average per trade</th><th>In R</th><th>Note</th></tr></thead><tbody id="sTest"></tbody></table></div>
-  <p class="perf-note" id="sMonths" style="margin-top:10px"></p>
-  <p class="perf-note" id="sFailed"></p>
- </section>
- <section data-sec="coins" class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>Coins scanned</h2><p>The 50 most liquid USDⓈ-M perpetuals by 30-day volume. Only volatile ones (normal 5-minute range 0.6%+) can give a signal.</p></div><span class="chip" id="sCoinChip">—</span></div>
-  <div class="table-wrap"><table class="table"><thead><tr><th>Coin</th><th>Price</th><th>Normal 5m range</th><th>Can signal</th><th>Last hour</th></tr></thead><tbody id="sCoins"></tbody></table></div>
- </section>
- <div class="foot" data-sec="">How it works: a few seconds after every 5-minute candle closes, the app reads the last 150 five-minute candles of the 50 most liquid Binance USDⓈ-M perpetuals (by 30-day volume; no stablecoins, no perpetuals on stocks, ETFs or commodities). A signal needs a flush candle (open minus close at least 2.5x the coin's ATR(14) before it, and volume at least 4x the average of the 20 candles before it) followed by a green candle that closes above the middle of the flush, on a coin whose ATR is 0.6%+ of the price. It is followed with the tested plan: entry at the next candle's open, stop 0.1 ATR under the lower of the two lows, target 1.5x the risk, otherwise closed at the end of the 12th candle; a candle touching both counts as the stop; 0.12% fees per trade. One signal per coin per hour. Settings: SCALP_MIN_DROP_ATR, SCALP_MIN_VOLUME_RATIO, SCALP_MIN_ATR_PCT, SCALP_COST_PCT, SCALP_TELEGRAM, SCALP=0 to switch the tab off.</div>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
  <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it. Names come from ~10,000 public labels (exchanges, funds, issuers, bridges; a June 2023 snapshot), from Blockscout for newer contracts, Safe multisigs and ENS names, from exchange addresses the tracker learns by itself, and from your own labels.</summary><div>Exchange addresses are learned the way Arkham does it: an unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address, so later deposits into it count at once (shown as "address (learned)"). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
@@ -1002,14 +1000,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  // ---------- tabs ----------
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
- LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way.";
+ LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way. Scalp (the Scalp tag): 5-minute flush-bounce longs, the only one of seven tested scalp setups that made money after fees.";
  LEDES.news="The most important crypto market news of the last 48 hours, each marked bullish, bearish or neutral for the market, and the overall news mood of the last 24 hours. From Google News, Binance's own announcements and CoinDesk (with a free API key), refreshed every 10 minutes.";
- LEDES.scalp="Short trades (5 minutes to 1 hour) on Binance USDⓈ-M perpetuals. Seven common scalp strategies were tested on every 5-minute candle of the 50 most liquid perps since July 2024; after fees only one made money: buying the bounce after a sharp flush on a volatile coin. This tab finds it live, gives entry, stop, target and size, and follows every signal. Signals only: you place the trade.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
  let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null;
- const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["scalp","#tabScalp"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",news:"Market news",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps swing signals",scalp:"Perps scalp signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",news:"Market news",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
@@ -1017,8 +1014,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   news:[["mood","Mood"],["top","Top stories"],["list","All news"],["sources","Sources"]],
-  scalp:[["signals","Signals"],["tested","Test results"],["coins","Coins"]],
-  perps:[["signals","Signals"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
+  perps:[["signals","Swing signals"],["scalp","Scalp"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
   journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
@@ -1038,14 +1034,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"||t==="scalp"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
   clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);
-  if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);}
-  if(t==="scalp"){loadS();sTimer=setInterval(loadS,15000);}
+  if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);loadS();sTimer=setInterval(loadS,15000);}
   if(t==="news"){loadN();nTimer=setInterval(loadN,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
@@ -1055,7 +1050,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  }
  for(const [k,b] of TABS)$(b).onclick=()=>setTab(k);
  document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;const i=TABS.findIndex(x=>x[0]===tab),n=TABS[(i+(e.key==="ArrowRight"?1:TABS.length-1))%TABS.length];setTab(n[0]);$(n[1]).focus();});
- const tabFromHash=()=>TABS.some(x=>"#"+x[0]===location.hash)?location.hash.slice(1):"ignition";
+ const tabFromHash=()=>{if(location.hash==="#scalp"){store.set("sec:perps","scalp");return "perps";}return TABS.some(x=>"#"+x[0]===location.hash)?location.hash.slice(1):"ignition";};
  window.addEventListener("hashchange",()=>setTab(tabFromHash()));
 
  // ---------- whale tracker ----------
@@ -1180,7 +1175,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    <td class="mono"><span class="${col(nowPct)}">${nowPct==null?"—":pct1(nowPct)}</span><span class="sub">${x.peakPct!=null?`best ${pct1(x.peakPct)} · worst ${pct1(x.lowPct)}`:""}</span></td>
    <td>${res}</td></tr>`;}).join(""):`<tr><td colspan="6" class="empty">${d.status==="off"?esc(d.error||"off"):d.updatedAt?"No signal yet. This setup is rare (about 20 a month across 50 coins), usually when the market drops fast.":"The first scan runs a few seconds after the next 5-minute close."}</td></tr>`;
   const row=(name,s,note="")=>!s||!s.n?`<tr><td>${name}</td><td colspan="5" class="muted">none</td></tr>`:`<tr><td>${name}</td><td class="mono">${s.n}</td><td class="mono">${s.winPct}%</td><td class="mono ${col(s.avgPct)}">${pct(s.avgPct)}</td><td class="mono">${s.avgR!=null?pR(s.avgR):"—"}</td><td class="muted" style="font-size:12px">${note}</td></tr>`;
-  $("#sTest").innerHTML=R?row("<b>Flush bounce</b> (this tab)",R.all,`${R.all.perMonth} a month · ${R.all.coins} coins · top 3 coins ${R.all.top3SharePct}% of the profit`)
+  $("#sTest").innerHTML=R?row("<b>Flush bounce</b> (these signals)",R.all,`${R.all.perMonth} a month · ${R.all.coins} coins · top 3 coins ${R.all.top3SharePct}% of the profit`)
    +row(`… before ${R.split}`,R.older,"the period the filters were picked on")+row(`… from ${R.split}`,R.newer,"never seen when picking the filters")
    +row("… entering 5 minutes late",R.late,"if you act one candle later")+row("… worse fill (+0.3%) and 0.2% fees",R.worse,"a fast market")
    +row("Same setup on calm coins",R.calm,"not used: the bounce is too small to beat fees")+row("Short version (sell a spike up)",R.short,"not used: about zero after fees")
@@ -1189,7 +1184,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#sMonths").innerHTML=R&&R.months?`<b>Risking 1% of the account per trade</b> (size from the stop): ${R.all.totalR>0?"+":""}${R.all.totalR}% over the whole test, worst drop ${R.all.maxDrawdownR}% of the account, longest losing run ${R.all.longestLosingStreak} trades. The stop was ${R.all.medianRiskPct}% below the entry on a typical trade and ${R.all.p90RiskPct}%+ on 1 in 10 (deep wicks): size every trade from its stop.<br><b>Every month</b> (avg per trade, trades): `+R.months.map(m=>`${m.m.slice(2)} <b class="${col(m.avgPct)}">${pct1(m.avgPct)}</b> <span class="muted">(${m.n})</span>`).join(" · "):"";
   $("#sFailed").innerHTML="<b>Tested and not used</b> (same coins and period, after 0.12% fees, avg per trade): breakout of the 4-hour range on 3x volume -0.12% to -0.15%; pullback to the 20 EMA in a trend -0.10% to -0.14%; snapback from 2.5 standard deviations -0.05% to -0.12%; Bollinger squeeze breakout -0.10% to -0.17%; following a BTC jump on lagging coins about -0.05%; fading a spike up about 0%. They roughly break even before fees, and fees turn them into losses.";
   const cs=d.coins||[];$("#sCoinChip").textContent=`${cs.length} coins · ${cs.filter(c=>c.volatile).length} volatile enough`;
-  $("#sCoins").innerHTML=cs.length?cs.map(c=>`<tr><td><b>${esc(c.base)}</b></td><td class="mono">${pPx(c.price)}</td><td class="mono">${c.atrPct==null?"—":c.atrPct.toFixed(2)+"%"}</td><td>${c.volatile?'<span class="green">yes</span>':'<span class="muted">no (calm)</span>'}</td><td class="mono ${col(c.change1h)}">${pct(c.change1h)}</td></tr>`).join(""):`<tr><td colspan="5" class="empty">Loaded after the first scan.</td></tr>`;
+  $("#sCoins").innerHTML=cs.length?cs.map(c=>`<tr><td><b>${esc(c.base)}</b></td><td class="mono">${pPx(c.price)}</td><td class="mono">${c.atrPct==null?"—":c.atrPct.toFixed(2)+"%"}</td><td>${c.volatile?'<span class="green">yes</span>':'<span class="muted">no (calm)</span>'}</td><td class="mono ${col(c.change1h)}">${pct(c.change1h)}</td>
+   <td class="mono">${c.bigDrop?`<span class="${c.bigDrop.dropAtr>=(rule.minDropAtr??2.5)&&c.bigDrop.volRatio>=(rule.minVolRatio??4)?"green":"muted"}">${pct1(c.bigDrop.pct)}</span><span class="sub">${c.bigDrop.dropAtr}× range · ${c.bigDrop.volRatio}× vol · ${hm(c.bigDrop.t+300000)}</span>`:'<span class="muted">none</span>'}</td></tr>`).join(""):`<tr><td colspan="6" class="empty">${d.status==="error"?"The scan failed: see the error above (and the terminal where node server.js runs).":"Loaded after the first scan (a few seconds after the next 5-minute close)."}</td></tr>`;
  }
  async function loadW(){
   const [a,b]=await Promise.allSettled([getJson("/api/whales?window="+encodeURIComponent($("#whWin").value)),getJson("/api/flows?window="+encodeURIComponent($("#wWin").value))]);

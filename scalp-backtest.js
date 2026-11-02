@@ -1,4 +1,4 @@
-// Test of the Scalp tab's flush-bounce setup (scalp.js, the same code as the live tab) on every 5-minute candle of the
+// Test of the Scalp section's flush-bounce setup (scalp.js, the same code as the live scan) on every 5-minute candle of the
 // 50 most liquid Binance USDⓈ-M perpetuals of each month. Node.js 18+, no dependencies.
 //
 //   node scalp-backtest.js                      # July 2024 to the last complete month
@@ -10,7 +10,7 @@
 // Every signal: buy at the next candle's open, stop under the flush low, target 1.5x the risk, else sell after 1 hour;
 // a candle touching both = the stop; 0.12% fees per trade. Also shown: entering one candle (5 minutes) late, a worse
 // fill with higher fees, the same setup on calm coins, and the short version. Writes scalp_report.json, which the
-// Scalp tab shows (until then it shows the copy in data/). Past results do not guarantee future results.
+// Scalp section (Perps tab) shows (until then it shows the copy in data/). Past results do not guarantee future results.
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

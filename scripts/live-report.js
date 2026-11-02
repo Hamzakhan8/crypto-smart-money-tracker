@@ -122,6 +122,7 @@ if (scalp?.signals?.length) {
   for (const x of s.slice(0, 25)) say(`  ${day(x.at)} ${String(x.sym).padEnd(14)} flush ${pct(x.flushPct, 1)} vol ${x.volRatio}x atr ${x.atrPct}% stop -${x.riskPct}% ${x.status} ${x.why || ""} ${Number.isFinite(x.netPct) ? pct(x.netPct) : ""}`);
   json.scalp = s;
 }
+if (!scalp) { say(""); say("SCALP: no scalp_state.json, so the Scalp scanner has not finished a single scan on this PC (it saves after every scan, even with no signal). Restart node server.js after updating, then check the Scalp tab's \"Last scan\" and its error box."); }
 const pump = await read("pump_state.json");
 if (pump?.picks?.length) {
   const s = pump.picks, done = s.filter((x) => x.status === "closed" && Number.isFinite(x.netPct));

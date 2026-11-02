@@ -104,6 +104,24 @@ test("pump watch live: one list after the daily close, Telegram once, followed t
   assert.equal(sent.length, 1, "no message on a day without new picks");
 });
 
+test("pump watch live: in a weak market the list is made and shown, but not sent to Telegram", async () => {
+  // AAA breaks out; three other coins are down over 30 days: market mood 25% (WEAK)
+  const down = () => quiet(81).map((r, i) => { const f = 1 - i * 0.004; return [r[0], r[1] * f, r[2] * f, r[3] * f, r[4] * f, r[5]]; });
+  const coins = { AAA: breakout(), B1: down(), B2: down(), B3: down() };
+  const clock = coins.AAA.at(-1)[0] + DAY + 10 * 60_000;
+  const kl = (r) => [r[0], String(r[1]), String(r[2]), String(r[3]), String(r[4]), "0", r[0] + DAY - 1, String(r[5])];
+  const fetchJson = async (url) => { const rows = coins[new URL(url).searchParams.get("symbol").replace(/USDT$/, "")]; return [...rows, rows.at(-1)].map(kl); };
+  const sent = [];
+  const p = createPump({ fetchJson, base: "http://fake", now: () => clock, sendTelegram: (t, kind) => sent.push([kind, t]), wantTelegram: (k) => k === "pump" });
+  p.onTickers(new Map(Object.keys(coins).map((b) => [b, { lastPrice: "1", quoteVolume: "3000000" }])));
+  for (let i = 0; i < 50 && p.api().day == null; i++) await new Promise((r) => setTimeout(r, 5));
+  const a = p.api();
+  assert.equal(a.mood.ok, false); assert.equal(a.mood.share, 25);
+  assert.deepEqual(a.today.map((x) => x.base), ["AAA"]);
+  assert.equal(a.today[0].moodOk, false);
+  assert.equal(sent.length, 0);
+});
+
 test("pump watch: off in demo mode, says so", () => {
   const a = createPump({ fetchJson: async () => [], base: "x", demo: true }).api();
   assert.equal(a.status, "off");

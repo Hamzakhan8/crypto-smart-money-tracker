@@ -51,6 +51,8 @@ if (events.length) {
   say(" AI verdicts (all versions, resolved alerts):");
   for (const d of ["TAKE", "WAIT", "SKIP"]) line(`AI said ${d}`, events.filter((e) => e.ai?.decision === d && resolved(e)));
   line("no AI verdict", events.filter((e) => !e.ai?.decision && resolved(e)));
+  const aiErr = events.filter((e) => e.ai?.error);
+  say(`  AI reviews that failed: ${aiErr.length}${aiErr.length ? ` (latest: ${String(aiErr[0].ai.error).slice(0, 160)})` : ""} · alerts never reviewed: ${events.filter((e) => !e.ai).length}`);
 
   // what separated winners from losers: each feature split in three equal groups (quick tiers, +6% / -3% rule)
   const quick = events.filter((e) => (e.tier === "ignition" || e.tier === "early") && resolved(e) && ruleOf(e).targetPct === 6);

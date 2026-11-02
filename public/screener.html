@@ -864,7 +864,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
  const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"a few a day, research tier",pump:"one message a day, after the 00:00 UTC close",alpha:"about 8 a day",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){

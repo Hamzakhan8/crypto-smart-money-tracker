@@ -155,7 +155,8 @@ export function createPump({ fetchJson, base, stateFile = null, reportFile = nul
     store.day = closed; store.mood = mood;
     Object.assign(st, { status: "ok", error: null, updatedAt: now(), day: closed, scanned: feats.length, mood, scanMs: now() - t0 });
     await save();
-    if (fresh.length && sendTelegram && wantTelegram("pump")) sendTelegram(telegramText(fresh, mood), "pump");
+    // Telegram only when the market mood is OK (PUMP_TELEGRAM=all: always): under it, picks barely made money in the test
+    if (fresh.length && sendTelegram && wantTelegram("pump") && (mood?.ok || env.PUMP_TELEGRAM === "all")) sendTelegram(telegramText(fresh, mood), "pump");
   }
   function telegramText(fresh, mood) {
     const lines = fresh.slice(0, 8).map((x) => `${x.symbol} ${fmtPx(x.entry)}: volume ${x.volRatio}x, ${Math.abs(x.fromHigh90Pct).toFixed(0)}% under its 90-day high, day ${sgn(x.dayPct, 0)}`);

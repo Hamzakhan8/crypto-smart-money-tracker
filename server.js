@@ -46,10 +46,10 @@ if (AI_AUTO_REVIEW) onIgnitionAlert(async (ev) => {
   try { annotateEvent(ev.id, { ai: await reviewAlert(ai, ev.symbol, ev.tier) }); }
   catch (e) { annotateEvent(ev.id, { ai: { error: e.message, at: Date.now() } }); }
 });
-// Confirmed Alpha alerts get the same automatic review (ALPHA_AI_REVIEW=all: early ones too, =0: none), from the same
-// hourly budget. Its Telegram follow-up is sent only when Alpha alerts go to Telegram.
+// Confirmed Alpha alerts get the same automatic review while Alpha alerts go to Telegram (ALPHA_AI_REVIEW=all: early
+// ones too and always, =0: none), from the same hourly budget.
 if (AI_AUTO_REVIEW && env.ALPHA_AI_REVIEW !== "0") onAlphaAlert(async (a) => {
-  if (a.tier !== "confirmed" && env.ALPHA_AI_REVIEW !== "all") return;
+  if (env.ALPHA_AI_REVIEW !== "all" && (a.tier !== "confirmed" || !telegramWants("alpha"))) return;
   if (!aiCanSpend() || !aiBudget()) return;
   try { annotateAlpha(a.id, { ai: await reviewAlpha(ai, a) }); }
   catch (e) { annotateAlpha(a.id, { ai: { error: e.message, at: Date.now() } }); }

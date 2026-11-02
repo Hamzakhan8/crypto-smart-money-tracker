@@ -150,9 +150,9 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | Message | Default | About how many |
 |---|---|---|
 | Ignition alerts (confirmed, and early ones with 3+ quality signs) | **On** | a few a day |
-| Big-move ignition alerts (+40% before -10%) | **On** | a few a day (research tier, not a proven edge) |
-| Pump watch: the daily list (coins near the 90-day high on 2x+ volume) | **On** | one message a day, a few minutes after 00:00 UTC, only when there are new picks |
-| Binance Alpha confirmed alerts | **On** | about 8 a day |
+| Pump watch: the daily list (coins near the 90-day high on 2x+ volume) | **On** | one message a day, a few minutes after 00:00 UTC, only when there are new picks **and market mood is OK** (40%+ of coins up over 30 days) |
+| Big-move ignition alerts (+40% before -10%) | Off (since Nov 2026) | about 30 a day; lost money live (0 of 14 won) and in the October replay |
+| Binance Alpha confirmed alerts | Off (since Nov 2026) | about 8 a day; lost money live (2 of 15 won) |
 | Early 2x high-priority candidates | **On** | a few a day |
 | Perps swing signals (TAKE only: the A+ setups that passed the test) | **On** | a few a month, after 4h closes |
 | Perps scalp signals (flush bounce, 5 minutes) | **On** | about 20 a month; act within minutes |
@@ -164,7 +164,9 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | Whale transfers / DEX rotations | Off | many |
 | Market Flow Radar "Strong flow" | Off | many |
 
-`.env` can change a default (for example `EARLY2X_ALERTS=0` or `ALPHA_TELEGRAM=all`, see [All settings](#9-all-settings)); a switch you flip on the page wins over `.env`.
+`.env` can change a default (for example `EARLY2X_ALERTS=0` or `ALPHA_TELEGRAM=1`, see [All settings](#9-all-settings)); a switch you flip on the page wins over `.env`.
+
+**Why big-move and Alpha alerts are off by default (Nov 2026):** in the first live days (Oct 30 to Nov 2), all 14 resolved big-move alerts hit the -10% stop (91 alerts in 3 days), and only 5 of 36 closed Alpha alerts won (confirmed -4.3%, early -3.9% per trade). A rerun of the big-move replay agreed: +2.7% per trade in August and September, -2.8% in October, and the market mood did not explain it (October lost money even while 70-90% of coins were up). Both still run and are tracked on the page, so you can see if they recover; switch their Telegram back on in the Telegram section if they do. Their automatic AI reviews only run while their Telegram is on, which keeps the AI budget for the alerts that matter.
 
 ### How delivery works
 
@@ -250,7 +252,7 @@ Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Mo
 
 **The plan that was tested:** buy near the daily close, sell at **+100%** or at **-25%**, otherwise sell after **14 days**. Each pick is followed on daily candles with exactly that plan, and the page shows its result.
 
-**Market mood** = the share of coins whose price is up over the last 30 days. In the test, picks made money on average when it was 40% or more and lost money when it was under 40%. The page and the Telegram message say **OK** or **WEAK**. When it says WEAK, skip the picks or use a very small size.
+**Market mood** = the share of coins whose price is up over the last 30 days. In the test, picks made money on average when it was 40% or more and lost money when it was under 40%. The page says **OK** or **WEAK**, and the Telegram message is only sent when it is OK (`PUMP_TELEGRAM=all` sends it anyway). When it says WEAK, skip the picks or use a very small size.
 
 **Be honest with yourself about what it does:** it roughly **doubles the odds** of a big pump. It does not make a pump likely. About 9 in 10 picks do **not** rise 50%, and about 1 in 5 hit the -25% stop. The money comes from the few that double. It also made money only in strong altcoin markets (see [What the tests say](#7-what-the-tests-say)). Use small sizes, and never more than you can lose.
 
@@ -622,11 +624,11 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |
 | `SCREENER_FEE_PCT` / `SCREENER_SLIPPAGE_PCT` | `0.2` / `0.1` | Costs used in the results |
 | `SCREENER_BIGMOVE` | on | `0` = no big-move tier |
-| `SCREENER_BIGMOVE_ALERTS` | on | `0` = big-move alerts off on Telegram by default |
+| `SCREENER_BIGMOVE_ALERTS` | off | `1` = big-move alerts on Telegram by default |
 | `SCREENER_BIGMOVE_TARGET_PCT` / `_STOP_PCT` / `_OUTCOME_HOURS` | `40` / `10` / `168` | Big-move tracking |
 | `SCREENER_BIGMOVE_MIN_VOLUME` / `_MAX_VOLUME` | `1000000` / `10000000` | Daily volume range for big-move coins |
 | `PUMP` | on | `0` = no Pump watch list |
-| `PUMP_TELEGRAM` | on | `0` = the daily Pump watch message off on Telegram by default |
+| `PUMP_TELEGRAM` | on | `0` = the daily Pump watch message off on Telegram by default; `all` = send it even when market mood is weak |
 | `PUMP_NEAR_HIGH_PCT` / `PUMP_MIN_VOLUME_RATIO` / `PUMP_MAX_DAY_PCT` | `15` / `2` / `15` | The Pump watch rule (the test only speaks for these defaults) |
 | `PUMP_MIN_QUOTE_VOLUME` | `1000000` | USDT traded on the day |
 | `PUMP_MOOD_MIN` | `40` | Market mood (% of coins up over 30 days) below which the list says WEAK |
@@ -638,7 +640,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | Setting | Default | Meaning |
 |---|---|---|
 | `ALPHA` | on | `0` = turn the Alpha tab off |
-| `ALPHA_TELEGRAM` | on (confirmed) | `0` = off, `all` = early alerts too |
+| `ALPHA_TELEGRAM` | off | `1` = confirmed alerts on Telegram, `all` = early alerts too |
 | `ALPHA_VOL_MULT` | `5` | Volume multiple vs normal |
 | `ALPHA_MIN_5M_USD` / `ALPHA_MIN_TRADES` | `1000` / `10` | Minimum per 5-minute candle |
 | `ALPHA_MIN_24H_USD` | `1000000` | 24h volume for the confirmed tier |

@@ -15,8 +15,8 @@ after(() => { clearInterval(keepAlive); rmSync(process.env.TELEGRAM_STATE_FILE, 
 const until = async (fn, ms = 5000) => { const end = Date.now() + ms; while (!fn()) { if (Date.now() > end) throw new Error("timed out"); await new Promise((r) => setTimeout(r, 50)); } };
 
 test("Telegram: the alerts you asked for are on by default", () => {
-  for (const k of ["ignition", "bigmove", "alpha", "early2x", "ai", "system"]) assert.equal(tg.telegramWants(k), true, k);
-  assert.equal(tg.telegramWants("alphaEarly"), false); // about 50 a day: opt in
+  for (const k of ["ignition", "pump", "perps", "scalp", "early2x", "ai", "system"]) assert.equal(tg.telegramWants(k), true, k);
+  for (const k of ["alphaEarly", "bigmove", "alpha"]) assert.equal(tg.telegramWants(k), false, k); // lost money live (or ~50 a day): opt in
 });
 
 test("Telegram: a rate-limited message is retried and delivered", async () => {
@@ -42,7 +42,7 @@ test("Telegram: a switched-off kind is skipped, a test message is forced", async
   const r = await tg.sendTelegram("alpha alert", { kind: "alpha" });
   assert.equal(r.sent, false); assert.match(r.skipped, /switched off/);
   assert.equal((await tg.sendTelegram("test", { kind: "alpha", force: true })).sent, true);
-  assert.equal(tg.telegramStatus().kinds.alpha.on, false); assert.equal(tg.telegramStatus().kinds.alpha.def, true);
+  assert.equal(tg.telegramStatus().kinds.alpha.on, false); assert.equal(tg.telegramStatus().kinds.alpha.def, false);
   tg.setTelegramPref("alpha", true);
   assert.equal((await tg.sendTelegram("alpha alert", { kind: "alpha" })).sent, true);
 });

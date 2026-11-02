@@ -24,9 +24,10 @@ const STATE_FILE = env.TELEGRAM_STATE_FILE || path.join(here, env.DEMO === "1" ?
 const off = (v) => v === "0" || v === "false" || v === "off";
 export const TG_KINDS = {
   ignition: { label: "Ignition alerts (early and confirmed)", def: !off(env.SCREENER_TELEGRAM) },
-  bigmove: { label: "Big-move alerts (+40% before -10%)", def: !off(env.SCREENER_BIGMOVE_ALERTS) },
-  pump: { label: "Pump watch: daily list after the close", def: !off(env.PUMP_TELEGRAM) },
-  alpha: { label: "Alpha confirmed alerts", def: !off(env.ALPHA_TELEGRAM) },
+  // big-move and Alpha: off by default since Nov 2026 (both lost money live: big-move 0 of 14, Alpha confirmed 2 of 15)
+  bigmove: { label: "Big-move alerts (+40% before -10%)", def: env.SCREENER_BIGMOVE_ALERTS === "1" },
+  pump: { label: "Pump watch: daily list after the close (only when market mood is OK)", def: !off(env.PUMP_TELEGRAM) },
+  alpha: { label: "Alpha confirmed alerts", def: env.ALPHA_TELEGRAM === "1" || env.ALPHA_TELEGRAM === "all" },
   alphaEarly: { label: "Alpha early alerts (about 50 a day)", def: env.ALPHA_TELEGRAM === "all" },
   early2x: { label: "Early 2x high-priority candidates", def: !off(env.EARLY2X_ALERTS) },
   perps: { label: "Perps swing signals (TAKE and WAIT)", def: !off(env.PERPS_TELEGRAM) },

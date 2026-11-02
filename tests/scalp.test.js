@@ -99,6 +99,27 @@ test("scalp live: the scan finds the signal after the 5-minute close, sends it o
   assert.equal(sent.length, 1, "closing sends nothing");
 });
 
+test("scalp live: right after a flush candle it shows the coin as watched, with the bounce price", async () => {
+  const B = withFlush(wavy(160)); B.pop(); // stop at the flush candle (the bounce has not happened yet)
+  const flush = B.at(-1), clock = flush.t + M5 + 5_000;
+  const coins = { AAAUSDT: B, BTCUSDT: wavy(161, 60000, 0.001) };
+  const kl = (r) => [r.t, String(r.o), String(r.h), String(r.l), String(r.c), "0", r.t + M5 - 1, String(r.qv)];
+  const fetchJson = async (url) => {
+    const u = new URL(url), q = (k) => u.searchParams.get(k), sym = q("symbol");
+    if (u.pathname === "/fapi/v1/exchangeInfo") return { symbols: Object.keys(coins).map((s) => ({ symbol: s, baseAsset: s.replace("USDT", ""), quoteAsset: "USDT", contractType: "PERPETUAL", status: "TRADING", underlyingType: "COIN" })) };
+    if (u.pathname === "/fapi/v1/ticker/24hr") return Object.keys(coins).map((s) => ({ symbol: s, quoteVolume: "9000000" }));
+    if (q("interval") === "1d") return Array.from({ length: 31 }, (_, k) => [START - (31 - k) * DAY, "1", "1", "1", "1", "0", 0, "100000000"]);
+    return coins[sym].filter((b) => b.t + M5 <= clock).slice(-Number(q("limit"))).map(kl);
+  };
+  const s = createScalp({ fetchJson, base: "http://fake", now: () => clock });
+  await s.scan();
+  const a = s.api();
+  assert.equal(a.signals.length, 0);
+  assert.deepEqual(a.watching.map((x) => x.base), ["AAA"]);
+  assert.ok(Math.abs(a.watching[0].bounceAbove - (flush.o + flush.c) / 2) < 1e-9);
+  assert.equal(a.watching[0].decidedAt, flush.t + 2 * M5);
+});
+
 test("scalp: off in demo mode, says so", () => {
   const a = createScalp({ fetchJson: async () => [], demo: true }).api();
   assert.equal(a.status, "off");

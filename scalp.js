@@ -126,7 +126,7 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
       await load();
       if (!universe.length || now() - (st.universeAt || 0) > 6 * HOUR) await refreshUniverse();
       const open = store.signals.filter((x) => x.status === "open");
-      const syms = [...new Set([...universe, ...open.map((x) => x.sym)])], coins = [], fresh = [];
+      const syms = [...new Set([...universe, ...open.map((x) => x.sym)])], coins = [], fresh = [], watching = [];
       let failed = 0;
       await pool(syms, 8, async (sym) => {
         let raw;
@@ -144,6 +144,10 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
           if (d > 0 && (!big || d > big.dropAtr)) big = { dropAtr: r2(d, 1), volRatio: r2(x.vr[j], 1), pct: r2((b.c / b.o - 1) * 100, 2), t: b.t };
         }
         coins.push({ sym, base: sym.replace(/USDT$/, ""), price, atrPct: r2(atrPct, 2), volatile: atrPct >= p.minAtrPct, change1h: r2((bars[last].c / bars[last - 12].c - 1) * 100, 2), bigDrop: big });
+        // half a setup: the last closed candle is a flush (the same tests as flushBounce); the next candle decides
+        { const f = bars[last], pa = x.atr[last - 1], d = pa > 0 ? (f.o - f.c) / pa : 0;
+          if (d >= p.minDropAtr && x.vr[last] >= p.minVolRatio && pa / bars[last - 1].c * 100 >= p.minAtrPct)
+            watching.push({ sym, base: sym.replace(/USDT$/, ""), t: f.t, flushPct: r2((f.c / f.o - 1) * 100, 2), dropAtr: r2(d, 1), volRatio: r2(x.vr[last], 1), bounceAbove: (f.o + f.c) / 2, decidedAt: f.t + 2 * M5 }); }
         for (const i of [last - 1, last]) { // the last two closed candles, in case a scan was missed
           const sig = flushBounce(x, i, p);
           if (!sig || sig.t <= (lastSig.get(sym) || 0) + (p.holdCandles - 1) * M5) continue;
@@ -159,6 +163,7 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
       if (syms.length && failed > syms.length / 2) throw new Error(`5-minute candles failed for ${failed}/${syms.length} coins`);
       store.signals = store.signals.slice(0, 500);
       st.coins = coins.sort((a, b) => (b.atrPct ?? 0) - (a.atrPct ?? 0));
+      st.watching = watching;
       Object.assign(st, { status: "ok", error: null, updatedAt: now(), scanMs: now() - t0, lastCandle: Math.floor(now() / M5) * M5 - M5 });
       await save();
       if (sendTelegram && wantTelegram("scalp")) for (const s of fresh.filter((y) => y.status === "open")) sendTelegram(telegramText(s), "scalp");

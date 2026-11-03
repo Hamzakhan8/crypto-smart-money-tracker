@@ -39,6 +39,7 @@ export const TG_KINDS = {
   whales: { label: "Whale transfers", def: env.WHALES_TELEGRAM === "1" },
   flows: { label: "DEX rotations", def: env.FLOWS_TELEGRAM === "1" },
   radar: { label: "Market Flow strong flow", def: env.RADAR_TELEGRAM === "1" },
+  health: { label: "Warnings when a part stops working (and when it works again)", def: !off(env.HEALTH_TELEGRAM) },
   system: { label: "Startup message and daily check-in", def: !off(env.TELEGRAM_CHECKIN) },
 };
 

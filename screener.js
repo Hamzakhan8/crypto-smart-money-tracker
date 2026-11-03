@@ -1631,6 +1631,26 @@ const jsonResponse = (res, code, data) => {
   res.end(JSON.stringify(data));
 };
 
+// The parts this module runs, for the status bar (health.js, built in server.js). every = minutes between updates
+// when healthy (a part with no update for 3x that is broken). alert: false = shown, but no Telegram warning of its own.
+export function healthSources() {
+  const errs = () => Object.entries(state.errors || {}).map(([k, v]) => `${k}: ${v}`).join("; ");
+  return [
+    { key: "spot", name: "Spot scanner (Ignition)", every: 1, get: () => ({ status: state.status, updatedAt: state.lastUpdated,
+      error: state.status === "error" ? errs() || "scan failed" : null, warn: errs() || null, detail: state.universe ? `${state.universe.eligible} coins scanned` : "" }) },
+    { key: "perps", name: "Perps swing signals", every: 170, get: () => (perps ? (({ status, error, updatedAt, signals }) => ({ status, error, updatedAt,
+      detail: `${(signals || []).filter((x) => x.track?.status === "open").length} open signals` }))(perps.api()) : { off: true, detail: "off (PERPS=0)" }) },
+    { key: "scalp", name: "Scalp scanner", every: 5, get: () => (scalp ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
+      detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(scalp.api()) : { off: true, detail: "off (SCALP=0)" }) },
+    { key: "bot", name: "Paper bot", every: 5, alert: false, get: () => { if (!scalp) return { off: true, detail: "off with the Scalp scanner" }; const a = scalp.api();
+      return { updatedAt: a.updatedAt, error: a.status === "error" ? `stopped: the Scalp scanner is not working (${a.error})` : null,
+        detail: a.paper ? `balance $${a.paper.balance} (${a.paper.returnPct >= 0 ? "+" : ""}${a.paper.returnPct}%), ${a.paper.trades} trades, ${a.paper.open.length} open` : "" }; } },
+    { key: "spotplan", name: "Spot plan (BTC + ETH)", every: 600, get: () => (spot ? (({ status, error, updatedAt, plan, allError }) => ({ status, error, updatedAt,
+      warn: allError ? `all-coins check: ${allError}` : null, detail: plan || "" }))(spot.api()) : { off: true, detail: "off (SPOT=0)" }) },
+    { key: "pump", name: "Pump watch", every: 600, get: () => (pump ? (({ status, error, updatedAt, today, mood }) => status === "off" ? { off: true, detail: error }
+      : { status, error, updatedAt, detail: `${(today || []).length} picks on the last list${mood ? `, market mood ${mood.share}%` : ""}` })(pump.api()) : { off: true, detail: "off (PUMP=0)" }) },
+  ];
+}
 // Read-only view of the live screener (candidates, regime, breadth, stats, config), used by the AI trade desk.
 export const screenerSnapshot = () => state;
 

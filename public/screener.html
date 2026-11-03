@@ -15,6 +15,7 @@ header{display:flex;justify-content:space-between;gap:20px;align-items:flex-star
 .badge{display:inline-block;border:1px solid var(--line);padding:5px 8px;border-radius:7px;font-size:10px;font-weight:800}.badge.strong{color:var(--green);border-color:#236a53;background:#102a25}.badge.watch{color:var(--amber);border-color:#6d5621;background:#2b2414}.badge.risk{color:var(--red);border-color:#6e2c3a;background:#2d1720}.badge.old{color:var(--muted);font-weight:700;margin-left:6px}
 .coin-link{cursor:pointer;color:var(--ink);background:none;border:0;padding:0;text-align:left;font:inherit}.coin-link:hover{color:var(--blue)}
 .empty{padding:36px;text-align:center;color:var(--muted)}.lower{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px}.events{padding:0 18px 12px}.event{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}.event:last-child{border:0}.event:hover strong{color:var(--blue)}.event strong{font-size:12px}.event small{display:block;color:var(--muted);margin-top:4px}
+.statusbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 0}.statusbar .stc{font:inherit;font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:var(--panel);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}.statusbar .stc i{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--muted)}.statusbar .stc.ok i{background:var(--green)}.statusbar .stc.warn i{background:var(--amber)}.statusbar .stc.error i{background:var(--red)}.statusbar .stc.error{border-color:#6e2c3a}.statusbar .stc.off{color:var(--muted)}.statusbar .lbl{font-size:11px;color:var(--muted);font-weight:700;margin-right:2px}.statusdetail{margin:8px 0 0;padding:6px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .source-list{padding:0 18px 17px}.source-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);gap:12px}.source-row:last-child{border:0}.source-row span:first-child{color:var(--muted)}.status-pill{font-size:10px;font-weight:800;text-align:right}
 .chips{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 17px}.chips .badge{font-weight:700}
 .foot{color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px}.error{display:none;margin:12px 0;background:#2d1720;border:1px solid #6e2c3a;color:#ffabb9;border-radius:10px;padding:12px;font-size:12px;line-height:1.6}
@@ -153,6 +154,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <button class="btn sm" id="testBtn" title="Preview what an alert popup looks like">Test popup</button>
  </div>
 </header>
+<div class="statusbar" id="statusBar" aria-label="System status"></div>
+<div class="statusdetail source-list" id="statusDetail" hidden></div>
 <nav class="sectags" id="secTags" aria-label="Sections of this page"></nav>
 <div id="view-ignition" role="tabpanel" aria-labelledby="tabIgnition">
 <details class="notice"><summary><b>Signal honesty:</b> Alerts fire within a minute or two of volume igniting, never before it.</summary><div>Many early signals still fail, and no setting makes most of them win. Stablecoins, tokenized stocks and gold, wrapped tokens and tokens that rarely move enough are left out, and coins on Binance's Monitoring list never alert. Whale flows and unlock dates are not checked, so check them yourself before acting. Not financial advice.</div></details>
@@ -919,8 +922,8 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   draw();
  });
  // ---------- Telegram panel: status, a switch per kind of message, delivery log ----------
- const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","scalpBot","spot","ai","system","rotation","whales","flows","radar"];
- const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",scalpBot:"one per closed paper trade, with the balance",spot:"about 3 a month: BTC or ETH crossing its 50-day average",ai:"follow-up on each new alert (needs Gemini)",
+ const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","scalpBot","spot","health","ai","system","rotation","whales","flows","radar"];
+ const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",scalpBot:"one per closed paper trade, with the balance",spot:"about 3 a month: BTC or ETH crossing its 50-day average",health:"only when a part has been broken for 30 minutes, and when it works again",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
  const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
  function drawTg(){
@@ -1148,6 +1151,21 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  $("#spMore").onclick=()=>{spMoreOn=!spMoreOn;drawSpAll();};
  loadSp();setInterval(loadSp,60000);
 
+
+ // ---------- System status bar (/api/status, health.js) ----------
+ let stData=null,stOpen=false;
+ const ST_LABEL={ok:"working",warn:"warning",error:"not working",off:"off"};
+ function drawStatus(){
+  const d=stData;if(!d||!d.parts){$("#statusBar").innerHTML="";return;}
+  const bad=d.parts.filter(p=>p.state==="error").length;
+  $("#statusBar").innerHTML=`<span class="lbl">${bad?`<span class="red">${bad} part${bad>1?"s":""} not working</span>`:"System:"}</span>`+d.parts.map(p=>`<button type="button" class="stc ${p.state}" data-st="${esc(p.key)}" title="${esc(p.name)}: ${esc(ST_LABEL[p.state]||p.state)} · ${esc(p.text||"")}"><i></i>${esc(p.name.replace(/ \(.*\)$/,""))}</button>`).join("");
+  $("#statusDetail").hidden=!stOpen;
+  if(stOpen)$("#statusDetail").innerHTML=d.parts.map(p=>`<div class="source-row"><span><b style="color:var(--ink)">${esc(p.name)}</b><br><span style="font-size:12px">${esc(p.text||"")}${p.detail&&p.detail!==p.text?` · ${esc(p.detail)}`:""}</span></span><b class="status-pill ${p.state==="ok"?"green":p.state==="warn"?"amber":p.state==="error"?"red":""}" style="white-space:nowrap">${esc(ST_LABEL[p.state]||p.state)}${p.updatedAt&&p.state!=="off"?`<br><span class="muted" style="font-weight:600">updated ${new Date(p.updatedAt).toLocaleTimeString()}</span>`:""}${p.since?`<br><span class="red" style="font-weight:600">since ${new Date(p.since).toLocaleTimeString()}</span>`:""}</b></div>`).join("")+
+   `<div class="source-row"><span style="font-size:12px">Green = working, amber = a warning, red = not working, grey = switched off. Telegram warns you when a part is red for 30 minutes (Ignition › Telegram, "Warnings").</span><button class="btn sm" type="button" id="stClose">Close</button></div>`;
+ }
+ async function loadStatus(){try{const r=await fetch("/api/status",{cache:"no-store"});if(!r.ok)return;stData=await r.json();drawStatus();}catch{/* standalone screener: no status */}}
+ document.addEventListener("click",e=>{if(e.target.closest("#statusBar .stc")){stOpen=!stOpen;drawStatus();}else if(e.target.closest("#stClose")){stOpen=false;drawStatus();}});
+ loadStatus();setInterval(loadStatus,30000);
  // ---------- News tab (/api/news) ----------
  let nd={};
  async function loadN(){try{nd=await getJson("/api/news");}catch(e){$("#nErrors").style.display="block";$("#nErrors").textContent="News: "+e.message;return;}drawN();}

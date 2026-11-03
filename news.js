@@ -7,7 +7,7 @@
 // up (GEMINI_API_KEY; at most one request every 30 minutes, only for new headlines), else CoinDesk's own sentiment
 // label, else keyword rules (hack, lawsuit, outflows = bearish; ETF inflows, rate cut, listing = bullish).
 // News moves prices in ways no rule predicts: read the mood as context, not as a trade signal.
-import { generate, jsonFrom, MODELS } from "./agent.js";
+import { generate, jsonFrom, MODELS, geminiErrorText } from "./agent.js";
 
 const MIN = 60_000, HOUR = 3_600_000;
 const env = process.env;
@@ -141,7 +141,7 @@ export function createNews({ ai = null, canSpend = () => true, getText = null, n
       }
       if (labels.size > 800) for (const k of [...labels.keys()].slice(0, labels.size - 800)) labels.delete(k);
       st.aiError = null;
-    } catch (e) { st.aiError = e.message; }
+    } catch (e) { st.aiError = geminiErrorText(e); }
   }
   async function refresh() {
     if (busy) return; busy = true;

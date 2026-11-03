@@ -443,6 +443,17 @@ export async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } =
   }
 }
 
+// A Gemini error in plain words, with what to do (the API returns JSON inside the message).
+export function geminiErrorText(e) {
+  let raw = String(e?.message || e || "");
+  try { const j = JSON.parse(raw.slice(raw.indexOf("{"))); raw = j?.error?.message || raw; } catch { /* plain text */ }
+  const code = Number(e?.status ?? e?.code) || (/"code":\s*(\d+)/.exec(String(e?.message || ""))?.[1] | 0);
+  if (/API key not valid|API_KEY_INVALID|permission denied.*key|invalid api key/i.test(raw)) return `the Gemini key is not valid: create one at aistudio.google.com/apikey and put it in .env as GEMINI_API_KEY (${raw})`;
+  if (code === 404 || /not found|is not supported|does not exist/i.test(raw)) return `the AI model name is not available for your key: set GEMINI_ANALYST_MODEL (and GEMINI_REVIEW_MODEL) in .env to a model your key can use (${raw})`;
+  if (code === 429 || /quota|rate limit|resource.?exhausted/i.test(raw)) return `Gemini's limit for your key is reached (free keys have a daily quota); it works again later (${raw})`;
+  return raw.slice(0, 240);
+}
+
 export function jsonFrom(res, label) {
   const text = (res.text || "").replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "").trim();
   if (!text) throw new AgentError(`${label} returned an empty response`, 502);

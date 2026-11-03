@@ -49,6 +49,8 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, Final Boss) answers **YES / WATCH / NO** with entry, stop, targets, expected value and position size |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
+**System status bar:** under the title of the screener page, one dot for each part of the app: the Spot scanner, Perps swing signals, the Scalp scanner, the paper bot, the Spot plan, Pump watch, News, the AI (Gemini) and Telegram. **Green** = working, **amber** = a warning (or still starting), **red** = not working, **grey** = switched off. Click it to see each part's last update and its exact error in plain words (for example "the Gemini key is not valid: create one at aistudio.google.com/apikey..."). When a part has been red for 30 minutes, Telegram sends one warning, and one "OK again" message when it recovers (switch "Warnings" in Ignition › Telegram). At start the app sends Gemini one tiny test request, so a wrong key or model name shows at once.
+
 **Section tags:** every page has a row of tags under its title (for example *Live watch · Pump watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
 
 **Filter tabs in every coin list:** each list (Market Flow leaderboard, Live ignition watch, Big-move watch, Alert history, Setup leaderboard, Alpha candidates and alerts, Early 2x candidates and snapshots, AI desk coins) has the same tabs, each with a count:
@@ -763,6 +765,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCALP_MIN_DROP_ATR` / `SCALP_MIN_VOLUME_RATIO` / `SCALP_MIN_ATR_PCT` | `2.5` / `4` / `0.6` | The flush bounce rule (the test only speaks for these defaults) |
 | `SCALP_COST_PCT` | `0.12` | Fees + slippage per trade (in and out), in %, for the tracked results |
 | `SCALP_PAPER_START` / `SCALP_PAPER_RISK_PCT` / `SCALP_PAPER_LEVERAGE` / `SCALP_PAPER_MAX_OPEN` | `100` / `1` / `5` / `3` | The paper bot's first account (change them later on the page with "Reset paper account") |
+| `HEALTH_TELEGRAM` | on | `0` = no Telegram warning when a part stops working |
 | `SCALP_BOT_TELEGRAM` | on | `0` = the paper bot's closed-trade messages off on Telegram by default |
 </details>
 
@@ -928,6 +931,7 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
 | `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
 | `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
+| `health.js` | The system status bar: each part working / warning / not working / off, and the Telegram warnings |
 | `news.js` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
 | `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
 | `paper-bot.js` | The Scalp paper bot: account, position size from the risk, margin check, trades from the scalp signals, and the broker part a real account would replace |

@@ -7,10 +7,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GoogleGenAI } from "@google/genai";
-import { runAnalysis, readJsonBody, AgentError } from "./agent.js";
-import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts } from "./screener.js";
+import { runAnalysis, readJsonBody, AgentError, generate, MODELS, geminiErrorText } from "./agent.js";
+import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts, healthSources } from "./screener.js";
+import { createHealth } from "./health.js";
 import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource, meterAi, aiCanSpend, startAiDesk } from "./ai-trade.js";
-import { sendTelegram as tgQueue, telegramWants, telegramConfigured } from "./telegram.js";
+import { sendTelegram as tgQueue, telegramWants, telegramConfigured, telegramStatus } from "./telegram.js";
 import { createNews } from "./news.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
@@ -26,7 +27,18 @@ const CHAINS = [{ id: "56", name: "BSC" }, { id: "CT_501", name: "Solana" }];
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 // Initialize Gemini using environment variable securely. Every request is counted for the AI desk's daily limit.
-const ai = env.GEMINI_API_KEY ? meterAi(new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })) : null;
+// Every Gemini request's outcome, for the status bar: the last success and the last error (a wrong key or model name shows here).
+const aiStat = { lastOk: null, lastError: null, lastErrorAt: null };
+function watchAi(client) {
+  if (!client) return client;
+  const gen = client.models.generateContent.bind(client.models);
+  const models = Object.create(client.models, { generateContent: { value: async (params) => {
+    try { const r = await gen(params); aiStat.lastOk = Date.now(); return r; }
+    catch (e) { aiStat.lastError = geminiErrorText(e); aiStat.lastErrorAt = Date.now(); throw e; }
+  } } });
+  return Object.create(client, { models: { value: models } });
+}
+const ai = env.GEMINI_API_KEY ? watchAi(meterAi(new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }))) : null;
 
 // Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP) by the AI committee (6 Gemini requests with
 // the bull vs bear debate and the Final Boss), saved with the alert, so the screener's performance panel can show
@@ -36,6 +48,26 @@ const AI_AUTO_REVIEW = !!ai && env.AI_AUTO_REVIEW !== "0";
 // News tab (screener page): market news from Google News, Binance announcements and CoinDesk (COINDESK_API_KEY), each
 // marked bullish / bearish / neutral (Gemini when set up, at most one request every 30 minutes; else keyword rules).
 const news = env.NEWS === "0" ? null : createNews({ ai, canSpend: () => aiCanSpend() });
+// Status bar (top of the screener page) and Telegram warnings when a part stops working (health.js)
+const health = createHealth({
+  sendTelegram: (t, kind) => tgQueue(t, { kind }), wantTelegram: telegramWants,
+  sources: [
+    ...healthSources(),
+    { key: "news", name: "News", every: 10, get: () => (news ? (({ status, error, updatedAt, items, labeller }) => ({ status, error, updatedAt,
+      warn: /failed/.test(labeller || "") ? labeller : null, detail: `${(items || []).length} stories` }))(news.api()) : { off: true, detail: "off (NEWS=0)" }) },
+    { key: "ai", name: "AI (Gemini)", every: 1e6, get: () => {
+      if (!ai) return { off: true, detail: "not set up: add GEMINI_API_KEY to .env" };
+      if (aiStat.lastErrorAt && !(aiStat.lastOk > aiStat.lastErrorAt)) return { error: `the last Gemini request failed: ${aiStat.lastError}`, updatedAt: aiStat.lastOk };
+      return { updatedAt: Date.now(), warn: aiCanSpend() ? null : "today's AI limit is used up (AI_DAILY_REQUESTS): automatic reviews pause until midnight UTC",
+        detail: aiStat.lastOk ? `working, last answer ${new Date(aiStat.lastOk).toISOString().slice(11, 16)} UTC` : "key set, checking it" };
+    } },
+    { key: "telegram", name: "Telegram", every: 1e6, alert: false, get: () => { const t = telegramStatus();
+      if (!t.configured) return { off: true, detail: "not set up: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env" };
+      if (t.lastError && !(t.lastSentAt > t.lastErrorAt)) return { error: t.lastError, updatedAt: t.lastSentAt };
+      return { updatedAt: Date.now(), warn: t.queued ? `${t.queued} messages waiting to send` : null, detail: t.lastSentAt ? `last message ${new Date(t.lastSentAt).toISOString().slice(11, 16)} UTC` : "ready" };
+    } },
+  ],
+});
 const AI_REVIEWS_PER_HOUR = Math.max(1, Number(env.AI_REVIEWS_PER_HOUR) || 12);
 let aiReviewTimes = [];
 const aiBudget = () => {
@@ -339,6 +371,7 @@ const jsonResponse = (res, code, data) => {
 // tabs) at /screener, the AI trade desk at /ai, and every API under /api.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (url.pathname === "/api/status") return jsonResponse(res, 200, health.api());
   if (url.pathname === "/api/news") return jsonResponse(res, 200, news ? news.api() : { status: "off", error: "The News tab is off (NEWS=0 in .env)" });
   if (await handleScreenerRequest(req, res, url)) return;
   if (await handleAiRequest(req, res, url, ai)) return;
@@ -432,6 +465,10 @@ server.listen(PORT, HOST, () => {
   startScreener(`${base}/screener`);
   startAiDesk(ai); // follows every AI answer and watches WAIT triggers
   if (news) news.start();
+  health.start();
+  // check the Gemini key and model once at start (one tiny request), so a wrong key shows in the status bar right away
+  if (ai) generate(ai, { model: MODELS.analyst, contents: "Reply with the single word OK." }, { retries: 0, timeoutMs: 30_000 })
+    .then(() => console.log(`Gemini: key and model ${MODELS.analyst} work`)).catch((e) => console.log(`Gemini: the test request failed: ${geminiErrorText(e)}`));
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
   if (ai) console.log("Gemini AI integration enabled.");
 });

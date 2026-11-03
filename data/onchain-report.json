@@ -1,0 +1,399 @@
+{
+ "generatedAt": "2026-11-03T09:23:41.617Z",
+ "from": "2021-12",
+ "to": "2026-10",
+ "top": 50,
+ "coins": 412,
+ "split": "2025-01",
+ "costPct": 0.16,
+ "exit": {
+  "stopAtr": 2,
+  "targetAtr": null,
+  "holdBars": 18
+ },
+ "rules": [
+  {
+   "key": "long",
+   "label": "LONG: crowd short (accounts \u2264 0.5), top traders long (\u2265 1.2)",
+   "live": true,
+   "side": 1,
+   "all": {
+    "n": 382,
+    "avg": 0.99,
+    "win": 39
+   },
+   "older": {
+    "n": 37,
+    "avg": 1.27,
+    "win": 46
+   },
+   "newer": {
+    "n": 345,
+    "avg": 0.96,
+    "win": 38
+   },
+   "swing": {
+    "all": {
+     "n": 381,
+     "avg": -0.13,
+     "win": 35
+    },
+    "older": {
+     "n": 37,
+     "avg": 2.2,
+     "win": 41
+    },
+    "newer": {
+     "n": 344,
+     "avg": -0.38,
+     "win": 34
+    }
+   },
+   "verdict": "holds: made money in both periods and beat random trades",
+   "note": null
+  },
+  {
+   "key": "short",
+   "label": "SHORT: crowd long (top 10% of its 30 days), top traders not long (\u2264 1), lower highs",
+   "live": true,
+   "side": -1,
+   "all": {
+    "n": 993,
+    "avg": 0.77,
+    "win": 49
+   },
+   "older": {
+    "n": 818,
+    "avg": 0.73,
+    "win": 49
+   },
+   "newer": {
+    "n": 175,
+    "avg": 0.95,
+    "win": 51
+   },
+   "swing": {
+    "all": {
+     "n": 991,
+     "avg": 0.64,
+     "win": 42
+    },
+    "older": {
+     "n": 818,
+     "avg": 0.45,
+     "win": 41
+    },
+    "newer": {
+     "n": 173,
+     "avg": 1.54,
+     "win": 45
+    }
+   },
+   "verdict": "holds: made money in both periods and beat random trades",
+   "note": null
+  },
+  {
+   "key": "longLoose",
+   "label": "Looser long: accounts \u2264 0.7, top traders \u2265 1",
+   "live": false,
+   "side": 1,
+   "all": {
+    "n": 1509,
+    "avg": -0.13,
+    "win": 38
+   },
+   "older": {
+    "n": 366,
+    "avg": 1.84,
+    "win": 43
+   },
+   "newer": {
+    "n": 1143,
+    "avg": -0.76,
+    "win": 36
+   },
+   "swing": {
+    "all": {
+     "n": 1506,
+     "avg": -0.28,
+     "win": 34
+    },
+    "older": {
+     "n": 366,
+     "avg": 1.15,
+     "win": 40
+    },
+    "newer": {
+     "n": 1140,
+     "avg": -0.74,
+     "win": 32
+    }
+   },
+   "verdict": "does not hold",
+   "note": null
+  },
+  {
+   "key": "shortNoStructure",
+   "label": "Short without the lower-highs check",
+   "live": false,
+   "side": -1,
+   "all": {
+    "n": 1174,
+    "avg": 0.7,
+    "win": 48
+   },
+   "older": {
+    "n": 940,
+    "avg": 0.55,
+    "win": 48
+   },
+   "newer": {
+    "n": 234,
+    "avg": 1.32,
+    "win": 50
+   },
+   "swing": {
+    "all": {
+     "n": 1172,
+     "avg": 0.68,
+     "win": 41
+    },
+    "older": {
+     "n": 940,
+     "avg": 0.4,
+     "win": 40
+    },
+    "newer": {
+     "n": 232,
+     "avg": 1.85,
+     "win": 45
+    }
+   },
+   "verdict": "holds: made money in both periods and beat random trades",
+   "note": null
+  },
+  {
+   "key": "randomLong",
+   "label": "Random longs (same coins, every 24h)",
+   "live": false,
+   "side": 1,
+   "all": {
+    "n": 24223,
+    "avg": -0.37,
+    "win": 38
+   },
+   "older": {
+    "n": 13138,
+    "avg": -0.08,
+    "win": 39
+   },
+   "newer": {
+    "n": 11085,
+    "avg": -0.71,
+    "win": 36
+   },
+   "swing": {
+    "all": {
+     "n": 24168,
+     "avg": -0.61,
+     "win": 32
+    },
+    "older": {
+     "n": 13138,
+     "avg": -0.4,
+     "win": 32
+    },
+    "newer": {
+     "n": 11030,
+     "avg": -0.86,
+     "win": 31
+    }
+   },
+   "verdict": "the yardstick",
+   "note": "what no skill earned"
+  },
+  {
+   "key": "randomShort",
+   "label": "Random shorts (same coins, every 24h)",
+   "live": false,
+   "side": -1,
+   "all": {
+    "n": 24223,
+    "avg": -0.01,
+    "win": 45
+   },
+   "older": {
+    "n": 13138,
+    "avg": -0.32,
+    "win": 44
+   },
+   "newer": {
+    "n": 11085,
+    "avg": 0.35,
+    "win": 47
+   },
+   "swing": {
+    "all": {
+     "n": 24168,
+     "avg": 0.14,
+     "win": 38
+    },
+    "older": {
+     "n": 13138,
+     "avg": -0.11,
+     "win": 37
+    },
+    "newer": {
+     "n": 11030,
+     "avg": 0.44,
+     "win": 39
+    }
+   },
+   "verdict": "the yardstick",
+   "note": "what no skill earned"
+  }
+ ],
+ "recent": [
+  {
+   "sym": "MUBARAKUSDT",
+   "t": 1793073600000,
+   "live": -4.589721294420408,
+   "swing": null,
+   "why": "stop"
+  },
+  {
+   "sym": "VVVUSDT",
+   "t": 1792929600000,
+   "live": -5.743009390949689,
+   "swing": null,
+   "why": "stop"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1792843200000,
+   "live": 11.5763344051447,
+   "swing": null,
+   "why": "time"
+  },
+  {
+   "sym": "MUBARAKUSDT",
+   "t": 1792756800000,
+   "live": -6.970722818809567,
+   "swing": -5.268042114107169,
+   "why": "stop"
+  },
+  {
+   "sym": "MUBARAKUSDT",
+   "t": 1792497600000,
+   "live": 2.0760015031942736,
+   "swing": -5.801004992752452,
+   "why": "time"
+  },
+  {
+   "sym": "AKEUSDT",
+   "t": 1792454400000,
+   "live": -11.880307139356322,
+   "swing": -8.950230354517226,
+   "why": "stop"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1792267200000,
+   "live": -20.800654964724103,
+   "swing": -15.64049122354308,
+   "why": "stop"
+  },
+  {
+   "sym": "MUBARAKUSDT",
+   "t": 1792238400000,
+   "live": -7.473972817052905,
+   "swing": -5.645479612789668,
+   "why": "stop"
+  },
+  {
+   "sym": "AKEUSDT",
+   "t": 1792166400000,
+   "live": 0.5511853088480835,
+   "swing": -17.22665871690913,
+   "why": "time"
+  },
+  {
+   "sym": "RAYSOLUSDT",
+   "t": 1792094400000,
+   "live": -1.4384636488340272,
+   "swing": -6.512733686067024,
+   "why": "time"
+  },
+  {
+   "sym": "MUBARAKUSDT",
+   "t": 1791979200000,
+   "live": 2.6011677805135403,
+   "swing": -1.3559198030249695,
+   "why": "time"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1791979200000,
+   "live": -20.342588065707684,
+   "swing": -15.296941049280761,
+   "why": "stop"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1791720000000,
+   "live": 41.215416072277705,
+   "swing": 17.621995109027914,
+   "why": "time"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1791460800000,
+   "live": -8.641499773634605,
+   "swing": 12.562249660451922,
+   "why": "stop"
+  },
+  {
+   "sym": "BULLAUSDT",
+   "t": 1791417600000,
+   "live": -12.99305077183905,
+   "swing": -9.784788078879277,
+   "why": "stop"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1791201600000,
+   "live": 14.550743801652892,
+   "swing": 46.65115702479338,
+   "why": "time"
+  },
+  {
+   "sym": "AKEUSDT",
+   "t": 1791100800000,
+   "live": 20.750476405509136,
+   "swing": 14.975833629003647,
+   "why": "time"
+  },
+  {
+   "sym": "BTWUSDT",
+   "t": 1790942400000,
+   "live": -16.13299554565702,
+   "swing": -12.139746659242762,
+   "why": "stop"
+  },
+  {
+   "sym": "AKEUSDT",
+   "t": 1790841600000,
+   "live": -13.748981567109904,
+   "swing": -10.351736175332423,
+   "why": "stop"
+  },
+  {
+   "sym": "GPSUSDT",
+   "t": 1790798400000,
+   "live": -3.480585766253148,
+   "swing": -6.262175969725643,
+   "why": "time"
+  }
+ ],
+ "note": "Be careful with these numbers: the 3-day exit was chosen after a first look at the same history (a 2R target with 7 days did worse for the long in 2025-26), the long had only 37 signals before 2025, and funding is not counted. The live results above are the real test."
+}

@@ -87,6 +87,7 @@ import { createJournal } from "./journal.js";
 import { createPerps } from "./perps-live.js";
 import { createPump } from "./pump.js";
 import { createScalp } from "./scalp.js";
+import { createOnchain } from "./onchain.js";
 import { createSpot } from "./spot-trend.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
 
@@ -281,6 +282,11 @@ const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
   bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
   extraSignals: () => perps?.paperSignals?.() || [], // the paper bot also takes the Perps A+ TAKE trades
+});
+// On-chain tab: crowd vs smart money positioning (Binance long/short ratios) on the top-50 perpetuals (onchain.js)
+const onchain = LIBRARY_ONLY || env.ONCHAIN === "0" ? null : createOnchain({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "onchain_state.demo.json" : "onchain_state.json"), reportFile: path.join(here, "onchain_report.json"),
+  bundledReport: path.join(here, "data", "onchain-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
 });
 // Coins the daily lists leave out: stablecoins, tokenized stocks and gold, wrapped tokens, the blocklist, and coins on
 // Binance's Monitoring list (unless SCREENER_ALLOW_MONITORING=1).
@@ -1686,6 +1692,8 @@ export function healthSources() {
       detail: `${(signals || []).filter((x) => x.track?.status === "open").length} open signals` }))(perps.api()) : { off: true, detail: "off (PERPS=0)" }) },
     { key: "scalp", name: "Scalp scanner", every: 5, get: () => (scalp ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
       detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(scalp.api()) : { off: true, detail: "off (SCALP=0)" }) },
+    { key: "onchain", name: "On-chain scanner", every: 45, get: () => (onchain ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
+      detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(onchain.api()) : { off: true, detail: "off (ONCHAIN=0)" }) },
     { key: "bot", name: "Paper bot", every: 5, alert: false, get: () => { if (!scalp) return { off: true, detail: "off with the Scalp scanner" }; const a = scalp.api();
       return { updatedAt: a.updatedAt, error: a.status === "error" ? `stopped: the Scalp scanner is not working (${a.error})` : null,
         detail: a.paper ? `balance $${a.paper.balance} (${a.paper.returnPct >= 0 ? "+" : ""}${a.paper.returnPct}%), ${a.paper.trades} trades, ${a.paper.open.length} open` : "" }; } },
@@ -1739,6 +1747,7 @@ export async function handleScreenerRequest(req, res, url) {
     let b = {}; try { b = JSON.parse(body || "{}"); } catch { /* defaults */ }
     jsonResponse(res, 200, { paper: await scalp.resetPaper(b) }); return true;
   }
+  if (url.pathname === "/api/onchain") { jsonResponse(res, 200, onchain ? onchain.api() : { status: "off", error: "The On-chain tab is off (ONCHAIN=0 in .env)" }); return true; }
   if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
   if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
@@ -1790,6 +1799,8 @@ export function startScreener(baseUrl = "") {
   else console.log("Perps swing signals: off (PERPS=0)");
   if (scalp && !DEMO) { scalp.start(); console.log("Perps scalp (flush bounce, 5m): on, scans a few seconds after each 5-minute close"); }
   else console.log(`Perps scalp: off (${DEMO ? "demo mode" : "SCALP=0"})`);
+  if (onchain && !DEMO) { onchain.start(); console.log("On-chain (crowd vs smart money, 4h): on, scans after each 4h close and every 30 minutes"); }
+  else console.log(`On-chain: off (${DEMO ? "demo mode" : "ONCHAIN=0"})`);
 }
 
 // Standalone: `node screener.js` serves the screener on its own port.

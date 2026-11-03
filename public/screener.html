@@ -142,7 +142,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabOnchain" aria-selected="false" aria-controls="view-onchain">On-chain</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -273,6 +273,31 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   <div class="table-wrap"><table class="table cards"><thead><tr><th>Effect</th><th>Headline</th><th>Source · when</th><th>Why</th></tr></thead><tbody id="nAll"></tbody></table></div>
  </section>
  <section data-sec="sources" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Sources</h2><p>Refreshed every 10 minutes. CoinDesk needs a free key (COINDESK_API_KEY in .env); AI labels need GEMINI_API_KEY.</p></div></div><div class="source-list" id="nSources"></div></section>
+</div>
+<div id="view-onchain" role="tabpanel" aria-labelledby="tabOnchain" hidden>
+ <details class="notice"><summary><b>Read this first:</b> this tab follows one idea from @ArslanOnChain's posts: when most traders bet against a coin while the biggest traders are on the other side, the crowd is often wrong. Signals only; the app never places orders.</summary><div><b>The two numbers</b> (Binance's own futures data, every 4 hours): <b>Crowd</b> = the long/short <i>account</i> ratio of everyone with a position (0.5 = two accounts short for every one long). <b>Smart money</b> = the long/short <i>position</i> ratio of Binance's top traders (the top 20% of accounts by margin; above 1 = more money long than short). His example: crowd 0.397, top traders 1.31, so the crowd was heavily short while the big money was long. <b>The signals</b>, checked after every 4-hour close on the 50 most liquid perpetuals: <span id="ocRuleTxt"><b>LONG</b> when the crowd is at 0.5 or less and top traders at 1.2 or more (his example). <b>SHORT</b> (the mirror) when the crowd's ratio is in the top 10% of its own last 30 days, top traders are not long (1.0 or less) and price makes lower highs</span>. Each is followed with the tested exit: a stop 2x the coin's normal 4-hour range (ATR), no target, close after 3 days. <b>Honest note:</b> he has not published a full method, so these exact numbers are ours. The Backtest section shows how they did on 4.8 years of Binance's archive. This is positioning data from Binance, not wallet tracking. For wallets and exchange flows, see the Whales tab. Research, not financial advice.</div></details>
+ <div class="error" id="ocErrors"></div>
+ <div class="kpis" data-sec="now">
+  <div class="kpi"><div class="label">Crowd short, smart money long</div><div class="value green" id="ocK1">—</div><div class="hint">coins right now (the signal)</div></div>
+  <div class="kpi"><div class="label">Crowd long, smart money not</div><div class="value red" id="ocK2">—</div><div class="hint">coins right now (the mirror)</div></div>
+  <div class="kpi"><div class="label">Open signals</div><div class="value" id="ocK3">—</div><div class="hint" id="ocK3h">followed to their exit</div></div>
+  <div class="kpi"><div class="label">Live record</div><div class="value" id="ocK4">—</div><div class="hint" id="ocK4h">closed signals, after fees</div></div>
+ </div>
+ <section data-sec="now" class="panel">
+  <div class="section-head"><div><h2>Crowd vs smart money now</h2><p>The 50 most liquid Binance perpetuals, the biggest gap between top traders and the crowd first. Gap = smart money ratio ÷ crowd ratio (above 1 = the big money is more bullish than the crowd).</p></div>
+   <div class="filters"><select id="ocFilter" aria-label="Which coins"><option value="all">All coins</option><option value="crowdShort">Crowd short, smart long</option><option value="lean">Crowd leans short</option><option value="crowdLong">Crowd long, smart money not</option></select><span class="chip" id="ocChip">—</span></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Crowd (accounts L/S)</th><th>Smart money (top traders L/S)</th><th>Gap</th><th>Reading</th><th>Price 24h · OI 3d</th><th>Structure</th></tr></thead><tbody id="ocCoins"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="signals" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Signals</h2><p>Every time a coin's 4-hour close showed the setup. Entry = the next 4h open; each signal is followed to its stop or its 3-day close.</p></div><span class="chip" id="ocSigChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop</th><th>Result</th><th>When</th></tr></thead><tbody id="ocSignals"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="tested" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Backtest: did the idea work?</h2><p id="ocTestedSub">Binance's archive, the 50 most liquid perpetuals of each month (delisted coins included), entry at the next 4h open, 0.16% fees in and out. A rule "holds" only if it made money in both periods.</p></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Rule</th><th>Signals</th><th>Win</th><th>Avg per trade</th><th>Before 2025 · 2025-26</th><th>Other exit (2R, 7 days)</th><th>Verdict</th></tr></thead><tbody id="ocTested"><tr><td colspan="7" class="empty">—</td></tr></tbody></table></div>
+  <p class="muted" id="ocTestedNote" style="font-size:12px;margin:10px 2px 0"></p>
+ </section>
+ <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Binance USDⓈ-M futures public data, no API key. Some countries and networks block it (error 451).</p></div></div><div class="source-list" id="ocHealth"></div></section>
 </div>
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
@@ -1028,12 +1053,13 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way. Scalp (the Scalp tag): 5-minute flush-bounce longs, the only one of seven tested scalp setups that made money after fees.";
+ LEDES.onchain="Is the crowd betting against the big money? For the 50 most liquid Binance perpetuals: the long/short ratio of all accounts (the crowd) next to the top traders' long/short position ratio (smart money). The idea comes from @ArslanOnChain's posts: when the crowd is heavily short while top traders are long, the crowd is often wrong. Each signal is followed to its result, and a 4.8-year backtest shows how the rule did.";
  LEDES.news="The most important crypto market news of the last 48 hours, each marked bullish, bearish or neutral for the market, and the overall news mood of the last 24 hours. From Google News, Binance's own announcements and CoinDesk (with a free API key), refreshed every 10 minutes.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null;
- const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",news:"Market news",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null,ocTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["onchain","#tabOnchain"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",news:"Market news",onchain:"On-chain: crowd vs smart money",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
@@ -1041,6 +1067,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   news:[["mood","Mood"],["top","Top stories"],["list","All news"],["sources","Sources"]],
+  onchain:[["now","Crowd vs smart money"],["signals","Signals"],["tested","Backtest"],["health","Data health"]],
   perps:[["signals","Swing signals"],["scalp","Scalp"],["bot","Paper bot"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
   whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
@@ -1061,14 +1088,15 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":t==="onchain"?"Binance USDⓈ-M futures positioning · no API key":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);clearInterval(ocTimer);
   if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);loadS();sTimer=setInterval(loadS,15000);}
   if(t==="news"){loadN();nTimer=setInterval(loadN,60000);}
+  if(t==="onchain"){loadOc();ocTimer=setInterval(loadOc,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
@@ -1168,6 +1196,50 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  async function loadStatus(){try{const r=await fetch("/api/status",{cache:"no-store"});if(!r.ok)return;stData=await r.json();drawStatus();}catch{/* standalone screener: no status */}}
  document.addEventListener("click",e=>{if(e.target.closest("#statusBar .stc")){stOpen=!stOpen;drawStatus();}else if(e.target.closest("#stClose")){stOpen=false;drawStatus();}});
  loadStatus();setInterval(loadStatus,30000);
+ // ---------- On-chain tab (/api/onchain) ----------
+ let ocd={};
+ async function loadOc(){try{ocd=await getJson("/api/onchain");}catch(e){$("#ocErrors").style.display="block";$("#ocErrors").textContent="On-chain: "+e.message;return;}drawOc();}
+ const ocPx=v=>!(v>0)?"—":v>=1000?v.toFixed(1):v>=1?v.toFixed(4):v.toPrecision(4);
+ const ocState={crowdShort:["CROWD SHORT · SMART LONG","strong"],crowdLong:["CROWD LONG · SMART NOT","risk"],leanShort:["Crowd leans short","watch"],leanLong:["Crowd leans long",""],aligned:["Agree",""]};
+ const ocR=(v,good)=>v==null?"—":`<b class="${good?"green":""}">${v.toFixed(2)}</b>`;
+ const ocPct=v=>v==null?"—":`<span class="${v>0?"green":v<0?"red":""}">${v>0?"+":""}${v}%</span>`;
+ function ocRow(c){const st=ocState[c.state]||["no data",""];
+  return `<tr><td><b>${esc(c.base)}</b><span class="sub mono">${ocPx(c.price)}</span></td>
+  <td class="mono">${ocR(c.acc,c.acc!=null&&c.acc<=(ocd.rule?.crowdShortMax??0.7))}<span class="sub">${c.acc==null?"":c.acc<1?Math.round(100/(1+c.acc))+"% of accounts short":Math.round(100*c.acc/(1+c.acc))+"% of accounts long"}${c.accPct30d!=null?` · above ${c.accPct30d}% of its last 30 days`:""}</span></td>
+  <td class="mono">${ocR(c.top,c.top!=null&&c.top>=(ocd.rule?.smartLongMin??1))}<span class="sub">${c.top==null?"":c.top>=1?"top traders net long":"top traders net short"}</span></td>
+  <td class="mono"><b>${c.gap??"—"}</b></td><td>${st[1]?`<span class="badge ${st[1]}">${st[0]}</span>`:`<span class="muted">${st[0]}</span>`}</td>
+  <td class="mono">${ocPct(c.change24h)}<span class="sub">OI ${ocPct(c.oiChg3d)}</span></td>
+  <td>${c.higherLows?'<span class="green">higher lows</span>':c.lowerHighs?'<span class="red">lower highs</span>':'<span class="muted">mixed</span>'}</td></tr>`;}
+ function ocSig(s){const long=s.side>0,done=s.status==="closed";
+  const res=done?(s.netPct==null?`<span class="muted">${esc(s.why||"closed")}</span>`:`<b class="${s.netPct>0?"green":"red"}">${s.netPct>0?"+":""}${s.netPct}%</b><span class="sub">${s.why==="target"?"hit the target":s.why==="stop"?"hit the stop":"closed on time"}</span>`)
+   :s.entry?`<span class="muted">open · now ${ocPct(+((long?s.price/s.entry-1:1-s.price/s.entry)*100).toFixed(2))}</span><span class="sub">peak ${s.peakPct??0}% · low ${s.lowPct??0}%</span>`:'<span class="muted">entry at the next 4h open</span>';
+  return `<tr><td><span class="side ${long?"long":"short"}">${long?"LONG":"SHORT"}</span> <b>${esc(s.base)}</b></td>
+  <td class="muted" style="font-size:12px">${long?"crowd short":"crowd long"}: accounts ${s.acc} · top traders ${s.top} (gap ${s.gap})${long?(s.higherLows?" · higher lows":""):" · lower highs"}</td>
+  <td class="mono">${ocPx(s.entry??s.ref)}<span class="sub">stop ${ocPx(s.stop)}${s.target?" · target "+ocPx(s.target):""} · risk ${s.riskPct}% · close by ${when(s.closeBy)}</span></td>
+  <td>${res}</td><td class="mono">${when(s.at)}</td></tr>`;}
+ function drawOc(){
+  const d=ocd,cs=d.coins||[],r=d.rule||{};
+  $("#ocErrors").style.display=d.error?"block":"none";$("#ocErrors").textContent=d.error?"On-chain: "+d.error+(/451|403/.test(d.error)?" (Binance futures is blocked on this connection: it works from most home connections)":""):"";
+  if(r.crowdShortMax!=null)$("#ocRuleTxt").innerHTML=`<b>LONG</b> when the crowd is at ${r.crowdShortMax} or less and top traders at ${r.smartLongMin} or more (his example). <b>SHORT</b> (the mirror) when the crowd's ratio is in the top ${100-r.crowdLongPct}% of its own last 30 days, top traders are at ${r.smartShortMax} or less and price makes lower highs`;
+  $("#ocK1").textContent=cs.filter(c=>c.state==="crowdShort").length||(cs.length?0:"—");$("#ocK2").textContent=cs.filter(c=>c.state==="crowdLong").length||(cs.length?0:"—");
+  $("#ocK3").textContent=d.open??"—";const rec=d.record||{};
+  $("#ocK4").textContent=rec.n?`${rec.avgPct>0?"+":""}${rec.avgPct}%`:"—";$("#ocK4").className="value "+(rec.n?(rec.avgPct>0?"green":"red"):"");
+  $("#ocK4h").textContent=rec.n?`${rec.n} closed · win ${rec.winPct}% · avg per trade after fees`:"no closed signal yet";
+  const f=$("#ocFilter").value,rows=cs.filter(c=>f==="all"||(f==="lean"?c.state==="leanShort"||c.state==="crowdShort":c.state===f));
+  $("#ocChip").textContent=d.updatedAt?`${cs.length} coins · updated ${new Date(d.updatedAt).toLocaleTimeString()}`:"—";
+  $("#ocCoins").innerHTML=rows.length?rows.map(ocRow).join(""):`<tr><td colspan="7" class="empty">${d.status==="starting"?"First scan in a moment (about a minute)…":d.status==="off"?esc(d.error||"off"):cs.length?"No coin in this view.":"No data yet."}</td></tr>`;
+  const sg=d.signals||[];$("#ocSigChip").textContent=`${sg.length} signals`;
+  $("#ocSignals").innerHTML=sg.length?sg.slice(0,40).map(ocSig).join(""):`<tr><td colspan="5" class="empty">No signal yet. The setup is rare: it is checked after every 4-hour close (00, 04, 08, 12, 16, 20 UTC).</td></tr>`;
+  const R=d.report;
+  if(R){const pf=x=>x&&x.n?`${x.avg>0?"+":""}${x.avg}%`:"—";
+   $("#ocTestedSub").textContent=`Binance's archive ${R.from} to ${R.to}, the ${R.top||50} most liquid perpetuals of each month (${R.coins} coins, delisted ones included), entry at the next 4h open, stop ${R.exit?.stopAtr??2} ATR, close after ${Math.round((R.exit?.holdBars??18)/6)} days, ${R.costPct}% fees in and out (funding not counted). Older = before ${R.split}, newer = from then on. A rule holds only if it made money in both periods and beat random trades.`;
+   $("#ocTested").innerHTML=(R.rules||[]).map(x=>`<tr class="${x.live||x.note?"":"faded"}"><td><b>${esc(x.label)}</b>${x.live?'<span class="sub green">used live</span>':x.note?`<span class="sub">${esc(x.note)}</span>`:""}</td><td class="mono">${x.all.n}</td><td class="mono">${x.all.win}%</td><td class="mono ${x.all.avg>0?"green":"red"}">${pf(x.all)}</td><td class="mono">${pf(x.older)} · ${pf(x.newer)}</td><td class="mono">${pf(x.swing?.older)} · ${pf(x.swing?.newer)}</td><td>${esc(x.verdict)}</td></tr>`).join("");
+   $("#ocTestedNote").textContent=R.note||"";}
+  $("#ocHealth").innerHTML=`<div class="source-row"><span>Binance futures (ratios, candles, open interest)</span><b class="status-pill ${d.status==="ok"&&!d.error?"green":"amber"}" style="white-space:normal">${d.status==="ok"&&!d.error?`ok · scan took ${((d.scanMs||0)/1000).toFixed(0)}s`:esc(d.error||d.status||"—")}</b></div>`+
+   `<div class="source-row"><span>Next scan</span><b class="status-pill">${d.nextScanAt?new Date(d.nextScanAt).toLocaleTimeString():"—"}</b></div>`;
+ }
+ $("#ocFilter").onchange=drawOc;
+
  // ---------- News tab (/api/news) ----------
  let nd={};
  async function loadN(){try{nd=await getJson("/api/news");}catch(e){$("#nErrors").style.display="block";$("#nErrors").textContent="News: "+e.message;return;}drawN();}

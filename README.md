@@ -25,6 +25,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
    - [Perps scalp signals (5 minutes to 1 hour)](#611-perps-scalp-signals-5-minutes-to-1-hour)
    - [Spot plan (BTC + ETH, and every coin)](#612-spot-plan-btc--eth-and-every-coin)
    - [News (bullish or bearish)](#613-news-bullish-or-bearish)
+   - [On-chain: crowd vs smart money](#614-on-chain-crowd-vs-smart-money)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -161,6 +162,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | Early 2x high-priority candidates | **On** | a few a day |
 | Perps swing signals (TAKE only: the A+ setups that passed the test) | **On** | a few a month, after 4h closes |
 | Perps scalp signals (flush bounce, 5 minutes) | **On** | about 20 a month; act within minutes |
+| On-chain: crowd vs smart money (long and short, 4h) | **On** | about 25 a month, after 4h closes |
 | Spot plan: BTC or ETH switches (50-day trend) | **On** | about 3 a month, after the 00:00 UTC close |
 | AI verdict on each new ignition and confirmed Alpha alert | **On** (needs Gemini) | one per alert |
 | Startup message and daily check-in | **On** | one a day |
@@ -570,6 +572,41 @@ So the BUY OK filter makes altcoin buys much safer, but every version did far wo
 
 News is context, not a trade signal: big news is often priced in within minutes. Use it to understand why the market moves and to avoid buying into bad news.
 
+### 6.14 On-chain: crowd vs smart money
+
+**Open:** http://localhost:3000/screener#onchain (the **On-chain** tab).
+
+**Where the idea comes from:** the posts of @ArslanOnChain on X. He has not published a full method; only a few of his posts are public. The one with real analysis is a "crowd vs smart money" call. On Binance, retail accounts were heavily short (long/short account ratio **0.397**) while the top traders were long (top-trader position ratio **1.31**). In his words, the crowd was shorting the exact move that hurts them. This tab turns that idea into exact rules and tests them. The numbers are ours, not his.
+
+**The two numbers**, from Binance's own futures data, for the 50 most liquid perpetuals, every 4 hours (no API key):
+- **Crowd** = the long/short **account** ratio of everyone with a position. 0.5 means two accounts are short for every one that is long.
+- **Smart money** = the long/short **position** ratio of Binance's top traders (the top 20% of accounts by margin). Above 1 means more of their money is long than short.
+
+**The signals** (checked after each 4-hour close):
+
+| Signal | Rule | Exit (tested) |
+|---|---|---|
+| **LONG** (his setup) | crowd at **0.5 or less** and top traders at **1.2 or more** | stop 2x the coin's normal 4-hour range (ATR), no target, close after 3 days |
+| **SHORT** (the mirror) | the crowd's ratio is in the **top 10% of its own last 30 days**, top traders at **1.0 or less**, and price makes **lower highs** | same |
+
+**The table** shows every coin: both ratios, the gap between them (smart money ÷ crowd), the reading, the 24h price change, open interest over 3 days, and the price structure. Each signal is followed to its stop or its 3-day close, and the live record is shown.
+
+**The backtest** (`node onchain-backtest.js`, using the tab's own code): Binance's archive from December 2021 to October 2026, the 50 most liquid perpetuals of each month (412 coins, delisted ones included), entry at the next 4-hour open, 0.16% fees in and out:
+
+| Rule | Before 2025 | 2025-26 | Random trades, same coins (before · after) |
+|---|---|---|---|
+| LONG: crowd short, top traders long | +1.27% per trade (37 signals) | **+0.96%** (345) | -0.08% · -0.71% |
+| SHORT: crowd long at a 30-day extreme, top traders not long, lower highs | +0.73% (818) | **+0.95%** (175) | -0.32% · +0.35% |
+| Looser long (crowd 0.7 or less, top traders 1 or more) | +1.84% (366) | -0.76% (1,143) | does not hold |
+
+**Be honest with yourself about it:**
+- The 3-day exit was chosen after a first look at the same history. With a 2R target and 7 days instead, the long lost money in 2025-26 (-0.38%).
+- The long had only 37 signals before 2025, and funding payments are not counted. In these setups funding usually goes to your side, but not always.
+- It wins less than half the time. The profit comes from the size of the winners.
+- This is Binance positioning data, not wallet tracking. For whale wallets and exchange flows, see the Whales tab.
+
+Size every trade from your risk (the stop is often 4-8% away), and let the live record decide. Research signals, not financial advice. Settings: `ONCHAIN`, `ONCHAIN_TELEGRAM`, `ONCHAIN_SIDES`, `ONCHAIN_CROWD_SHORT`, `ONCHAIN_SMART_LONG`, `ONCHAIN_CROWD_LONG_PCT`, `ONCHAIN_SMART_SHORT`. **Needs Binance futures**, which some countries and networks block (error 451). It works from most home connections.
+
 ---
 
 ## 7. What the tests say
@@ -784,6 +821,11 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 |---|---|---|
 | `SCALP` | on | `0` = turn the Scalp section's live scan off |
 | `SCALP_TELEGRAM` | on | `0` = scalp signals off on Telegram by default |
+| `ONCHAIN` | on | `0` = turn the On-chain tab's live scan off |
+| `ONCHAIN_TELEGRAM` | on | `0` = On-chain signals off on Telegram by default |
+| `ONCHAIN_SIDES` | `long,short` | Which On-chain setups are signals (`long` = only his setup) |
+| `ONCHAIN_CROWD_SHORT` / `ONCHAIN_SMART_LONG` | `0.5` / `1.2` | The long setup: crowd account ratio at or under, top-trader position ratio at or over (the test only speaks for these defaults) |
+| `ONCHAIN_CROWD_LONG_PCT` / `ONCHAIN_SMART_SHORT` | `90` / `1` | The short setup: the crowd's 30-day percentile at or over, top-trader ratio at or under |
 | `SCALP_MIN_DROP_ATR` / `SCALP_MIN_VOLUME_RATIO` / `SCALP_MIN_ATR_PCT` | `2.5` / `4` / `0.6` | The flush bounce rule (the test only speaks for these defaults) |
 | `SCALP_COST_PCT` | `0.12` | Fees + slippage per trade (in and out), in %, for the tracked results |
 | `SCALP_PAPER_START` / `SCALP_PAPER_RISK_PCT` / `SCALP_PAPER_LEVERAGE` / `SCALP_PAPER_MAX_OPEN` | `100` / `1` / `5` / `3` | The paper bot's first account (change them later on the page with "Reset paper account") |

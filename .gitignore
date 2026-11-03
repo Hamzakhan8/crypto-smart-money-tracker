@@ -50,3 +50,6 @@ live_report.json
 spot_report.json
 spot_state.json
 spot_state.demo.json
+onchain_state.json
+onchain_state.demo.json
+onchain_report.json

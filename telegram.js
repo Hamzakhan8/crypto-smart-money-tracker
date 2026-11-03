@@ -34,6 +34,7 @@ export const TG_KINDS = {
   perps: { label: "Perps swing signals (TAKE only)", def: !off(env.PERPS_TELEGRAM) },
   scalp: { label: "Perps scalp signals (flush bounce, 5m)", def: !off(env.SCALP_TELEGRAM) },
   scalpBot: { label: "Scalp paper bot: each closed trade and the balance", def: !off(env.SCALP_BOT_TELEGRAM) },
+  onchain: { label: "On-chain: crowd vs smart money signals (4h, long and short)", def: !off(env.ONCHAIN_TELEGRAM) },
   ai: { label: "AI verdicts on new alerts", def: !off(env.AI_REVIEW_TELEGRAM) },
   rotation: { label: "BTC rotation: regime or holdings changed", def: env.ROTATION_TELEGRAM === "1" },
   whales: { label: "Whale transfers", def: env.WHALES_TELEGRAM === "1" },

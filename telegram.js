@@ -7,7 +7,7 @@
 //
 // Which kinds of alert go to Telegram can be switched on the page (saved in telegram_state.json); .env gives the
 // defaults. A startup message and a daily check-in confirm the connection works even on days with no alerts.
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { readFile, writeFile, rename, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,14 +62,20 @@ export function setTelegramPref(kind, on) {
 }
 
 // What went wrong and how to fix it, from Telegram's HTTP status and error text.
-export function telegramHint(code, description = "") {
+export function telegramHint(code, description = "", migrateTo = null) {
   const d = String(description || "");
-  if (code === 401 || code === 404 || /unauthorized|not found: bot/i.test(d)) return "the bot token is wrong: copy it again from @BotFather into TELEGRAM_BOT_TOKEN in .env, then restart";
+  if (code === 401 || code === 404 || /unauthorized|not found: bot/i.test(d)) {
+    const t = creds().token, odd = t && !/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(t);
+    return `the bot token is wrong: copy it again from @BotFather into TELEGRAM_BOT_TOKEN in .env, then restart${odd ? ". It should look like 123456789:AAH... with nothing before or after it (no word \"bot\", no web address, no quotes or < >)" : ""}`;
+  }
+  if (migrateTo || /upgraded to a supergroup/i.test(d)) return `your Telegram group became a supergroup, so its id changed: set TELEGRAM_CHAT_ID=${migrateTo ?? "<the new id>"} in .env and restart`;
   if (/chat not found/i.test(d)) return "chat not found: TELEGRAM_CHAT_ID is wrong, or you never opened your bot in Telegram and pressed Start (for a group: add the bot and use the group id, which starts with -100)";
   if (/blocked by the user/i.test(d)) return "you blocked the bot: open it in Telegram and press Start (or Unblock)";
   if (/not a member|kicked|have no rights|not enough rights/i.test(d)) return "the bot cannot post in that chat: add it to the group, or as an admin of the channel";
   if (code === 429) return "Telegram rate limit (too many messages): it will work again shortly";
-  if (code === 0) return `cannot reach api.telegram.org: check the internet connection, firewall, VPN or proxy (${d})`;
+  if (code === 0 && /CERT|SELF_SIGNED|UNABLE_TO_(GET|VERIFY)|certificate/i.test(d)) return `a program on this PC (antivirus HTTPS scanning or a company proxy) replaces Telegram's certificate, or the PC clock is wrong: fix the clock, exclude api.telegram.org from HTTPS scanning, or start with \`node --use-system-ca server.js\` (${d})`;
+  if (code === 0 && /ENOTFOUND|EAI_AGAIN/i.test(d)) return `cannot find api.telegram.org (DNS): check the internet connection, or your network blocks Telegram (${d})`;
+  if (code === 0) return `cannot reach api.telegram.org: check the internet connection, firewall or VPN. If Telegram is blocked where you are and you use a VPN or proxy: this app does not use the Windows proxy setting, so switch the VPN to full-tunnel (TUN) mode, or run \`set HTTPS_PROXY=http://127.0.0.1:PORT\` and start with \`node --use-env-proxy server.js\` (${d})`;
   return `Telegram error ${code}: ${d || "unknown"}`;
 }
 // How long to wait before the next try. Setup problems (wrong token or chat) are retried every 5 minutes, so the
@@ -103,7 +109,7 @@ let transport = async (method, payload) => {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload || {}), signal: AbortSignal.timeout(12_000),
     });
     const j = await res.json().catch(() => ({}));
-    return res.ok && j.ok !== false ? { ok: true, result: j.result } : { ok: false, code: res.status, description: j.description || res.statusText, retryAfter: j.parameters?.retry_after ?? null };
+    return res.ok && j.ok !== false ? { ok: true, result: j.result } : { ok: false, code: res.status, description: j.description || res.statusText, retryAfter: j.parameters?.retry_after ?? null, migrateTo: j.parameters?.migrate_to_chat_id ?? null };
   } catch (e) { return { ok: false, code: 0, description: e.cause?.code || e.message }; }
 };
 export const __setTransport = (fn) => { transport = fn; }; // tests
@@ -112,20 +118,39 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const data = { version: 1, prefs: store.prefs, lastCheckinDay: store.lastCheckinDay, log: store.log, items: store.items.map(({ id, kind, text, createdAt, tries, next, lastError }) => ({ id, kind, text, createdAt, tries, next, lastError })) };
-    writeFile(STATE_FILE + ".tmp", JSON.stringify(data)).then(() => rename(STATE_FILE + ".tmp", STATE_FILE)).catch(() => {});
+    writeFile(STATE_FILE + ".tmp", JSON.stringify(data)).then(() => rename(STATE_FILE + ".tmp", STATE_FILE)).then(() => { status.saveError = null; }).catch((e) => {
+      const code = e.code || e.message;
+      if (status.saveError !== code) console.warn(`Telegram: could not save telegram_state.json (${code}): switch changes may not survive a restart (a folder synced by OneDrive or an antivirus can block it)`);
+      status.saveError = code;
+    });
   }, 800);
   saveTimer.unref?.();
 }
-async function load() {
-  if (loaded) return;
-  loaded = true;
-  try {
-    const s = JSON.parse(await readFile(STATE_FILE, "utf8"));
-    if (s?.version === 1) {
-      store.prefs = s.prefs || {}; store.log = Array.isArray(s.log) ? s.log.slice(0, MAX_LOG) : []; store.lastCheckinDay = s.lastCheckinDay || null;
-      store.items = Array.isArray(s.items) ? s.items.filter((x) => x && x.text && Date.now() - x.createdAt < MAX_AGE_MS).map((x) => ({ ...x, next: Date.now() + 2000 })) : [];
+let loading = null;
+function load() { // every caller waits for the same read, so nothing queued during it is lost
+  return (loading ??= (async () => {
+    let text = null;
+    try { text = await readFile(STATE_FILE, "utf8"); } catch (e) { if (e.code !== "ENOENT") stateProblem(e.code || e.message); }
+    if (text != null) {
+      try {
+        const s = JSON.parse(text.replace(/^\uFEFF/, ""));
+        if (s?.version === 1) {
+          store.prefs = s.prefs || {}; store.log = Array.isArray(s.log) ? s.log.slice(0, MAX_LOG) : []; store.lastCheckinDay = s.lastCheckinDay || null;
+          const items = Array.isArray(s.items) ? s.items.filter((x) => x && x.text) : [];
+          for (const x of items.filter((y) => Date.now() - y.createdAt >= MAX_AGE_MS)) logEntry(x, "expired", { error: x.lastError || "too old to send after a restart" });
+          store.items = [...items.filter((x) => Date.now() - x.createdAt < MAX_AGE_MS).map((x) => ({ ...x, next: Date.now() + 2000 })), ...store.items];
+        }
+      } catch (e) {
+        stateProblem("damaged file");
+        copyFile(STATE_FILE, STATE_FILE + ".bad").catch(() => {});
+      }
     }
-  } catch { /* first run */ }
+    loaded = true;
+  })());
+}
+function stateProblem(why) {
+  status.stateError = why;
+  console.warn(`Telegram: telegram_state.json could not be read (${why}): the on/off switches are back to the .env defaults until you set them again on the page${why === "damaged file" ? " (the old file is kept as telegram_state.json.bad)" : ""}`);
 }
 const title = (text) => String(text).split("\n")[0].slice(0, 120);
 function logEntry(it, st, extra = {}) {
@@ -145,7 +170,7 @@ async function pump() {
     }
     if (store.items.some((x) => x.dead)) { store.items = store.items.filter((x) => !x.dead); save(); }
     if (!store.items.length) return;
-    const due = store.items.filter((x) => x.next <= now).sort((a, b) => a.createdAt - b.createdAt)[0];
+    const due = store.items.filter((x) => x.next <= now).sort((a, b) => (b.force ? 1 : 0) - (a.force ? 1 : 0) || a.createdAt - b.createdAt)[0]; // a test message goes first
     if (!due) return schedule(Math.min(...store.items.map((x) => x.next)) - now);
     if (lastSendAt + GAP_MS > now) return schedule(lastSendAt + GAP_MS - now);
     if (!telegramConfigured()) { due.next = now + 5 * MIN; due.lastError = "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set"; return schedule(GAP_MS); }
@@ -158,7 +183,7 @@ async function pump() {
       logEntry(due, "sent");
       settle(due.id, { sent: true });
     } else {
-      const hint = telegramHint(r.code, r.description);
+      const hint = telegramHint(r.code, r.description, r.migrateTo);
       status.failed++; status.lastError = hint; status.lastErrorAt = Date.now();
       due.lastError = hint; due.next = Date.now() + retryDelay(r.code, due.tries, r.retryAfter);
       if (due.tries === 1 || due.tries % 10 === 0) console.warn(`Telegram: not sent yet (try ${due.tries}, will retry): ${hint}`);
@@ -185,12 +210,13 @@ export function noteHeld(kind, text, reason) {
 export async function sendTelegram(text, opts = {}) {
   const kind = TG_KINDS[opts.kind] ? opts.kind : "system";
   if (!telegramConfigured()) return { sent: false, skipped: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set in .env" };
+  await load(); // the switches saved on the page, not the .env defaults
   if (!opts.force && !telegramWants(kind)) { noteHeld(kind, text, "this kind is switched off on the page (Telegram section)"); return { sent: false, skipped: `${TG_KINDS[kind].label} are switched off` }; }
   await load();
   const parts = splitMessage(text);
   const ids = parts.map((part, i) => {
     const id = `m${Date.now().toString(36)}${(seq++).toString(36)}`;
-    store.items.push({ id, kind, text: parts.length > 1 ? `${part}${i < parts.length - 1 ? "\n(continued)" : ""}` : part, createdAt: Date.now(), tries: 0, next: Date.now() });
+    store.items.push({ id, kind, text: parts.length > 1 ? `${part}${i < parts.length - 1 ? "\n(continued)" : ""}` : part, createdAt: Date.now(), tries: 0, next: Date.now(), ...(opts.force ? { force: true } : {}) });
     return id;
   });
   if (store.items.length > MAX_QUEUE) { const drop = store.items.splice(0, store.items.length - MAX_QUEUE); for (const it of drop) { logEntry(it, "dropped", { error: "queue full" }); settle(it.id, { sent: false, error: "queue full" }); } }
@@ -205,9 +231,13 @@ export async function checkTelegram() {
   if (!telegramConfigured()) return "not configured (add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env)";
   const r = await transport("getMe");
   status.checkedAt = Date.now();
-  if (r.ok) { status.bot = r.result?.username ? "@" + r.result.username : "ok"; return `bot ${status.bot}, sending to chat ${creds().chat}`; }
-  status.lastError = telegramHint(r.code, r.description); status.lastErrorAt = Date.now();
-  return `PROBLEM: ${status.lastError}`;
+  if (!r.ok) { status.lastError = telegramHint(r.code, r.description); status.lastErrorAt = Date.now(); return `PROBLEM: ${status.lastError}`; }
+  status.bot = r.result?.username ? "@" + r.result.username : "ok";
+  const c = await transport("getChat", { chat_id: creds().chat }); // a wrong chat id is found now, not at the first alert
+  if (!c.ok && c.code !== 0) { status.lastError = telegramHint(c.code, c.description, c.migrateTo); status.lastErrorAt = Date.now(); return `PROBLEM: bot ${status.bot} works, but ${status.lastError}`; }
+  if (status.lastError && !(status.lastSentAt > status.lastErrorAt)) status.lastError = null; // the check passed: clear an old error
+  status.chat = c.ok ? (c.result?.title || [c.result?.first_name, c.result?.last_name].filter(Boolean).join(" ") || c.result?.username || null) : null;
+  return `bot ${status.bot}, sending to ${status.chat ? `"${status.chat}" (${creds().chat})` : `chat ${creds().chat}`}`;
 }
 
 // One more line for the daily check-in from the app (for example why Ignition is quiet today); set by screener.js.
@@ -236,6 +266,7 @@ export async function startTelegram({ demo = false } = {}) {
   if (demo || !telegramConfigured()) return ok;
   if (telegramWants("system")) sendTelegram(`Smart Money Tracker started. Telegram alerts on for: ${onList().join(", ") || "nothing"}.\nDaily check-in at ${String(CHECKIN_HOUR).padStart(2, "0")}:00 UTC. Change what is sent on the screener page (Ignition tab, Telegram section).`, { kind: "system" });
   const tick = () => {
+    if (!status.bot) checkTelegram().catch(() => {}); // the first check failed (no internet yet?): try again
     const d = new Date(), day = d.toISOString().slice(0, 10);
     if (d.getUTCHours() === CHECKIN_HOUR && store.lastCheckinDay !== day && telegramWants("system")) { store.lastCheckinDay = day; save(); sendTelegram(checkinText(), { kind: "system" }); }
   };

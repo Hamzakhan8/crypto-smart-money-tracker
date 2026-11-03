@@ -170,7 +170,10 @@ export function createScalp({ fetchJson, base = "https://fapi.binance.com", stat
           } catch { /* no open-interest history: no label */ }
         }
       });
-      if (syms.length && failed > syms.length / 2) throw new Error(`5-minute candles failed for ${failed}/${syms.length} coins`);
+      if (syms.length && failed > syms.length / 2) { // most coins failed: still send what was found (its cooldown would hide it on the next scan)
+        if (fresh.length) { await save(); if (sendTelegram && wantTelegram("scalp")) for (const s of fresh.filter((y) => y.status === "open")) sendTelegram(telegramText(s), "scalp"); }
+        throw new Error(`5-minute candles failed for ${failed}/${syms.length} coins`);
+      }
       store.signals = store.signals.slice(0, 500);
       let extra = []; try { extra = extraSignals() || []; } catch { /* the swing side is not ready */ }
       const bot = stepBot(store.paper, [...store.signals, ...extra], { now: now(), costPct: p.costPct }); // the paper bot takes and closes trades (scalp + Perps A+)

@@ -897,7 +897,10 @@ function buildUniverse(tickers) {
   rows.sort((a, b) => (a.info.mc == null) - (b.info.mc == null) || (b.info.mc ?? 0) - (a.info.mc ?? 0) || b.vol - a.vol);
   let rank = 0;
   for (const r of rows) if (r.info.mc != null) r.info.rank = ++rank;
-  return rows.slice(0, TOP_N).map((r) => [r.base, r.info]);
+  // only coins that trade enough can be scanned anyway: filter first, then keep the top N (else liquid coins with no
+  // market-cap data, listed after all the others, were cut off)
+  const floor = BIG_ON ? Math.min(MIN_QUOTE_VOLUME, DEFAULT_BIGMOVE.minVolume) : MIN_QUOTE_VOLUME;
+  return rows.filter((r) => r.vol >= floor).slice(0, TOP_N).map((r) => [r.base, r.info]);
 }
 
 // Hot narratives, every scan, from data already fetched: median 24h change of each sector's liquid coins.

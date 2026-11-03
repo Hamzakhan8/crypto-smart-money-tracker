@@ -567,11 +567,12 @@ function fire(key, type, tr, title, extra = []) {
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, net: "eth", from: tr.symbol, to: "", usd: tr.usd,
     title, lines, links: links(tr) };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && TELEGRAM_ON() && state.telegramConfigured && telegramSent.length < TELEGRAM_PER_HOUR) {
-    telegramSent.push(now);
+  const watched = type === "wallet" || type === "token"; // your own watchlist: always sent, outside the hourly cap
+  if (!DEMO && state.telegramConfigured && (watched || (TELEGRAM_ON() && telegramSent.length < TELEGRAM_PER_HOUR))) {
+    if (!watched) telegramSent.push(now);
     const label = { whale: "WHALE TRANSFER", deposit: "EXCHANGE DEPOSIT", withdrawal: "EXCHANGE WITHDRAWAL", mint: "STABLECOIN MINT", burn: "STABLECOIN BURN",
       issuer: "ISSUER MOVE", wallet: "WATCHED WALLET", token: "WATCHED TOKEN" }[type] || type.toUpperCase();
-    sendTelegram([`${label} · Ethereum`, title, ...lines, `tx: ${links(tr)[0].url}`, "Research signal only, not financial advice."].join("\n"));
+    sendTelegram([`${label} · Ethereum`, title, ...lines, `tx: ${links(tr)[0].url}`, "Research signal only, not financial advice."].join("\n"), watched);
   }
   persist();
 }
@@ -611,8 +612,8 @@ function checkAlerts(fresh) {
   for (const tr of byTx.values()) fire(`whale:${tr.tx}`, "whale", tr, `${fmtUsd(tr.usd)} ${tr.symbol} moved`);
 }
 
-async function sendTelegram(text) { // shared queue (telegram.js): retried until delivered
-  const r = await tgQueue(text, { kind: "whales" });
+async function sendTelegram(text, force = false) { // shared queue (telegram.js): retried until delivered
+  const r = await tgQueue(text, { kind: "whales", force });
   if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
 }
 

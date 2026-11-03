@@ -61,9 +61,9 @@ const health = createHealth({
       return { updatedAt: Date.now(), warn: aiCanSpend() ? null : "today's AI limit is used up (AI_DAILY_REQUESTS): automatic reviews pause until midnight UTC",
         detail: aiStat.lastOk ? `working, last answer ${new Date(aiStat.lastOk).toISOString().slice(11, 16)} UTC` : "key set, checking it" };
     } },
-    { key: "telegram", name: "Telegram", every: 1e6, alert: false, get: () => { const t = telegramStatus();
+    { key: "telegram", name: "Telegram", every: 5, alert: false, get: () => { const t = telegramStatus();
       if (!t.configured) return { off: true, detail: "not set up: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env" };
-      if (t.lastError && !(t.lastSentAt > t.lastErrorAt)) return { error: t.lastError, updatedAt: t.lastSentAt };
+      if (t.lastError && !(t.lastSentAt > t.lastErrorAt)) return { error: t.lastError }; // red after the startup grace: messages are not going out
       return { updatedAt: Date.now(), warn: t.queued ? `${t.queued} messages waiting to send` : null, detail: t.lastSentAt ? `last message ${new Date(t.lastSentAt).toISOString().slice(11, 16)} UTC` : "ready" };
     } },
   ],

@@ -183,7 +183,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 - **Silence never means broken.** The startup message, and a daily check-in at 08:00 UTC (`TELEGRAM_CHECKIN_HOUR`) with how many alerts went out in the last 24 hours, show the connection works on days when no coin meets the rules.
 - **You can see every message.** The Telegram section shows the bot, the last message sent, anything waiting with the next try, the last error in plain words, and a delivery log (time, kind, message, status, tries, delay).
 
-Ignition alerts are rare (often a few a day across all coins), so a quiet phone is normal: the daily check-in tells you whether alerts fired. Not receiving anything? See [Troubleshooting](#10-troubleshooting).
+Signals are rare by design. Ignition sends about one alert every two days (only alerts that pass the quality gate), and none at all while most coins are below their 20-day average (a falling market). Perps sends TAKE signals only (a few a month), and Pump watch only when the market mood is OK. A quiet phone is normal: the Telegram section lists every signal that was **held back** and why, and the daily check-in (08:00 UTC) says what was sent, what was held back and why Ignition is quiet. Not receiving anything? See [Troubleshooting](#10-troubleshooting).
 
 ---
 
@@ -884,6 +884,25 @@ Every other threshold is listed at the top of `early2x.js`.
 ---
 
 ## 10. Troubleshooting
+
+<details>
+<summary><b>Telegram: the test message arrives, but no signals</b></summary>
+
+Telegram works; the rules are holding the signals back. Open the Ignition tab and press the **Telegram** tag:
+- The status line says why Ignition is quiet now, for example "0 coins ignited, 3 heating up; most are waiting for: price above its 20-day average". In a falling market, Ignition waits on purpose (those moves lost money in the tests).
+- The **delivery log** lists every signal that was found but **held back**, with the reason: "quality gate failed: big trades", "only TAKE goes to Telegram (this one is WAIT)", "market mood is WEAK", or "this kind is switched off".
+- Check that the kind you want is ticked in the list of switches (your choice is saved).
+</details>
+
+<details>
+<summary><b>Telegram: nothing arrives, not even the test message</b></summary>
+
+The Telegram section and the status bar say what is wrong in plain words. The usual causes:
+- **Token or chat id:** the token looks like `123456789:AAH...`, with nothing before or after it. Open your bot in Telegram and press **Start** once. A group id starts with `-100`; if your group was upgraded, Telegram gives it a new id and the app tells you which one to use.
+- **.env:** if a `TELEGRAM_` line appears twice, the last one is used. Quotes are fine: `TELEGRAM_BOT_TOKEN="123:abc"  # my bot`.
+- **VPN or proxy:** Node.js does not use the Windows proxy setting. Switch the VPN to full-tunnel (TUN) mode, or run `set HTTPS_PROXY=http://127.0.0.1:PORT` and start with `node --use-env-proxy server.js`.
+- **Antivirus HTTPS scanning or a wrong PC clock** ("certificate" in the error): fix the clock, exclude api.telegram.org from scanning, or start with `node --use-system-ca server.js`.
+</details>
 
 <details>
 <summary><b>"Port 3000 is already in use"</b></summary>

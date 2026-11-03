@@ -1150,7 +1150,7 @@ export async function handleAiRequest(req, res, url, ai) {
       const work = async (onStep) => {
         const out = await cached(`alpha-now:${key}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true,
           (emit) => analyzeAlpha(ai, key, { ...opts, onStep: emit }), onStep);
-        const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out, "(Alpha token)")) : null;
+        const tg = body.notify === true ? await telegram(tgSingle(out, "(Alpha token)")) : null;
         return { ...out, telegram: tg };
       };
       if (body.stream === true) await streamJob(res, work);
@@ -1166,7 +1166,7 @@ export async function handleAiRequest(req, res, url, ai) {
         const work = async (onStep) => {
           const out = await cached(`one:${symbol}:${opts.model}:${opts.reviewModel}:${flags(opts)}`, RESULT_TTL, body.refresh === true,
             (emit) => analyzeOne(ai, symbol, { ...opts, onStep: emit }), onStep);
-          const tg = body.notify === true && !out.meta.cached ? await telegram(tgSingle(out)) : null;
+          const tg = body.notify === true ? await telegram(tgSingle(out)) : null;
           return { ...out, telegram: tg };
         };
         if (body.stream === true) await streamJob(res, work);
@@ -1179,7 +1179,7 @@ export async function handleAiRequest(req, res, url, ai) {
         if (!symbols.length) return jsonResponse(res, 200, { marketView: "No igniting or heating coins right now.", coins: [], failed: [], meta: { at: Date.now() } }), true;
         const out = await cached(`many:${symbols.join(",")}:${opts.model}`, RESULT_TTL, body.refresh === true, () => analyzeMany(ai, symbols, opts));
         const n = (k) => out.coins.filter((c) => c.decision === k).length;
-        const tg = body.notify === true && !out.meta.cached && out.coins.length
+        const tg = body.notify === true && out.coins.length
           ? await telegram([`AI TRADE DESK: ${n("TAKE")} TAKE · ${n("WAIT")} WAIT · ${n("SKIP")} NO TRADE (of ${out.coins.length} coins)`, out.marketView,
             ...out.coins.slice(0, 12).map((c) => `${ICON[c.decision]} ${LABEL[c.decision]} ${c.symbol.replace(/USDT$/, "")}: ${c.probTargetPct}% target / ${c.probStopPct}% stop, expected ${c.expectedValuePct}% · ${c.reason}`),
             "AI opinion on screener data. Research only, not financial advice."].join("\n")) : null;

@@ -395,10 +395,10 @@ function fire(key, type, ev, cooldown = 0) {
   lastAlertAt.set(key, now);
   const e = { id: `${type}:${now}:${Math.random().toString(36).slice(2, 7)}`, type, time: now, ...ev };
   state.events = [e, ...state.events].slice(0, MAX_EVENTS);
-  if (!DEMO && TELEGRAM_ON() && state.telegramConfigured) {
+  if (!DEMO && state.telegramConfigured && (TELEGRAM_ON() || type === "watch")) { // your own pair watches: always sent
     const label = { whale: "WHALE SWAP", watch: "PAIR WATCH", surge: "ROTATION SURGE", rotation: "WALLET ROTATION" }[type] || type.toUpperCase();
     sendTelegram([`${label} · ${chain(e.net).name}`, e.title, ...(e.lines || []), ...(e.links || []).map((l) => `${l.label}: ${l.url}`),
-      "Research signal only, not financial advice."].join("\n"));
+      "Research signal only, not financial advice."].join("\n"), type === "watch");
   }
   persist();
 }
@@ -441,8 +441,8 @@ function checkAlerts({ now, routes, rotations, edges }) {
   }
 }
 
-async function sendTelegram(text) { // shared queue (telegram.js): retried until delivered
-  const r = await tgQueue(text, { kind: "flows" });
+async function sendTelegram(text, force = false) { // shared queue (telegram.js): retried until delivered
+  const r = await tgQueue(text, { kind: "flows", force });
   if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = r.error;
 }
 

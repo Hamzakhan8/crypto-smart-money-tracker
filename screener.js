@@ -89,7 +89,7 @@ import { createPump } from "./pump.js";
 import { createScalp } from "./scalp.js";
 import { createOnchain } from "./onchain.js";
 import { createSpot } from "./spot-trend.js";
-import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref } from "./telegram.js";
+import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref, noteHeld, setCheckinExtra } from "./telegram.js";
 
 const env = process.env;
 const num = (k, d) => (env[k] !== undefined && env[k] !== "" && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
@@ -274,7 +274,7 @@ const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
 const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "perps_state.demo.json" : "perps_state.json"), reportFile: path.join(here, "perps_report.json"),
   bundledReport: path.join(here, "data", "perps-report.json"), // shipped results, until you run perps-backtest.js yourself
-  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured,
+  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured, heldTelegram: noteHeld,
   top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
 });
 // Scalp tab: 5-minute flush-bounce longs on the top-50 perpetuals, tested by scalp-backtest.js (scalp.js)
@@ -302,7 +302,7 @@ const spot = LIBRARY_ONLY || env.SPOT === "0" ? null : createSpot({
 // tested by pump-backtest.js). It gets the coin list and prices from each scan.
 const pump = LIBRARY_ONLY || env.PUMP === "0" ? null : createPump({
   fetchJson, base: BN, stateFile: path.join(here, DEMO ? "pump_state.demo.json" : "pump_state.json"), reportFile: path.join(here, "pump_report.json"),
-  bundledReport: path.join(here, "data", "pump-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+  bundledReport: path.join(here, "data", "pump-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO, heldTelegram: noteHeld,
   excluded: notListed,
 });
 // server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
@@ -1205,6 +1205,19 @@ async function loadPersisted() {
 }
 
 const sgn = (v) => (v == null ? "n/a" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%");
+// Why a quick-tier alert was not sent to Telegram, in plain words.
+const quietWhy = (q, gate) => (q && q.n < EARLY_TG_SIGNS ? `only ${q.n}/4 quality signs (Telegram needs ${EARLY_TG_SIGNS})` : gateWhy(gate) || "held back");
+// Why Ignition is quiet right now: how many coins are ignited / heating up and what blocks the heating ones most.
+function quietSummary() {
+  const cs = state.candidates || [], ign = cs.filter((c) => c.ignition === "ignited" && !c.moved).length, heat = cs.filter((c) => c.ignition === "heating");
+  const why = {};
+  for (const c of heat) for (const m of c.missing || []) { const k = m.split(" (")[0]; why[k] = (why[k] || 0) + 1; }
+  const top = Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return { ignited: ign, heating: heat.length, blockers: top.map(([k, n]) => ({ check: k, coins: n })), btc24h: state.regime.btcChange24hPct ?? null, paused: !state.regime.ok,
+    text: !state.regime.ok ? `Ignition is paused: BTC is down ${state.regime.btcChange24hPct}% in 24 hours.`
+      : `Ignition now: ${ign} coin(s) ignited, ${heat.length} heating up${top.length ? `; most are waiting for: ${top.map(([k, n]) => `${k} (${n})`).join(", ")}` : ""}.` };
+}
+setCheckinExtra(() => quietSummary().text);
 // Why an alert failed the quality gate, in plain words (shown on the page and in the status line).
 export const gateWhy = (g) => !g || g.pass ? null : [
   g.smallTickets === false ? `big trades (${g.ticketSize}x the normal trade size)` : g.smallTickets == null ? "trade size unknown" : null,
@@ -1241,12 +1254,13 @@ function updateEvents(results) {
     const aplus = !!q && q.n >= 3, quiet = (!!q && q.n < EARLY_TG_SIGNS) || gateFail;
     fresh.push({
       id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, ...(q ? { quality: q, aplus } : {}),
-      ...(quick ? { gate, quiet, quietWhy: quiet ? (q && q.n < EARLY_TG_SIGNS ? `only ${q.n}/4 quality signs` : gateWhy(gate)) : null } : {}),
+      ...(quick ? { gate, quiet, quietWhy: quiet ? quietWhy(q, gate) : null } : {}),
       label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? (aplus ? "Early ignition A+" : "Early ignition") : tier === "bigmove" ? "Big-move ignition" : c.label,
       time: now, message, detail: { ...c, ctx: marketContext(now) },
       track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
     });
     lastAlertAt.set(`${tier}:${c.symbol}`, now);
+    if (!DEMO && quick && quiet) noteHeld("ignition", `${tier === "ignition" ? "CONFIRMED" : "EARLY"} IGNITION: ${c.base} (score ${score}/100)`, `not sent: ${gateFail && !(q && q.n < EARLY_TG_SIGNS) ? "quality gate failed, " : ""}${quietWhy(q, gate)}`);
     if (!DEMO && tier !== "setup" && !quiet && telegramWants(tier === "bigmove" ? "bigmove" : "ignition")) { // queued and retried until delivered (telegram.js)
       const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
         : tier === "bigmove" ? `BIG-MOVE IGNITION: ${c.base} (small coin waking up; research target +${BIG_TARGET_PCT}%, stop -${BIG_STOP_PCT}%)`
@@ -1709,7 +1723,7 @@ export const screenerSnapshot = () => state;
 let lastTgTest = 0;
 // Answers the screener's API routes; returns false for anything else so the caller can carry on.
 export async function handleScreenerRequest(req, res, url) {
-  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: telegramStatus(), aiVerdicts: freshAiVerdicts() }); return true; }
+  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: { ...telegramStatus(), quiet: quietSummary() }, aiVerdicts: freshAiVerdicts() }); return true; }
   if (url.pathname === "/api/telegram/test" && req.method === "POST") { // "Send test message" button (this site only, at most every 10s)
     const sameSite = String(req.headers["content-type"] || "").includes("application/json") && (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
     if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }

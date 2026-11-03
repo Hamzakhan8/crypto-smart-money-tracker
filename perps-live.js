@@ -32,7 +32,7 @@ const sideOf = (dir) => (dir > 0 ? "long" : "short");
 const fmtPx = (v) => (!(v > 0) ? "—" : v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(4) : v.toPrecision(4));
 
 export function createPerps({ fetchJson, base = "https://fapi.binance.com", stateFile = null, reportFile = null, bundledReport = null, sendTelegram = null,
-  wantTelegram = () => false, telegramConfigured = () => false, now = () => Date.now(), top = 50, costPct = 0.08, demo = false }) {
+  wantTelegram = () => false, telegramConfigured = () => false, now = () => Date.now(), top = 50, costPct = 0.08, demo = false, heldTelegram = () => {} }) {
   base = base.replace(/\/$/, "");
   const st = { status: demo ? "demo" : "starting", error: null, updatedAt: null, nextScanAt: null, scanMs: null, universeAt: null, btc: null, excluded: { tradfi: [], other: 0 }, rows: [], lastBar: null };
   let store = { version: 1, signals: [] }, report = null, universe = [], dailyCache = new Map(), busy = false, started = false;
@@ -183,6 +183,7 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     store.signals.push(x);
     if (store.signals.length > 600) store.signals = store.signals.slice(-600);
     if (x.verdict === "TAKE" && sendTelegram && wantTelegram("perps")) sendTelegram(telegramText(x), "perps").catch?.(() => {});
+    else if (x.verdict !== "TAKE") heldTelegram("perps", `PERPS ${x.verdict}: ${x.side.toUpperCase()} ${x.base} (${SETUP_NAMES[x.setup] || x.setup})`, `not sent: only TAKE signals go to Telegram (this one is ${x.verdict})`);
   }
   function telegramText(x) {
     const r = recordOf(x.setup, x.dir);

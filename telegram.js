@@ -170,13 +170,22 @@ async function pump() {
   } finally { busy = false; }
 }
 
+// A signal the app found but did not send, and why (a rule held it back, or its kind is switched off). Shown in the
+// Telegram panel's log and counted in the daily check-in, so a quiet Telegram is never mistaken for a broken one.
+export function noteHeld(kind, text, reason) {
+  const k = TG_KINDS[kind] ? kind : "system";
+  const go = () => { store.log.unshift({ at: Date.now(), kind: k, title: title(text), status: "held", tries: 0, delaySec: 0, error: String(reason || "held back") });
+    if (store.log.length > MAX_LOG) store.log.length = MAX_LOG; save(); };
+  if (loaded) go(); else load().then(go, go);
+}
+
 // Queues a message. Resolves after the first try: { sent: true }, { sent: false, queued: true, error } (it keeps
 // retrying), or { sent: false, skipped } (Telegram not set up, or this kind is switched off).
 // opts.kind = one of TG_KINDS (default "system"); opts.force = send even if that kind is switched off (you asked for it).
 export async function sendTelegram(text, opts = {}) {
   const kind = TG_KINDS[opts.kind] ? opts.kind : "system";
   if (!telegramConfigured()) return { sent: false, skipped: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not set in .env" };
-  if (!opts.force && !telegramWants(kind)) return { sent: false, skipped: `${TG_KINDS[kind].label} are switched off` };
+  if (!opts.force && !telegramWants(kind)) { noteHeld(kind, text, "this kind is switched off on the page (Telegram section)"); return { sent: false, skipped: `${TG_KINDS[kind].label} are switched off` }; }
   await load();
   const parts = splitMessage(text);
   const ids = parts.map((part, i) => {
@@ -201,15 +210,19 @@ export async function checkTelegram() {
   return `PROBLEM: ${status.lastError}`;
 }
 
+// One more line for the daily check-in from the app (for example why Ignition is quiet today); set by screener.js.
+let extraCheckin = () => null;
+export const setCheckinExtra = (fn) => { extraCheckin = () => { try { return fn() || null; } catch { return null; } }; };
 const onList = () => Object.keys(TG_KINDS).filter((k) => k !== "system" && telegramWants(k)).map((k) => TG_KINDS[k].label);
 const CHECKIN_HOUR = Number.isFinite(Number(env.TELEGRAM_CHECKIN_HOUR)) && env.TELEGRAM_CHECKIN_HOUR !== "" && env.TELEGRAM_CHECKIN_HOUR !== undefined ? Number(env.TELEGRAM_CHECKIN_HOUR) : 8;
 // Daily check-in (at CHECKIN_HOUR UTC): what was sent in the last 24 hours, so silence never means "broken" by mistake.
 export function checkinText(now = Date.now()) {
-  const day = store.log.filter((x) => now - x.at < 24 * HOUR), sent = day.filter((x) => x.status === "sent" && x.kind !== "system");
+  const day = store.log.filter((x) => now - x.at < 24 * HOUR), sent = day.filter((x) => x.status === "sent" && x.kind !== "system"), held = day.filter((x) => x.status === "held");
   const by = Object.entries(sent.reduce((m, x) => ((m[x.kind] = (m[x.kind] || 0) + 1), m), {})).map(([k, n]) => `${TG_KINDS[k]?.label || k}: ${n}`);
   const bad = day.filter((x) => x.status === "expired" || x.status === "dropped").length;
   return [`Smart Money Tracker daily check-in: Telegram works.`, sent.length ? `Last 24 hours: ${sent.length} alerts sent (${by.join(", ")}).` : "Last 24 hours: no alerts fired (nothing met the rules), so nothing was sent.",
-    bad ? `${bad} message(s) could not be delivered in time.` : null, `On: ${onList().join(", ") || "nothing"}.`].filter(Boolean).join("\n");
+    held.length ? `${held.length} signal(s) found but held back by their rules (see the Telegram panel on the screener page for each one and why).` : null,
+    bad ? `${bad} message(s) could not be delivered in time.` : null, extraCheckin(), `On: ${onList().join(", ") || "nothing"}.`].filter(Boolean).join("\n");
 }
 // Starts the queue (sends anything saved before a restart), the startup message and the daily check-in.
 let started = false;
@@ -218,7 +231,9 @@ export async function startTelegram({ demo = false } = {}) {
   await load();
   if (store.items.length) schedule(2000);
   const ok = await checkTelegram();
-  if (demo || !telegramConfigured() || /^PROBLEM/.test(ok)) return ok;
+  // A failed first check (often: the internet was not up yet when the PC started) must not switch off the startup
+  // message and the daily check-in until the next restart: they are queued and retried like any other message.
+  if (demo || !telegramConfigured()) return ok;
   if (telegramWants("system")) sendTelegram(`Smart Money Tracker started. Telegram alerts on for: ${onList().join(", ") || "nothing"}.\nDaily check-in at ${String(CHECKIN_HOUR).padStart(2, "0")}:00 UTC. Change what is sent on the screener page (Ignition tab, Telegram section).`, { kind: "system" });
   const tick = () => {
     const d = new Date(), day = d.toISOString().slice(0, 10);

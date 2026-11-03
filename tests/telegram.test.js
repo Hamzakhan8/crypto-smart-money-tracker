@@ -65,3 +65,18 @@ test("Telegram: the daily check-in says what was sent", () => {
   assert.match(t, /Alpha confirmed alerts: 2/); assert.match(t, /Ignition alerts \(early and confirmed\): 1/);
   assert.match(t, /On: .*Early 2x/);
 });
+
+test("Telegram: signals held back by their rules are logged with the reason and counted in the check-in", async () => {
+  tg.noteHeld("ignition", "EARLY IGNITION: ABC (score 61/100)", "not sent: quality gate failed, big trades (2.3x the normal trade size)");
+  tg.setCheckinExtra(() => "Ignition now: 0 coin(s) ignited, 4 heating up; most are waiting for: price above its 20-day average (4).");
+  await until(() => tg.telegramStatus().log.some((x) => x.status === "held"));
+  const h = tg.telegramStatus().log.find((x) => x.status === "held");
+  assert.equal(h.kind, "ignition"); assert.match(h.title, /EARLY IGNITION: ABC/); assert.match(h.error, /quality gate failed/);
+  const t = tg.checkinText();
+  assert.match(t, /\d+ signal\(s\) found but held back by their rules/); assert.match(t, /most are waiting for: price above its 20-day average/);
+  tg.setTelegramPref("pump", false);
+  const r = await tg.sendTelegram("PUMP WATCH: test", { kind: "pump" });
+  assert.ok(r.skipped);
+  assert.ok(tg.telegramStatus().log.some((x) => x.status === "held" && x.kind === "pump" && /switched off/.test(x.error)));
+  tg.setTelegramPref("pump", true);
+});

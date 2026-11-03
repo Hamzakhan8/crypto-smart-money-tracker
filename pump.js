@@ -83,7 +83,7 @@ const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
 
 // The live list. fetchJson and the coin list come from the screener (onTickers is called on every scan).
 export function createPump({ fetchJson, base, stateFile = null, reportFile = null, bundledReport = null, sendTelegram = null,
-  wantTelegram = () => false, now = () => Date.now(), excluded = () => false, demo = false, p = PUMP, delayMin = 3 }) {
+  wantTelegram = () => false, now = () => Date.now(), excluded = () => false, demo = false, p = PUMP, delayMin = 3, heldTelegram = () => {} }) {
   base = String(base || "").replace(/\/$/, "");
   const st = { status: demo ? "off" : "starting", error: demo ? "Pump watch uses live Binance data only (not in demo mode)" : null, updatedAt: null, day: null, scanned: 0, mood: null, scanMs: null };
   let store = { version: 1, day: null, mood: null, picks: [] }, report = null, bases = [], prices = new Map(), busy = false, loaded = false, nextTry = 0;
@@ -157,6 +157,7 @@ export function createPump({ fetchJson, base, stateFile = null, reportFile = nul
     await save();
     // Telegram only when the market mood is OK (PUMP_TELEGRAM=all: always): under it, picks barely made money in the test
     if (fresh.length && sendTelegram && wantTelegram("pump") && (mood?.ok || env.PUMP_TELEGRAM === "all")) sendTelegram(telegramText(fresh, mood), "pump");
+    else if (fresh.length && !(mood?.ok || env.PUMP_TELEGRAM === "all")) heldTelegram("pump", `PUMP WATCH: ${fresh.length} new pick(s): ${fresh.slice(0, 5).map((x) => x.base).join(", ")}`, `not sent: market mood is WEAK (${mood?.share != null ? Math.round(mood.share) + "% of coins up over 30 days, " : ""}picks barely made money then; PUMP_TELEGRAM=all sends anyway)`);
   }
   function telegramText(fresh, mood) {
     const lines = fresh.slice(0, 8).map((x) => `${x.symbol} ${fmtPx(x.entry)}: volume ${x.volRatio}x, ${Math.abs(x.fromHigh90Pct).toFixed(0)}% under its 90-day high, day ${sgn(x.dayPct, 0)}`);

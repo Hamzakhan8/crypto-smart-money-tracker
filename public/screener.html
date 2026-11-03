@@ -213,7 +213,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <div class="section-head"><div><h2>Telegram notifications</h2><p>Every alert goes through one delivery queue: sent at Telegram's pace, retried when Telegram or the network fails, kept across restarts, and dropped only when older than 3 hours (a late message says how late). Switch each kind on or off here; the choice is saved.</p></div><span class="chip" id="tgChip">—</span></div>
  <div class="tgstatus"><div class="grow" id="tgStatus">—</div><button class="btn sm" id="tgTest2">Send test message</button></div>
  <div class="tgkinds" id="tgKinds"></div>
- <div class="subhead2"><div><h2>Delivery log</h2><p>The last messages and what happened to each. "Retrying" = Telegram or the network failed; the queue keeps trying.</p></div></div>
+ <div class="subhead2"><div><h2>Delivery log</h2><p>The last messages and what happened to each. "Retrying" = Telegram or the network failed; the queue keeps trying. "Held back" = the app found a signal but its rules kept it off Telegram (the reason is shown).</p></div></div>
  <div class="table-wrap"><table class="table cards"><thead><tr><th>Time</th><th>Kind</th><th>Message</th><th>Status</th><th>Tries</th><th>Delay</th></tr></thead><tbody id="tgLog"></tbody></table></div>
 </section>
 <section data-sec="perf" class="panel" style="margin-top:14px">
@@ -952,7 +952,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  const TG_ORDER=["ignition","pump","bigmove","alpha","alphaEarly","early2x","perps","scalp","scalpBot","spot","health","ai","system","rotation","whales","flows","radar"];
  const TG_NOTE={ignition:"a few a day",bigmove:"about 30 a day; off by default: lost money live (0 of 14) and in the October replay",pump:"one message a day after the 00:00 UTC close, only when market mood is OK",alpha:"about 8 a day; off by default: lost money live (2 of 15 won)",alphaEarly:"about 50 a day, no proven edge",early2x:"high priority only",perps:"TAKE only: a few a month, after 4h closes",scalp:"about 20 a month, act within minutes",scalpBot:"one per closed paper trade, with the balance",spot:"about 3 a month: BTC or ETH crossing its 50-day average",health:"only when a part has been broken for 30 minutes, and when it works again",ai:"follow-up on each new alert (needs Gemini)",
   system:"so you know it works on quiet days",rotation:"when the regime or holdings change",whales:"big Ethereum transfers",flows:"DEX swaps and rotations",radar:"Market Flow score 75+"};
- const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>'};
+ const TG_STATUS={sent:'<b class="green">sent</b>',retrying:'<b class="amber">retrying</b>',expired:'<b class="red">expired</b>',dropped:'<b class="red">dropped</b>',held:'<b class="muted">held back</b>'};
  function drawTg(){
   const t=data.telegram||{},k=t.kinds||{},res=tgTest&&Date.now()-tgTest.at<60000?tgTest:null;
   // a problem = something waiting with an error, or an error newer than the last message that went out
@@ -962,11 +962,12 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   $("#tgStatus").innerHTML=!t.configured?'<span class="amber"><b>Not set up.</b> Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to .env and restart (README: "Set up Telegram alerts").</span>'
    :(err?`<b class="red">Not working: ${esc(err)}</b><br>`:"")+[t.bot?`Bot <b>${esc(t.bot)}</b>`:"Bot configured",t.lastSentAt?`last message ${time(t.lastSentAt)}`:"no message sent yet",`${t.sent||0} sent since start`,
      t.queued?`<span class="amber">${t.queued} waiting${t.nextRetryAt?`, next try ${time(t.nextRetryAt)}`:""}</span>`:null,`daily check-in ${String(t.checkinHourUtc??8).padStart(2,"0")}:00 UTC`,
+     t.quiet?.text?`<br><span class="muted">${esc(t.quiet.text)}</span>`:null,
      res?`test: <b class="${res.ok?"green":"red"}">${esc(!res.ok&&err&&res.text.startsWith(err)?"not sent yet (reason above), it will keep retrying":res.text)}</b>`:null].filter(Boolean).join(" · ");
   $("#tgTest2").disabled=!t.configured;$("#tgTest2").textContent="Send test message";
   $("#tgKinds").innerHTML=TG_ORDER.filter(x=>k[x]).map(x=>`<label class="${k[x].on?"on":""}"><input type="checkbox" data-tgkind="${x}" ${k[x].on?"checked":""}><span><b>${esc(k[x].label)}</b><small>${esc(TG_NOTE[x]||"")}${k[x].on!==k[x].def?" · changed from the default":""}</small></span></label>`).join("");
   const log=t.log||[];
-  $("#tgLog").innerHTML=log.length?log.slice(0,25).map(x=>`<tr><td class="mono">${time(x.at)}</td><td>${esc((k[x.kind]||{}).label||x.kind)}</td><td>${esc(x.title)}${x.error?`<span class="sub red">${esc(x.error)}</span>`:""}</td><td>${TG_STATUS[x.status]||esc(x.status)}</td><td class="mono">${x.tries}</td><td class="mono">${x.delaySec<60?x.delaySec+" s":Math.round(x.delaySec/60)+" min"}</td></tr>`).join("")
+  $("#tgLog").innerHTML=log.length?log.slice(0,25).map(x=>`<tr><td class="mono">${time(x.at)}</td><td>${esc((k[x.kind]||{}).label||x.kind)}</td><td>${esc(x.title)}${x.error?`<span class="sub ${x.status==="held"?"muted":"red"}">${esc(x.error)}</span>`:""}</td><td>${TG_STATUS[x.status]||esc(x.status)}</td><td class="mono">${x.tries}</td><td class="mono">${x.delaySec<60?x.delaySec+" s":Math.round(x.delaySec/60)+" min"}</td></tr>`).join("")
    :`<tr><td colspan="6" class="empty">${t.configured?"Nothing sent yet. Press \"Send test message\" to check the connection.":"Telegram is not set up yet."}</td></tr>`;
  }
  document.addEventListener("change",async e=>{const c=e.target.closest("[data-tgkind]");if(!c)return;

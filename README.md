@@ -154,7 +154,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 
 | Message | Default | About how many |
 |---|---|---|
-| Ignition alerts (confirmed, and early ones with 3+ quality signs) | **On** | a few a day |
+| Ignition alerts (confirmed, and early ones with 3+ quality signs) that also pass the **quality gate** | **On** | about one every two days |
 | Pump watch: the daily list (coins near the 90-day high on 2x+ volume) | **On** | one message a day, a few minutes after 00:00 UTC, only when there are new picks **and market mood is OK** (40%+ of coins up over 30 days) |
 | Big-move ignition alerts (+40% before -10%) | Off (since Nov 2026) | about 30 a day; lost money live (0 of 14 won) and in the October replay |
 | Binance Alpha confirmed alerts | Off (since Nov 2026) | about 8 a day; lost money live (2 of 15 won) |
@@ -242,6 +242,25 @@ Watches every liquid Binance USDT pair and alerts when volume ignites before pri
 | **Big-move** (research) | A 5m ignition on a smaller coin ($1M-$10M daily volume) whose daily volume is already 1.5x its 20-day average. Target +40% before -10% within 7 days | A watchlist, not a proven edge |
 
 **Quality checks** (all must pass): daily RSI 65 or lower, price above its 20-day average, room above (not less than 1% under its 12-hour high or 1.5% under its 24-hour high: it waits for the break), not an exhausted spike, not the top tick of the 2-hour range, rising 4-hour trend, BTC not falling over 1 and 4 hours, tight spread, no market-wide surge. Stablecoins, tokenized stocks and gold, wrapped tokens and coins on Binance's Monitoring list never alert. Coins that already ran are marked **Already moved — do not chase**.
+
+#### Ignition quality gate (what goes to Telegram)
+
+Since November 2026 a confirmed or Early A+ alert only goes to Telegram (and gets an AI review) when it also passes the **quality gate**:
+
+- **Normal-sized trades:** the average trade size in the alert candle is at most **1.5x** the coin's normal trade size for that hour. A move pushed by a few big orders fades more often than one with many ordinary buyers.
+- **Calm 24 hours before:** the coin's high-low range over the 24 hours before the alert candle is at most **13%**. A coin that is already swinging hard has usually had its move.
+
+Every alert still shows on the page and is still tracked. Alerts that fail the gate say why, for example "gate: big trades (2.3x the normal trade size)". The performance panel has "Quality gate passed" and "Quality gate failed" groups, so your live results can confirm it or prove it wrong.
+
+**How it was found, honestly:** a large study tested about 40 ideas on 405 coins (July to October 2026) against random entries. Ideas included buyer share over 24h, sector leaders, crowd size, 3-day highs, BTC mood, other exits and standalone triggers. Most looked good on the tuning months and then **failed** on an older period nobody had tuned on (April to July 2026, 139 coins). The gate was the only one that held in all periods. In the app's own replay:
+
+| Period | Telegram before the gate | Telegram now (with the gate) | Held back by the gate |
+|---|---|---|---|
+| Jul-Oct 2026 (tuning) | 132 alerts, +0.75% per trade | 66, **+0.76%** | 66, +0.73% |
+| Apr-Jul 2026 (never tuned on) | 125, -0.51% | 51, **+0.16%** | 74, **-0.98%** |
+| Oct 29 - Nov 3 2026 (fresh days) | 2, both stopped out | 0 (both held back) | 2 |
+
+All alerts that passed the gate beat all alerts that failed it in both periods (+0.43% vs +0.13%, and +0.04% vs -0.88%). **What this means:** the gate mostly removes the worst alerts. It does not turn Ignition into a strong edge. In the older period even the gated alerts only about break even after fees. Keep sizes small and let the live panel decide. Settings: `SCREENER_IGNITION_GATE`, `SCREENER_GATE_MAX_TICKET`, `SCREENER_GATE_MAX_RANGE24`.
 
 **Every alert is tracked as a trade:** take profit at +6%, stop at -3%, otherwise sell after 12 hours (big-move: +40% / -10% / 7 days), judged on 1-minute candles after 0.2% fees and 0.1% slippage. The **performance panel** shows the results per tier and per AI verdict.
 
@@ -692,6 +711,9 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_DAILY_TREND` | on | `0` = also alert coins below their 20-day average |
 | `SCREENER_EARLY_ALERTS` | on | `0` = only confirmed alerts |
 | `SCREENER_EARLY_MIN_SIGNS` | `3` | Early alerts go to Telegram (and get an AI review) with at least this many of the 4 quality signs; `0` = all early alerts |
+| `SCREENER_IGNITION_GATE` | `1` | Quality gate for Ignition Telegram alerts and AI reviews (small trades + calm 24h); `0` = off (send as before) |
+| `SCREENER_GATE_MAX_TICKET` | `1.5` | Gate: the alert candle's average trade size may be at most this many times the normal size for that hour |
+| `SCREENER_GATE_MAX_RANGE24` | `13` | Gate: the 24h high-low range before the alert may be at most this many % |
 | `SCREENER_SETUP_ALERTS` | off | `1` = alerts for daily setups (watchlist) |
 | `SCREENER_REGIME_GATE` | off | `1` = hold ignition alerts while BTC is in a daily downtrend |
 | `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |

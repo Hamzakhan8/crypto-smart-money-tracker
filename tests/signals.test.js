@@ -49,6 +49,37 @@ test("classifyIgnition v7: no ignition right under a recent high or below the 20
   assert.equal(sc.classifyIgnition({ ...ok, distTo12hHigh: -0.2, distTo24hHigh: -0.2, aboveSma20d: false }, 2, -0.02, off).state, "ignited");
 });
 
+test("Ignition quality gate: normal-sized trades and a calm 24h pass; big tickets, a wide range or missing data do not", () => {
+  // hourly profile with trade counts: 14 days of hours, 1000 USDT and 10 trades each (normal ticket = 100 USDT)
+  const H = 14 * 24, t0 = Date.UTC(2026, 9, 1);
+  const hc = { t: Array.from({ length: H }, (_, i) => t0 + i * 3_600_000), high: Array(H).fill(1.01), low: Array(H).fill(0.99), qv: Array(H).fill(1000), trades: Array(H).fill(10) };
+  const prof = sc.hourlyProfile(hc);
+  assert.equal(prof.hours[5], 1000); assert.equal(prof.tradeHours[5], 10);
+  assert.equal(sc.hourlyProfile({ ...hc, trades: undefined }).tradeHours, null); // older callers without trade counts still work
+  // 300 five-minute candles; price swings 5% over the day before the alert candle
+  const N = 300, k = { t: Array.from({ length: N }, (_, i) => t0 + 20 * 86_400_000 + i * 300_000), high: Array(N).fill(1.05), low: Array(N).fill(1), qv: Array(N).fill(100), trades: Array(N).fill(1) };
+  const end = N - 1;
+  k.qv[end] = 3000; k.trades[end] = 20; // 3000 USDT over 20 trades = 150 per trade = 1.5x the normal 100
+  let f = sc.gateFeatures(k, end, prof);
+  assert.ok(Math.abs(f.ticketSize - 1.5) < 1e-9); assert.ok(Math.abs(f.range24 - 5) < 1e-9);
+  assert.deepEqual(sc.ignitionGate(f), { ticketSize: 1.5, range24: 5, smallTickets: true, calmRange: true, pass: true });
+  k.trades[end] = 10; // the same volume in half the trades: 3x the normal ticket = a few big buyers
+  assert.equal(sc.ignitionGate(sc.gateFeatures(k, end, prof)).smallTickets, false);
+  k.trades[end] = 20; k.high[100] = 1.2; // a 20% swing in the 24h before: already moving
+  const g = sc.ignitionGate(sc.gateFeatures(k, end, prof));
+  assert.equal(g.calmRange, false); assert.equal(g.pass, false); assert.match(sc.gateWhy(g), /already swinging \(20% range in 24h\)/);
+  k.high[end] = 2; // the alert candle itself does not count toward the 24h range
+  assert.ok(Math.abs(sc.gateFeatures(k, end, prof).range24 - 20) < 1e-9);
+  // missing data = not passed (shown, not sent)
+  const none = sc.ignitionGate(sc.gateFeatures(k, end, null));
+  assert.equal(none.smallTickets, null); assert.equal(none.pass, false); assert.match(sc.gateWhy(none), /trade size unknown/);
+  assert.equal(sc.ignitionGate(sc.gateFeatures(k, 100, prof)).range24, null); // under 24h of candles before it
+  assert.equal(sc.ignitionGate(null).pass, false);
+  assert.equal(sc.gateWhy({ pass: true }), null);
+  // custom limits
+  assert.equal(sc.ignitionGate({ ticketSize: 1.8, range24: 10 }, 2, 13).pass, true);
+});
+
 test("early ignition quality signs: 3+ of 4 = Early A+, with its own base rate for the AI", () => {
   const best = { buy10: 72, rvolD: 1.1, closePos5: 0.8, extPct: 0.9 };
   assert.equal(sc.earlyQuality(best).n, 4);

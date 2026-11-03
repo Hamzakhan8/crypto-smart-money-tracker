@@ -116,6 +116,11 @@ const EARLY_RVOL = num("SCREENER_EARLY_RVOL", 3);              // v5 trigger: ea
 const EARLY_MIN_MOVE = num("SCREENER_EARLY_MIN_MOVE", 0.2);     // % price rise over those two candles
 const EARLY_ALERTS = env.SCREENER_EARLY_ALERTS !== "0";          // "Early ignition" tier (the confirmed tier needs the score too)
 const EARLY_TG_SIGNS = Math.max(0, Math.min(4, num("SCREENER_EARLY_MIN_SIGNS", 3))); // early alerts go to Telegram (and get an AI review) with this many quality signs (0 = all)
+// Quality gate (v8): Telegram + AI review only when the move is made of normal-sized trades (not a few big tickets) and the
+// coin was calm over the last 24h. Tested on 3 periods, including an older one nobody tuned on; see README "Ignition quality gate".
+const GATE_ON = env.SCREENER_IGNITION_GATE !== "0";
+const GATE_MAX_SIZE = num("SCREENER_GATE_MAX_TICKET", 1.5);      // average trade size of the alert candle vs normal for this hour
+const GATE_MAX_RANGE24 = num("SCREENER_GATE_MAX_RANGE24", 13);   // % high-low range of the 24h before the alert candle
 const MAX_DAILY_RSI = num("SCREENER_MAX_DAILY_RSI", 65);        // overbought on the daily chart = no ignition
 const BTC_4H_MIN = num("SCREENER_BTC_4H_MIN", -0.1);            // % no ignition while BTC is falling over 4 hours
 const MIN_PERSIST = num("SCREENER_MIN_PERSIST", 2);            // of the last 3 five-minute candles, how many must run at 2x normal volume
@@ -230,6 +235,7 @@ const state = {
     targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
     igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
     earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, earlyMinSigns: EARLY_TG_SIGNS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+    gate: { on: GATE_ON, maxTicket: GATE_MAX_SIZE, maxRange24: GATE_MAX_RANGE24 },
     room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
     bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
   },
@@ -439,18 +445,21 @@ export function techMetrics(d, lastPrice, vol24) {
   };
 }
 
-// Hour-of-day volume medians and the typical (median) 6-hour high-low range, from ~14 days of closed hourly candles.
-// c = columns {t, high, low, qv}; [from, to) selects the candles. Shared with the backtest.
+// Hour-of-day volume (and trade count) medians and the typical (median) 6-hour high-low range, from ~14 days of closed
+// hourly candles. c = columns {t, high, low, qv, trades?}; [from, to) selects the candles. Shared with the backtest.
 export function hourlyProfile(c, from = 0, to = c.t.length) {
-  const byHour = Array.from({ length: 24 }, () => []), all = [];
+  const byHour = Array.from({ length: 24 }, () => []), all = [], trByHour = Array.from({ length: 24 }, () => []), allTr = [];
   for (let i = from; i < to; i++) {
     const v = c.qv[i];
     if (!Number.isFinite(v)) continue;
-    byHour[Math.floor(c.t[i] / 3_600_000) % 24].push(v);
+    const h = Math.floor(c.t[i] / 3_600_000) % 24;
+    byHour[h].push(v);
     all.push(v);
+    const tr = c.trades?.[i];
+    if (Number.isFinite(tr)) { trByHour[h].push(tr); allTr.push(tr); }
   }
   if (all.length < 120) return null;
-  const overall = median(all), ranges = [];
+  const overall = median(all), overallTr = allTr.length >= 120 ? median(allTr) : null, ranges = [];
   for (let i = from; i + 6 <= to; i++) {
     let hi = -Infinity, lo = Infinity, ok = true;
     for (let j = i; j < i + 6; j++) {
@@ -461,7 +470,29 @@ export function hourlyProfile(c, from = 0, to = c.t.length) {
     }
     if (ok && lo > 0) ranges.push((hi / lo - 1) * 100);
   }
-  return { hours: byHour.map((a) => (a.length >= 4 ? median(a) : overall)), range6h: ranges.length ? median(ranges) : null, n: all.length };
+  return { hours: byHour.map((a) => (a.length >= 4 ? median(a) : overall)), range6h: ranges.length ? median(ranges) : null, n: all.length,
+    tradeHours: overallTr == null ? null : trByHour.map((a) => (a.length >= 4 ? median(a) : overallTr)) };
+}
+
+// Quality-gate inputs for the alert candle (index end of 5m columns k, the newest finished one) and h = hourlyProfile:
+// ticketSize = its average trade size (USDT per trade) vs the normal average trade size for this hour of the day;
+// range24 = % high-low range of the 288 five-minute candles before it. Shared with the backtest.
+export function gateFeatures(k, end, h) {
+  let ticketSize = null, range24 = null;
+  const hr = new Date(k.t[end]).getUTCHours(), nv = h?.hours?.[hr], nt = h?.tradeHours?.[hr];
+  if (nv > 0 && nt > 0 && k.trades[end] > 0) ticketSize = (k.qv[end] / k.trades[end]) / (nv / nt);
+  if (end >= 288) {
+    let hi = -Infinity, lo = Infinity;
+    for (let i = end - 288; i < end; i++) { if (k.high[i] > hi) hi = k.high[i]; if (k.low[i] < lo) lo = k.low[i]; }
+    if (lo > 0 && Number.isFinite(hi)) range24 = (hi / lo - 1) * 100;
+  }
+  return { ticketSize, range24 };
+}
+// Gate verdict. Missing data = not passed (the alert still shows; it just is not sent).
+export function ignitionGate(x, maxTicket = GATE_MAX_SIZE, maxRange24 = GATE_MAX_RANGE24) {
+  const ticketSize = x?.ticketSize ?? null, range24 = x?.range24 ?? null;
+  const smallTickets = ticketSize == null ? null : ticketSize <= maxTicket, calmRange = range24 == null ? null : range24 <= maxRange24;
+  return { ticketSize: round(ticketSize, 2), range24: round(range24, 1), smallTickets, calmRange, pass: smallTickets === true && calmRange === true };
 }
 
 // Confirmation features from 5-minute candles. k = columns {t, open, high, low, close, qv, trades, buy};
@@ -730,6 +761,7 @@ function buildCandidate(base, info, tk, t, narrative, funding, oiChg, fast) {
     seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
     igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
     earlySigns: fast?.early ? earlyQuality({ buy10: fast.early.buy10, rvolD: t.rvol, closePos5: fast.early.closePos5, extPct: fast.extPct }).n : null,
+    gate: fast?.gate ? ignitionGate(fast.gate) : null,
     core, bigmove: bm.state, bigMissing: bm.miss,
     big: bm.state ? { r5: round(e5?.r5, 2), prevR5: round(e5?.prevR5, 2), ret10m: round(e5?.ret10, 2), buyRatio10m: round(e5?.buy10, 1) } : null,
     rotation: rotation ? rotation.context(base) : null,
@@ -949,6 +981,7 @@ async function loadHourly(base) {
   const closed = k.slice(0, -1);
   const prof = hourlyProfile({
     t: closed.map((c) => Number(c[0])), high: closed.map((c) => Number(c[2])), low: closed.map((c) => Number(c[3])), qv: closed.map((c) => Number(c[7])),
+    trades: closed.map((c) => Number(c[8])),
   });
   if (!prof) throw new Error("Not enough hourly candles");
   return { at: Date.now(), ...prof };
@@ -1049,13 +1082,14 @@ export const columns5m = (raw) => ({
 // 5-minute candle check for the hottest tokens, on finished candles (as in the replay) (last 24h of 5m candles: buyers, persistence, trades, trend, 12h high).
 async function analyze5m(base, f) {
   try {
-    const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=5m&limit=289`, { retries: 0 });
+    const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=5m&limit=290`, { retries: 0 });
     if (!Array.isArray(raw) || raw.length < 13) return;
     const expect5 = (endMs) => (f.hourly ? expectedQuoteVolume(f.hourly, 5, endMs) : f.avgDaily / 288);
     const k = columns5m(raw), end = raw.length - 2; // newest finished candle: the last one is still forming
     const feats = fiveMinFeatures(k, end, k.t[end] + 300_000, expect5);
     if (feats) Object.assign(f, feats);
     f.early = earlyFeatures(k, end, expect5);
+    f.gate = gateFeatures(k, end, f.hourly);
   } catch { /* leave unconfirmed: the token stays "heating", never "ignited" */ }
 }
 
@@ -1165,6 +1199,10 @@ async function loadPersisted() {
 }
 
 const sgn = (v) => (v == null ? "n/a" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%");
+// Why an alert failed the quality gate, in plain words (shown on the page and in the status line).
+export const gateWhy = (g) => !g || g.pass ? null : [
+  g.smallTickets === false ? `big trades (${g.ticketSize}x the normal trade size)` : g.smallTickets == null ? "trade size unknown" : null,
+  g.calmRange === false ? `already swinging (${g.range24}% range in 24h)` : g.calmRange == null ? "24h range unknown" : null].filter(Boolean).join(", ");
 const rotationLine = (c) => {
   const r = c.rotation;
   if (!r || !r.regimeLabel) return null;
@@ -1189,11 +1227,15 @@ function updateEvents(results) {
   const fresh = [];
   const fire = (c, tier, score, message, lines) => {
     const rule = tier === "bigmove" ? { targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hz: BIG_OUTCOME_MS } : { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS };
-    // early alerts: quality signs; with too few they are tracked and shown, but not sent to Telegram (nor AI-reviewed)
+    // early alerts: quality signs; with too few they are tracked and shown, but not sent to Telegram (nor AI-reviewed).
+    // Both quick tiers also need the quality gate (small tickets + calm 24h) for Telegram / AI review.
     const q = tier === "early" ? earlyQuality({ buy10: c.buyRatio10m, rvolD: c.rvol, closePos5: c.closePos5, extPct: c.extPct }) : null;
-    const aplus = !!q && q.n >= 3, quiet = !!q && q.n < EARLY_TG_SIGNS;
+    const quick = tier === "early" || tier === "ignition", gate = quick ? (c.gate ?? ignitionGate(null)) : null;
+    const gateFail = quick && GATE_ON && !gate.pass;
+    const aplus = !!q && q.n >= 3, quiet = (!!q && q.n < EARLY_TG_SIGNS) || gateFail;
     fresh.push({
-      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, ...(q ? { quality: q, aplus, quiet } : {}),
+      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, ...(q ? { quality: q, aplus } : {}),
+      ...(quick ? { gate, quiet, quietWhy: quiet ? (q && q.n < EARLY_TG_SIGNS ? `only ${q.n}/4 quality signs` : gateWhy(gate)) : null } : {}),
       label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? (aplus ? "Early ignition A+" : "Early ignition") : tier === "bigmove" ? "Big-move ignition" : c.label,
       time: now, message, detail: { ...c, ctx: marketContext(now) },
       track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
@@ -1207,7 +1249,7 @@ function updateEvents(results) {
       const hz = rule.hz / 3_600_000;
       sendTelegram(tier === "bigmove" ? "bigmove" : "ignition", `${head}\n` +
         `Moved so far: ${sgn(c.ret15m ?? c.big?.ret10m)} ${c.ret15m != null ? "15m" : "10m"} | ${sgn(c.change24h)} 24h\n` +
-        lines.map((w) => "- " + w).join("\n") + `\nTracked as: win +${rule.targetPct}% before -${rule.stopPct}% within ${hz >= 48 ? hz / 24 + " days" : hz + "h"}.` +
+        lines.map((w) => "- " + w).join("\n") + (gate?.pass ? `\nQuality gate passed: normal-sized trades (${gate.ticketSize}x the usual size), calm 24h before (${gate.range24}% range).` : "") + `\nTracked as: win +${rule.targetPct}% before -${rule.stopPct}% within ${hz >= 48 ? hz / 24 + " days" : hz + "h"}.` +
         "\nSet entry, stop-loss and target first. Research signal only, not financial advice.");
     }
   };
@@ -1263,7 +1305,7 @@ function updateEvents(results) {
     state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
     persist();
     // AI review: the quick tiers, and big-move alerts when their Telegram alerts are on (the AI gets that tier's rule)
-    for (const ev of fresh) if (ev.tier === "ignition" || (ev.tier === "early" && !ev.quiet) || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+    for (const ev of fresh) if (((ev.tier === "ignition" || ev.tier === "early") && !ev.quiet) || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
   }
 }
 
@@ -1405,6 +1447,7 @@ const BUCKETS = [
   ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
   ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
   ["Early: 3-4 quality signs (A+)", (c) => c.earlySigns >= 3], ["Early: 0-2 quality signs", (c) => c.earlySigns != null && c.earlySigns < 3],
+  ["Quality gate passed (small trades, calm 24h)", (c) => c.gate?.pass === true], ["Quality gate failed", (c) => c.gate != null && c.gate.pass === false],
   ["Less than 1% under its 12h high", (c) => c.distTo12hHigh != null && c.distTo12hHigh <= 0 && c.distTo12hHigh > -1],
   ["Above its 20-day average", (c) => c.aboveSma === true], ["Below its 20-day average", (c) => c.aboveSma === false],
   ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],
@@ -1560,7 +1603,8 @@ function demoRoll(i, kind) { // kind: "ignite" | "ran" | "cold"
     f: kind === "ignite" ? { ...common, rvol15: rnd(4.2, 9), ret15: rnd(0.4, 3), rvol1h: rnd(1.8, 4), ret1h: rnd(0.8, 5), buy15: rnd(60, 74),
       persist: Math.random() < 0.6 ? 3 : 2, persistOf: 3, tradesRatio: rnd(1.5, 3.2), rangePos: rnd(0.65, 0.97), nearHigh: Math.random() < 0.5, rs15: rnd(0.1, 2),
       trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0.1, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: Math.random() < 0.6 ? rnd(0.1, 1.5) : rnd(-4, -1.1), distTo24hHigh: rnd(-6, 1),
-      early: { r5: rnd(3.2, 9), prevR5: rnd(3.1, 8), ret10: rnd(0.3, 2), buy10: rnd(59, 75), closePos5: rnd(0.5, 0.88), body5: rnd(0.2, 0.7) } }
+      early: { r5: rnd(3.2, 9), prevR5: rnd(3.1, 8), ret10: rnd(0.3, 2), buy10: rnd(59, 75), closePos5: rnd(0.5, 0.88), body5: rnd(0.2, 0.7) },
+      gate: { ticketSize: rnd(0.6, 2.2), range24: rnd(4, 18) } }
       : kind === "ran" ? { ...common, rvol15: rnd(3, 6), ret15: rnd(3.5, 9), rvol1h: rnd(3, 6), ret1h: rnd(9, 20), buy15: rnd(55, 70),
         persist: 3, persistOf: 3, tradesRatio: rnd(2, 4), rangePos: 0.97, nearHigh: true, rs15: rnd(3, 8),
         trendUp: true, extPct: rnd(5, 12), fadePct: rnd(0, 2), wickShare: rnd(0.2, 0.6), breakout: true, distTo12hHigh: rnd(3, 9),
@@ -1724,7 +1768,7 @@ export function startScreener(baseUrl = "") {
   if (started || LIBRARY_ONLY) return;
   started = true;
   console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, room ${ROOM_12H}% / ${ROOM_24H}% under the 12h / 24h high, above 20-day avg: ${DAILY_TREND ? "on" : "off"}, ` +
-    `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
+    `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE}, quality gate for Telegram: ${GATE_ON ? `trades <= ${GATE_MAX_SIZE}x normal size, 24h range <= ${GATE_MAX_RANGE24}%` : "off"} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
   console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
   if (!DEMO) startTelegram({ demo: DEMO }).then((m) => console.log(`Telegram: ${m} | on: ${Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label).join(", ")}`));
   else console.log("Telegram: off in demo mode");

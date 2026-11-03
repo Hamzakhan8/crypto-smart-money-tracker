@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 process.env.SCREENER_LIBRARY_ONLY = "1";
 const core = await import("./screener.js");
-const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight, earlyQuality,
+const { fiveMinFeatures, earlyFeatures, classifyIgnition, ignitionScore, scoreToken, techMetrics, hourlyProfile, fetchJson, usedWeight, earlyQuality, gateFeatures, ignitionGate,
   DEFAULT_IGNITION, CONFIG, STABLES, NONCRYPTO, isNonCryptoInfo } = core;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -131,14 +131,16 @@ function buildSeries(name, rows, daily) {
   if (first < 0) return null;
   const ps = new Float64Array(N + 1);
   for (let i = 0; i < N; i++) ps[i + 1] = ps[i] + (Number.isFinite(k.qv[i]) ? k.qv[i] : 0);
-  const hc = { t: new Float64Array(H), high: new Float64Array(H).fill(NaN), low: new Float64Array(H).fill(NaN), qv: new Float64Array(H).fill(NaN) };
+  const pt = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) pt[i + 1] = pt[i] + (Number.isFinite(k.trades[i]) ? k.trades[i] : 0);
+  const hc = { t: new Float64Array(H), high: new Float64Array(H).fill(NaN), low: new Float64Array(H).fill(NaN), qv: new Float64Array(H).fill(NaN), trades: new Float64Array(H).fill(NaN) };
   for (let h = 0; h < H; h++) {
     hc.t[h] = start + h * HOUR;
     const a = h * 12;
     if (a < first) continue;
     let hi = -Infinity, lo = Infinity;
     for (let j = a; j < a + 12; j++) { hi = Math.max(hi, k.high[j]); lo = Math.min(lo, k.low[j]); }
-    hc.high[h] = hi; hc.low[h] = lo; hc.qv[h] = ps[a + 12] - ps[a];
+    hc.high[h] = hi; hc.low[h] = lo; hc.qv[h] = ps[a + 12] - ps[a]; hc.trades[h] = pt[a + 12] - pt[a];
   }
   const prof = [], days = [];
   for (let d = 0; d < DAYS; d++) {
@@ -201,7 +203,7 @@ function replay(series) {
       const ctx = scoreToken(tm, null, null, null, null, qv24, change24h).score;
       cands.push({
         s: s.name, i, t: tGrid[i], f, change24h, distToHigh: tm.distToHigh, rvolD: tm.rvol,
-        ig: ignitionScore(f, ctx, null, null).score,
+        ig: ignitionScore(f, ctx, null, null).score, gate: ignitionGate(gateFeatures(s.k, i, prof)),
         out: RULES.map(([T, S]) => follow(s, i, T, S)),
       });
     }
@@ -262,12 +264,19 @@ async function main() {
   // early alerts proper (score under the confirmed level), all and with 3+ of the 4 quality signs (Early A+)
   const signs = (c) => earlyQuality({ buy10: c.f.early?.buy10, rvolD: c.rvolD, closePos5: c.f.early?.closePos5, extPct: c.f.extPct }).n;
   const earlyOnly = select(cands, (c) => ignited(c) && c.ig < CONFIG.igniteMinScore), earlyAplus = select(cands, (c) => ignited(c) && c.ig < CONFIG.igniteMinScore && signs(c) >= 3);
+  // What goes to Telegram: confirmed alerts and Early A+, and since the quality gate only those that also pass it
+  // (normal-sized trades, a calm 24h before). The alerts themselves are the same: the gate filters the early tier's list.
+  const sentSet = (c) => c.ig >= CONFIG.igniteMinScore || signs(c) >= 3;
+  const telegramOld = earlyTier.filter(sentSet), telegramGate = telegramOld.filter((c) => c.gate.pass), heldBack = telegramOld.filter((c) => !c.gate.pass);
+  const gatePass = earlyTier.filter((c) => c.gate.pass), gateFail = earlyTier.filter((c) => !c.gate.pass);
   const W1 = [40, 8, 6, 6, 6, 12];
   console.log("OLD vs NEW LOGIC (whole period, live exit rule)");
   console.log(row(["", "Signals", "Win", "Loss", "Flat", "Avg net"], W1));
   for (const [name, ev] of [["v4 logic (before, 15m trigger)", old], ["v6 early tier (no room / 20-day checks)", v6Early], ["v6 confirmed tier", v6Conf],
     [`v${CONFIG.version} early tier (5m trigger)`, earlyTier], [`v${CONFIG.version} confirmed tier (+ score ${CONFIG.igniteMinScore})`, v4],
-    [`  early alerts only (score under ${CONFIG.igniteMinScore})`, earlyOnly], ["  Early A+ (3+ of 4 quality signs)", earlyAplus]]) {
+    [`  early alerts only (score under ${CONFIG.igniteMinScore})`, earlyOnly], ["  Early A+ (3+ of 4 quality signs)", earlyAplus],
+    ["  every alert that passes the quality gate", gatePass], ["  every alert that fails it", gateFail],
+    ["Telegram before the gate (confirmed or A+)", telegramOld], ["Telegram now (+ quality gate)", telegramGate], ["  held back by the gate", heldBack]]) {
     const s = stats(ev);
     console.log(row([name, s.n, fmtW(s), s.n ? ((s.losses / s.n) * 100).toFixed(0) + "%" : "—", s.n ? ((s.flat / s.n) * 100).toFixed(0) + "%" : "—", fmtP(s.net)], W1));
   }
@@ -346,6 +355,9 @@ async function main() {
     generatedAt: new Date().toISOString(), days: DAYS, tokens: series.map((s) => s.name), split: day(split), config: CONFIG,
     oldVsNew: { v4: stats(old), v6early: stats(v6Early), v6confirmed: stats(v6Conf), early: stats(earlyTier), confirmed: stats(v4), earlyOnly: stats(earlyOnly), earlyAplus: stats(earlyAplus),
       earlyAplusHalves: { older: stats(earlyAplus.filter(isTrain)), newer: stats(earlyAplus.filter((c) => !isTrain(c))) }, earlyOnlyHalves: { older: stats(earlyOnly.filter(isTrain)), newer: stats(earlyOnly.filter((c) => !isTrain(c))) } },
+    qualityGate: { pass: stats(gatePass), fail: stats(gateFail), telegramBefore: stats(telegramOld), telegramNow: stats(telegramGate), heldBack: stats(heldBack),
+      telegramNowHalves: { older: stats(telegramGate.filter(isTrain)), newer: stats(telegramGate.filter((c) => !isTrain(c))) },
+      telegramBeforeHalves: { older: stats(telegramOld.filter(isTrain)), newer: stats(telegramOld.filter((c) => !isTrain(c))) } },
     grid: results.map((r) => ({ ...r, p: { earlyRvol: r.p.earlyRvol, minBuy: r.p.minBuy, requireTrend: r.p.requireTrend, maxRsi: r.p.maxRsi } })),
     exitRules: RULES.map(([T, S], r) => ({ target: T, stop: S, ...stats(v4, r) })),
     signals: v4.map((c) => ({ token: c.s, time: new Date(c.t).toISOString(), igScore: c.ig, outcome: c.out[0].o, resultPct: +c.out[0].r.toFixed(2) })),

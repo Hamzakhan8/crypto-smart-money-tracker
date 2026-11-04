@@ -3,6 +3,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { rmSync } from "node:fs";
 
 process.env.TELEGRAM_STATE_FILE = path.join(tmpdir(), `tg_test_${process.pid}.json`);
@@ -89,7 +90,7 @@ test(".env reader: the last line of a repeated key wins, quoted values with a co
   copyFileSync(new URL("../env.js", import.meta.url), path.join(dir, "env.js"));
   writeFileSync(path.join(dir, ".env"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('TG_A_TEST=\r\nTG_A_TEST=123:abc\r\nTG_B_TEST="456:def" # my bot\r\n', "utf16le")]));
   delete process.env.TG_A_TEST; delete process.env.TG_B_TEST;
-  await import(path.join(dir, "env.js"));
+  await import(pathToFileURL(path.join(dir, "env.js")).href); // a file URL: a plain C: path fails on Windows
   assert.equal(process.env.TG_A_TEST, "123:abc"); assert.equal(process.env.TG_B_TEST, "456:def");
   rmSync(dir, { recursive: true, force: true });
 });

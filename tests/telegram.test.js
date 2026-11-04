@@ -80,3 +80,16 @@ test("Telegram: signals held back by their rules are logged with the reason and 
   assert.ok(tg.telegramStatus().log.some((x) => x.status === "held" && x.kind === "pump" && /switched off/.test(x.error)));
   tg.setTelegramPref("pump", true);
 });
+
+test(".env reader: the last line of a repeated key wins, quoted values with a comment, UTF-16 files", async () => {
+  // .env reader: the last line of a repeated key wins (an empty line copied from .env.example above a filled one),
+  // a quoted value with a comment loses its quotes, and Notepad's UTF-16 files are read
+  const { mkdtempSync, writeFileSync, copyFileSync } = await import("node:fs");
+  const dir = mkdtempSync(path.join(tmpdir(), "envtest-"));
+  copyFileSync(new URL("../env.js", import.meta.url), path.join(dir, "env.js"));
+  writeFileSync(path.join(dir, ".env"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('TG_A_TEST=\r\nTG_A_TEST=123:abc\r\nTG_B_TEST="456:def" # my bot\r\n', "utf16le")]));
+  delete process.env.TG_A_TEST; delete process.env.TG_B_TEST;
+  await import(path.join(dir, "env.js"));
+  assert.equal(process.env.TG_A_TEST, "123:abc"); assert.equal(process.env.TG_B_TEST, "456:def");
+  rmSync(dir, { recursive: true, force: true });
+});

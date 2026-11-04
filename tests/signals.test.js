@@ -298,7 +298,10 @@ test("Telegram: failures are explained in plain words", async () => {
   assert.match(tg.telegramHint(400, "Bad Request: chat not found"), /chat not found.*pressed Start/);
   assert.match(tg.telegramHint(403, "Forbidden: bot was blocked by the user"), /blocked the bot/);
   assert.match(tg.telegramHint(403, "Forbidden: bot is not a member of the channel chat"), /add it to the group/);
-  assert.match(tg.telegramHint(0, "ENOTFOUND"), /cannot reach api.telegram.org/);
+  assert.match(tg.telegramHint(0, "ENOTFOUND"), /cannot find api.telegram.org \(DNS\)/);
+  assert.match(tg.telegramHint(0, "ECONNRESET"), /cannot reach api.telegram.org.*does not use the Windows proxy.*--use-env-proxy/);
+  assert.match(tg.telegramHint(0, "SELF_SIGNED_CERT_IN_CHAIN"), /certificate.*--use-system-ca/);
+  assert.match(tg.telegramHint(400, "Bad Request: group chat was upgraded to a supergroup chat", -1001234), /TELEGRAM_CHAT_ID=-1001234/);
   const saved = [process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID];
   delete process.env.TELEGRAM_BOT_TOKEN; delete process.env.TELEGRAM_CHAT_ID;
   assert.equal((await tg.sendTelegram("hi")).sent, false);              // not configured: nothing is sent, nothing breaks

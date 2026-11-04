@@ -145,7 +145,8 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     if (!universe.length || Math.floor((st.universeAt || 0) / DAY) !== Math.floor(t0 / DAY)) await refreshUniverse();
     else { try { dailyCache.set("BTCUSDT", await klines("BTCUSDT", "1d", 120)); } catch { /* keep */ } }
     for (const p of await get("/fapi/v1/premiumIndex")) premium.set(p.symbol, p);
-    const regime = btcRegime(), ranks = rsRanks(), rows = [], fresh = [];
+    const regime = btcRegime(), ranks = rsRanks(), rows = [], fresh = [], prevLast = st.lastBar;
+    let failedN = 0;
     st.btc = regime;
     const series = new Map();
     await pool(universe, 5, async (sym) => {
@@ -163,8 +164,14 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
           oi24h: f.oi24h != null ? r2(f.oi24h * 100, 1) : null, oi3d: f.oi3d != null ? r2(f.oi3d * 100, 1) : null, topVsAcc: r2(f.topVsAcc), dTrend: f.dTrend, rs, vol: r2(f.vol),
           toHi20: lv.toHi20Pct, toLo20: lv.toLo20Pct, signals: sigs.map((x) => ({ setup: x.setup, side: sideOf(x.dir) })) });
         for (const sig of sigs) if (LIVE_SETUPS.has(sig.setup)) fresh.push({ sym, s, i, sig, f });
-      } catch (e) { st.error = `${sym}: ${e.message}`; }
+        // the 4h close before this one was never scanned (a failed scan): check it too, so its TAKE is not lost
+        if (prevLast != null && s.bars[i - 1].t > prevLast) {
+          const tc = s.bars[i - 1].t + H4, dc = tc % DAY === 0, cx = { btcRegime: regime, rs: dc ? ranks.get(sym) || null : null, dayClose: dc };
+          for (const sig of P.signalsAt(s, i - 1, cx)) if (LIVE_SETUPS.has(sig.setup)) fresh.push({ sym, s, i: i - 1, sig, f: P.features(s, i - 1, cx), late: true });
+        }
+      } catch (e) { st.error = `${sym}: ${e.message}`; failedN++; }
     });
+    st.failed = failedN;
     for (const x of fresh) addSignal(x);
     await track(series);
     st.rows = rows.sort((a, b) => universe.indexOf(a.sym) - universe.indexOf(b.sym));
@@ -172,14 +179,14 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
     if (rows.length) st.error = null;
     save();
   }
-  function addSignal({ sym, s, i, sig, f }) {
+  function addSignal({ sym, s, i, sig, f, late = false }) {
     const b = s.bars[i], j = verdictFor(sig, f, recordOf), key = `${sym}|${j.setup}|${sig.dir}`;
     if (store.signals.some((x) => x.key === key && (x.t === b.t || x.track.status === "open"))) return; // one at a time, as tested
     const risk = sig.dir * (b.c - sig.stop), ex = P.EXITS[j.exit];
     const x = { id: `${key}|${b.t}`, key, sym, base: sym.replace(/USDT$/, ""), setup: j.setup, aplus: !!P.APLUS[j.setup], exit: j.exit, tp: ex.tp, holdDays: ex.hold,
       side: sideOf(sig.dir), dir: sig.dir, t: b.t, at: now(), price: b.c,
       stop: sig.stop, target: b.c + sig.dir * ex.tp * risk, riskPct: r2(risk / b.c * 100), verdict: j.verdict, reasons: j.reasons, plus: j.plus, minus: j.minus,
-      conditions: P.conditionsMet(sig.dir, f), f: { ...f, rs: f.rs }, fund8h: f.fund8h, track: { status: "open" } };
+      conditions: P.conditionsMet(sig.dir, f), f: { ...f, rs: f.rs }, fund8h: f.fund8h, track: { status: "open" }, ...(late ? { late: true } : {}) };
     store.signals.push(x);
     if (store.signals.length > 600) store.signals = store.signals.slice(-600);
     if (x.verdict === "TAKE" && sendTelegram && wantTelegram("perps")) sendTelegram(telegramText(x), "perps").catch?.(() => {});
@@ -187,7 +194,7 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
   }
   function telegramText(x) {
     const r = recordOf(x.setup, x.dir);
-    return [`PERPS ${x.verdict}: ${x.side.toUpperCase()} ${x.base} (${SETUP_NAMES[x.setup] || x.setup}, 4h close)`,
+    return [`${x.late ? "(found one 4h candle late: check the price before acting) " : ""}PERPS ${x.verdict}: ${x.side.toUpperCase()} ${x.base} (${SETUP_NAMES[x.setup] || x.setup}, 4h close)`,
       `Entry ~${fmtPx(x.price)} | stop ${fmtPx(x.stop)} (${x.riskPct}%) | target ${fmtPx(x.target)} (${x.tp ?? 2.5}R) | max ${x.holdDays ?? 10} days`,
       r ? `Tested: ${r.all.trades} trades, ${r.all.avgR}R per trade (before 2025 ${r.older.avgR}R, 2025-26 ${r.newer.avgR}R)` : null,
       ...x.plus.map((p) => `+ ${p}`), ...x.minus.map((m) => `- ${m}`),
@@ -288,15 +295,20 @@ export function createPerps({ fetchJson, base = "https://fapi.binance.com", stat
   async function tick() {
     if (busy) return;
     busy = true;
-    try { await scan(); }
-    catch (e) { st.error = e.message; st.status = st.rows.length ? "ready" : "error"; }
-    finally { busy = false; schedule(); }
+    let retry = false;
+    try { await scan(); retry = st.failed > 0; }
+    catch (e) { st.error = e.message; st.status = st.rows.length ? "ready" : "error"; retry = true; }
+    finally { busy = false; schedule(retry); }
   }
   // 90 seconds after each 4h close (open interest and long/short data for the hour land shortly after)
-  function schedule() {
-    const t = now(), next = Math.floor(t / H4) * H4 + H4 + 90_000;
-    st.nextScanAt = next;
-    setTimeout(tick, next - t).unref?.();
+  // A failed or partial scan is retried after 3 minutes (at most 5 times per 4h candle), not 4 hours later.
+  let retries = 0, retryBar = null;
+  function schedule(retry = false) {
+    const t = now(), bar = Math.floor(t / H4) * H4, next = bar + H4 + 90_000;
+    if (retryBar !== bar) { retryBar = bar; retries = 0; }
+    const at = retry && retries < 5 && t + 3 * 60_000 < next - 5 * 60_000 ? (retries++, t + 3 * 60_000) : next;
+    st.nextScanAt = at;
+    setTimeout(tick, at - t).unref?.();
   }
   return {
     start() {

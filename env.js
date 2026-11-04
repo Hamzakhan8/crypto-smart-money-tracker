@@ -7,12 +7,18 @@ import { fileURLToPath } from "node:url";
 
 const file = path.join(path.dirname(fileURLToPath(import.meta.url)), ".env");
 let text = "";
-try { text = readFileSync(file, "utf8"); } catch { /* no .env */ }
+try {
+  const buf = readFileSync(file);
+  text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString("utf16le") : buf.toString("utf8"); // Notepad's "Unicode" = UTF-16
+  text = text.replace(/^\uFEFF/, "");
+} catch { /* no .env */ }
+const preset = new Set(Object.keys(process.env)); // set in the shell: those win over .env
 for (const line of text.split(/\r?\n/)) {
   const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
   if (!m) continue;
   let value = m[2];
-  if (/^(["']).*\1$/.test(value)) value = value.slice(1, -1); // quoted: keep as is
+  const q = value.match(/^(["'“”])(.*)(["'“”])(?:\s+#.*)?$/);
+  if (q) value = q[2];                                         // quoted (a comment after the quotes is dropped)
   else value = value.replace(/\s+#.*$/, "");                  // unquoted: drop a trailing comment
-  if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+  if (!preset.has(m[1])) process.env[m[1]] = value;            // a key repeated in .env: the last line wins
 }

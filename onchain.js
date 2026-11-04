@@ -185,7 +185,10 @@ export function createOnchain({ fetchJson, base = "https://fapi.binance.com", st
           follow(s, bars, price);
         }
       });
-      if (syms.length && failed > syms.length / 2) throw new Error(`futures data failed for ${failed}/${syms.length} coins`);
+      if (syms.length && failed > syms.length / 2) { // most coins failed: still send what was found (its cooldown would hide it on the next scan)
+        if (fresh.length) { await save(); if (sendTelegram && wantTelegram("onchain")) for (const s of fresh.filter((y) => y.status === "open")) sendTelegram(telegramText(s), "onchain"); }
+        throw new Error(`futures data failed for ${failed}/${syms.length} coins`);
+      }
       store.signals = store.signals.slice(0, 500);
       st.coins = coins.sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0));
       Object.assign(st, { status: "ok", error: null, updatedAt: now(), scanMs: now() - t0, lastBar: Math.floor(now() / H4) * H4 - H4 });

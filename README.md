@@ -1114,6 +1114,8 @@ How it fits together: `next-server.ts` runs one Node server on one port. Every `
 
 Next.js needs a server that runs all the time (the scanners never stop), so it cannot run on Vercel-style serverless hosting. Binance also blocks US servers (error 451): host it on a VPS or container outside the US.
 
+**graphify (fewer tokens for Claude Code).** [graphify](https://github.com/Graphify-Labs/graphify) keeps a knowledge graph of the code in `graphify-out/` (functions, imports and calls, from the code itself, no API cost). `CLAUDE.md` tells Claude Code to ask the graph (`graphify query`, `explain`, `path`) before reading source files, which cuts the tokens a codebase question costs (measured here: about 19x fewer for a question about the Liquidity heatmap). Set it up once per PC: `pip install graphifyy`, `graphify install` (the `/graphify` skill for Claude Code), and in this repo `graphify hook install` (rebuilds the graph after every commit, checkout, merge and rebase) and `graphify update .` (the first build, about 10 seconds). `graphify-out/` is not committed.
+
 **Project files:**
 
 | File | What it is |

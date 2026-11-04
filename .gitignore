@@ -60,3 +60,5 @@ whalesig_state.demo.json
 next-env.d.ts
 *.tsbuildinfo
 liquidity_state.json
+# graphify knowledge graph (rebuilt by the git hooks; see README)
+graphify-out/

@@ -16,7 +16,7 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 1. [What is inside](#1-what-is-inside)
 2. [Quick start (5 minutes)](#2-quick-start-5-minutes)
 3. [Set up Telegram alerts](#3-set-up-telegram-alerts)
-4. [Set up the AI (Gemini)](#4-set-up-the-ai-gemini)
+4. [Set up the AI (Gemini, or a free open-source model)](#4-set-up-the-ai-gemini-or-a-free-open-source-model)
 5. [A simple daily routine](#5-a-simple-daily-routine)
 6. [The tools, one by one](#6-the-tools-one-by-one)
    - [Learning from your live results](#68-learning-from-your-live-results)
@@ -25,7 +25,9 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
    - [Perps scalp signals (5 minutes to 1 hour)](#611-perps-scalp-signals-5-minutes-to-1-hour)
    - [Spot plan (BTC + ETH, and every coin)](#612-spot-plan-btc--eth-and-every-coin)
    - [News (bullish or bearish)](#613-news-bullish-or-bearish)
-   - [On-chain: crowd vs smart money](#614-on-chain-crowd-vs-smart-money)
+   - [On-chain: crowd vs smart money (Whales tab)](#614-on-chain-crowd-vs-smart-money-whales-tab)
+   - [Whale signals: TAKE / LEAVE from whale wallets](#615-whale-signals-take--leave-from-whale-wallets)
+   - [Liquidity: order-book heatmap and 5-exchange screener](#616-liquidity-order-book-heatmap-and-5-exchange-screener)
 7. [What the tests say](#7-what-the-tests-say)
 8. [Backtests and replays](#8-backtests-and-replays)
 9. [All settings](#9-all-settings)
@@ -45,12 +47,13 @@ A free, self-hosted crypto research dashboard for Binance. It watches the whole 
 | **Alpha** | http://localhost:3000/screener#alpha | The same ignition idea for **Binance Alpha / Binance Wallet** tokens (like EVAA), which are not spot pairs |
 | **Early 2x** | http://localhost:3000/screener#early2x | Low- and mid-cap coins ($10M-$1B) showing early signs of a large move; every pick is tracked for 42 days |
 | **Perps** | http://localhost:3000/screener#perps | Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up in a 4.8-year backtest, found live after each 4h close, each with **TAKE / WAIT / SKIP**, a size and liquidation check for your account, and its tracked result. Check your own trade ideas the same way. Its **Scalp** section: 5-minute flush-bounce trades (5 minutes to 1 hour), the only one of seven tested scalp setups that made money after fees |
-| **Whales** | http://localhost:3000/screener#whales | Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
+| **Whales** | http://localhost:3000/screener#whales | **Whale signals:** TAKE LONG / TAKE SHORT / LEAVE from the positions of Hyperliquid's biggest profitable wallets, Ethereum exchange flows, DEX flows and Binance's crowd vs top traders (the former On-chain tab, now the "Crowd vs smart money" tag here). Below: the Arkham-style whale tracker: big Ethereum transfers with names and learned exchange addresses, exchange inflows and outflows, where DEX money went (every Ethereum DEX, plus Base, Solana, BNB Chain), your own watchlist |
+| **Liquidity** | http://localhost:3000/screener#liquidity | Where the buy and sell orders sit: a live **order-book heatmap** for one Binance pair, and a **5-exchange screener** (Binance, Bybit, OKX, Coinbase, Kraken) with a 0-100 hotness score and signal checks. Ported from the open-source crypto-liquidity-terminal (MIT) |
 | **BTC rotation** | http://localhost:3000/screener#rotation | Which altcoin narratives (AI, Meme, RWA…) to hold for the current Bitcoin regime, alt season meter, weekly picks |
 | **AI desk** | http://localhost:3000/ai | An AI committee (data analyst, news researcher, bull vs bear debate, trader, Final Boss) answers **YES / WATCH / NO** with entry, stop, targets, expected value and position size |
 | **Journal** | http://localhost:3000/screener#journal | Your own trades: press **"I took it"** on an alert, enter your real fill, and compare your results with the alerts' |
 
-**System status bar:** under the title of the screener page, one dot for each part of the app: the Spot scanner, Perps swing signals, the Scalp scanner, the paper bot, the Spot plan, Pump watch, News, the AI (Gemini) and Telegram. **Green** = working, **amber** = a warning (or still starting), **red** = not working, **grey** = switched off. Click it to see each part's last update and its exact error in plain words (for example "the Gemini key is not valid: create one at aistudio.google.com/apikey..."). When a part has been red for 30 minutes, Telegram sends one warning, and one "OK again" message when it recovers (switch "Warnings" in Ignition › Telegram). At start the app sends Gemini one tiny test request, so a wrong key or model name shows at once.
+**System status bar:** under the title of the screener page, one dot for each part of the app: the Spot scanner, Perps swing signals, the Scalp scanner, Whale signals, the paper bot, the Spot plan, Pump watch, News, the AI (Gemini) and Telegram. **Green** = working, **amber** = a warning (or still starting), **red** = not working, **grey** = switched off. Click it to see each part's last update and its exact error in plain words (for example "the Gemini key is not valid: create one at aistudio.google.com/apikey..."). When a part has been red for 30 minutes, Telegram sends one warning, and one "OK again" message when it recovers (switch "Warnings" in Ignition › Telegram). At start the app sends Gemini one tiny test request, so a wrong key or model name shows at once.
 
 **Section tags:** every page has a row of tags under its title (for example *Live watch · Pump watch · Big-move · Alert history · Performance* on Ignition). Click a tag to show only that part of the page; **All** shows everything. The bar stays at the top while you scroll, and each page remembers your choice.
 
@@ -71,14 +74,14 @@ Hover a tab to see exactly what it means in that list. Each list remembers its t
 
 ### Step 1: Install Node.js
 
-Download and install **Node.js 18 or newer** from https://nodejs.org (choose "LTS").
+Download and install **Node.js 22 or newer** from https://nodejs.org (choose "LTS").
 Check it in a terminal (Command Prompt / PowerShell on Windows, Terminal on Mac):
 
 ```bash
 node -v
 ```
 
-You should see `v18` or higher.
+You should see `v22.6` or higher (the app is a Next.js + TypeScript app since Nov 2026; the classic pages, `npm run start:classic`, still run on Node 18).
 
 ### Step 2: Download the project
 
@@ -89,11 +92,17 @@ cd crypto-smart-money-tracker
 
 No git? On GitHub click **Code → Download ZIP**, unzip it, and open a terminal in that folder.
 
-### Step 3: Install
+### Step 3: Install and build
 
 ```bash
 npm install
 ```
+
+```bash
+npm run build
+```
+
+The build makes the web pages (React + TypeScript, Next.js). It takes about a minute; run it again after every update.
 
 ### Step 4: Add your settings (optional)
 
@@ -106,7 +115,9 @@ Copy the example settings file:
 Open `.env` in any text editor. Everything is optional; the app works without it. The most useful lines:
 
 ```ini
-GEMINI_API_KEY=your_key_here        # for the AI (step 4 below)
+GEMINI_API_KEY=your_key_here        # for the AI (step 4 below), or instead a free open-source model:
+# AI_PROVIDER=ollama                # Ollama on this PC (ollama.com), or GROQ_API_KEY=... (free key, open models)
+ETHERSCAN_API_KEY=your_key_here     # optional: names whale contracts when Blockscout fails (free key at etherscan.io/myapikey)
 COINDESK_API_KEY=your_key_here      # optional: CoinDesk news in the News tab (free key at developers.coindesk.com)
 TELEGRAM_BOT_TOKEN=123456:ABC...    # for Telegram alerts (step 3 below)
 TELEGRAM_CHAT_ID=123456789
@@ -115,10 +126,10 @@ TELEGRAM_CHAT_ID=123456789
 ### Step 5: Start
 
 ```bash
-node server.js
+npm start
 ```
 
-(or `npm start`). Then open **http://localhost:3000** in your browser.
+Then open **http://localhost:3000** in your browser. (`npm run dev` starts it with live reload while you change the code. `npm run start:classic` runs the classic HTML pages instead, without Next.js, as before.)
 
 ### Step 6: Check the startup lines
 
@@ -146,7 +157,7 @@ Keep the terminal open while you use the app. Press `Ctrl + C` to stop it.
    TELEGRAM_BOT_TOKEN=123456789:AAH...
    TELEGRAM_CHAT_ID=123456789
    ```
-5. **Restart** the app (`Ctrl + C`, then `node server.js`).
+5. **Restart** the app (`Ctrl + C`, then `npm start`).
 6. **Test it:** open http://localhost:3000/screener, press the **Telegram** tag at the top of the Ignition tab, and press **Send test message**. You also get a "Smart Money Tracker started" message each time the app starts.
 
 ### What is sent to Telegram
@@ -169,6 +180,7 @@ Switch each kind on or off in the **Telegram** section of the Ignition tab (pres
 | AI desk results you choose to send | On request | tick "send to Telegram" on the AI desk |
 | Binance Alpha early alerts | Off | about 50 a day, no proven edge |
 | BTC rotation: regime or holdings changed | Off | a few a month |
+| Whale signals: TAKE LONG / TAKE SHORT / LEAVE (new, not tested yet) | Off | a few a day; switch on in Ignition › Telegram, or `WHALESIG_TELEGRAM=1` |
 | Whale transfers / DEX rotations | Off | many |
 | Market Flow Radar "Strong flow" | Off | many |
 
@@ -187,7 +199,7 @@ Ignition alerts are rare (often a few a day across all coins), so a quiet phone 
 
 ---
 
-## 4. Set up the AI (Gemini)
+## 4. Set up the AI (Gemini, or a free open-source model)
 
 1. Get a free API key at **https://aistudio.google.com/apikey**.
 2. Add it to `.env`: `GEMINI_API_KEY=your_key`
@@ -198,6 +210,22 @@ Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works,
 **Cost per analysis:** the AI committee makes 6 Gemini requests (data analyst, news researcher, bull, bear, trader, and the Final Boss with the stronger model). The Final Boss runs on every analysis. **Fast NO** (off by default, `AI_FAST_NO=1` to turn on): a coin you check by hand that has no alert signal skips the debate, and when the trader and the code both say no trade, the Final Boss too; alert reviews and trigger re-checks always get the full committee. If the news researcher answers without searching, it is asked once more (one extra request). The trader and the Final Boss think deeply (more "thinking" tokens, billed as output); the others think quickly. The news search uses Google Search grounding, which has its own free daily allowance in Gemini; news is kept for 30 minutes per coin, so repeat checks do not search again. To spend less: `AI_DEBATE=0` (no bull and bear, 2 requests fewer), `AI_NEWS=0` (no web search, 1 fewer), `AI_DEEP_THINKING=0` (everyone thinks quickly). The page shows the requests and tokens of each analysis and of the day.
 
 **Daily limit:** `AI_DAILY_REQUESTS=400` (the default) caps Gemini requests per day (UTC). Telegram warns at 80% and at 100%. At the limit, automatic alert reviews and WAIT-trigger re-checks pause until midnight UTC; your own analyses still run. `AI_DAILY_REQUESTS=0` = no limit.
+
+### Free open-source AI instead of Gemini
+
+No Gemini key? The app can use a free, open-source model instead (`ai-provider.js`). Every AI part works the same way: the AI desk committee, alert reviews, the Market Flow brief and the News labels. Pick one:
+
+| Option | Cost | Set in `.env` | Good to know |
+|---|---|---|---|
+| **Ollama** on your own PC (ollama.com) | free, nothing leaves your PC | `AI_PROVIDER=ollama` and `AI_MODEL=qwen3:4b` (or any model you pulled) | Install Ollama, then run `ollama pull qwen3:4b`. Without a graphics card it runs on the processor: fine for News labels, but one full AI committee analysis can take several minutes. Each request gets 6x longer before it times out (`AI_TIMEOUT_FACTOR`). |
+| **Groq** (console.groq.com/keys) | free key, open models (Llama, Qwen, gpt-oss) | `GROQ_API_KEY=...` | Fast. Default models `llama-3.3-70b-versatile` and `openai/gpt-oss-120b` for the Final Boss; change with `AI_MODEL` / `AI_REVIEW_MODEL`. Free limits are per account and change often. |
+| **OpenRouter** (openrouter.ai/keys) | free models with a free key | `OPENROUTER_API_KEY=...` | Use a model name ending in `:free` in `AI_MODEL`. |
+| **Cerebras** (cloud.cerebras.ai) | free tier | `CEREBRAS_API_KEY=...` | |
+| Any other server that speaks the OpenAI chat API (LM Studio, vLLM, llama.cpp) | — | `AI_PROVIDER=custom`, `AI_BASE_URL=http://.../v1`, `AI_API_KEY` if needed | |
+
+**Which one is used:** `GEMINI_API_KEY` wins when it is set, unless `AI_PROVIDER` names another. Otherwise the first free key found (Groq, then OpenRouter, then Cerebras), else Ollama if it is running on this PC. The startup line `AI (...)` and the status bar say which one, and whether its test request worked.
+
+**What is different from Gemini:** open models have no Google Search, so the news researcher works only from the app's own search (Google News and Binance announcements, which it always does first). Gemini's thinking settings are ignored. Answers in JSON use the server's JSON-schema mode when it has one, else plain JSON mode with the schema written into the instructions. Smaller models make more mistakes than Gemini's: watch the AI track record before you trust their calls.
 
 ---
 
@@ -348,7 +376,7 @@ Looks for low- and mid-cap Binance coins (verified market cap $10M-$1B, $1M+ dai
   - For 6 hours after a Binance Alpha alert: that token's own pools, so you can see who is buying it.
 - **Bots are left out:** wallets that trade in and out within minutes or 40+ times an hour. Token ↔ token loops that go both ways (typical of wash trading) are faded or left off the map.
 
-Data: public Ethereum nodes, DexScreener prices, Blockscout names, GeckoTerminal for other networks, and an open Etherscan label snapshot (June 2023). It shows what wallets did, not why. Not financial advice.
+Data: public Ethereum nodes, DexScreener prices, Blockscout names (Etherscan names when Blockscout fails and `ETHERSCAN_API_KEY` is set), GeckoTerminal for other networks, and an open Etherscan label snapshot (June 2023). It shows what wallets did, not why. Not financial advice.
 
 ### 6.6 BTC rotation
 
@@ -427,7 +455,19 @@ Replays are a starting point; your live alerts are the real test. Every alert si
 
 **What your first live results changed (v7, Oct 29 2026).** In the first two days of v6, 17 quick alerts resolved: 1 hit the target, 10 hit the stop. The AI said SKIP to 7 of them and all 7 lost, mostly because price sat right under a recent high. A 90-day replay agreed: alerts less than 1% under the 12-hour high (or 1.5% under the 24-hour high) and alerts below the coin's 20-day average lost money. v7 skips both, which turned the replay's confirmed tier from -0.12% to +0.49% per trade with about 40% fewer alerts. Other ideas were tested and **not** used because they did not help in both halves of the 90 days: other targets and stops, break-even and trailing stops, 1-4 hour time exits, and holding alerts while BTC is in a downtrend. Big-move alerts no longer go out for coins on Binance's Monitoring list (all three such live alerts hit -10%). The performance panel starts counting v7 alerts from zero; switch to **All alerts** to see the older ones.
 
-Alerts are also faster now: the Ignition screener runs an extra scan 4 seconds after every 5-minute candle closes, and the Alpha scan starts 5 seconds after the close with the hottest tokens first (it used to wait 25 seconds).
+**Live candles (Nov 2026).** The Ignition screener follows every coin it scans on Binance's live candle stream (a WebSocket, no key). Closed 5-minute candles arrive within about 0.2 seconds of the close, so the scan starts as soon as 80% of them are in (it used to wait 4 seconds), and it reads the candles from memory instead of downloading 290 of them per hot coin again. Measured: the scan starts 0.2 s after the close instead of 4 s, and takes about 1.8 s instead of 3 s, so an alert is out about 2 seconds after the close instead of about 7. If the stream drops, the old timer (4 seconds after the close) and the downloads take over by themselves. **Ignition › Data health** shows the stream. Needs Node 22 or newer; `SCREENER_STREAM=0` turns it off.
+
+**Replay of the latest weeks (Nov 3 2026).** The v7 rules were replayed on Sep 19 to Nov 3 (132 coins with $5M+ volume), split in two halves, plus Aug 5 to Sep 19:
+
+| Tier (alerts, avg per trade after costs) | Sep 19 - Oct 12 | Oct 12 - Nov 3 | Aug 5 - Sep 19 |
+|---|---|---|---|
+| Early (all) | 86, +0.58% | 57, -0.22% | 168, -0.04% |
+| Confirmed | 43, +1.60% | 24, -0.29% | 68, -0.24% |
+| What goes to Telegram now (with the gate) | 28, +2.01% | 9, +0.64% | 36, -0.54% |
+
+In the newest half about half of all alerts hit the stop (the 90-day replay above: 37-41%), and the quality gate did not help in Aug-Sep. Two more ideas were tested and **not** used: "the volume also surged on Bybit or OKX" (worse in the first half at 2x and 3x) and BTC trend, time of day or weekday filters (none held in every period). So the rules are unchanged; trade Ignition alerts small and let the live panel decide.
+
+Alerts are also faster now: the Ignition screener runs an extra scan 4 seconds after every 5-minute candle closes (or sooner with the live candles above), and the Alpha scan starts 5 seconds after the close with the hottest tokens first (it used to wait 25 seconds).
 
 ### 6.9 Trade journal
 
@@ -572,9 +612,9 @@ So the BUY OK filter makes altcoin buys much safer, but every version did far wo
 
 News is context, not a trade signal: big news is often priced in within minutes. Use it to understand why the market moves and to avoid buying into bad news.
 
-### 6.14 On-chain: crowd vs smart money
+### 6.14 On-chain: crowd vs smart money (Whales tab)
 
-**Open:** http://localhost:3000/screener#onchain (the **On-chain** tab).
+**Open:** the **Whales** tab, **Crowd vs smart money** tag (http://localhost:3000/screener#onchain still opens it there). It was its own tab until Nov 2026; its score also feeds the [Whale signals](#615-whale-signals-take--leave-from-whale-wallets).
 
 **Where the idea comes from:** the posts of @ArslanOnChain on X. He has not published a full method; only a few of his posts are public. The one with real analysis is a "crowd vs smart money" call. On Binance, retail accounts were heavily short (long/short account ratio **0.397**) while the top traders were long (top-trader position ratio **1.31**). In his words, the crowd was shorting the exact move that hurts them. This tab turns that idea into exact rules and tests them. The numbers are ours, not his.
 
@@ -606,6 +646,57 @@ News is context, not a trade signal: big news is often priced in within minutes.
 - This is Binance positioning data, not wallet tracking. For whale wallets and exchange flows, see the Whales tab.
 
 Size every trade from your risk (the stop is often 4-8% away), and let the live record decide. Research signals, not financial advice. Settings: `ONCHAIN`, `ONCHAIN_TELEGRAM`, `ONCHAIN_SIDES`, `ONCHAIN_CROWD_SHORT`, `ONCHAIN_SMART_LONG`, `ONCHAIN_CROWD_LONG_PCT`, `ONCHAIN_SMART_SHORT`. **Needs Binance futures**, which some countries and networks block (error 451). It works from most home connections.
+
+### 6.15 Whale signals: TAKE / LEAVE from whale wallets
+
+**Open:** the **Whales** tab, **Whale signals** tag (no API key).
+
+**The idea:** follow what the biggest, most profitable wallets do with their own money, as it happens, and say per coin whether to take a trade or leave it.
+
+**Where the data comes from:**
+- **Hyperliquid**, an on-chain futures exchange where every wallet's open positions are public. From its leaderboard, the app follows the 200 largest accounts that are in profit all-time and over the last 30 days (account $1M+; market makers, which trade 300x+ their account in a month, are left out). Their positions are read every 2 minutes. Per coin the app knows how much whale money is long and short, and what they opened or closed in the last hour. That last-hour number is counted in coins, so a price move alone does not look like buying.
+- **Ethereum** exchange deposits and withdrawals over 24 hours (the whale tracker in the same tab).
+- **DEX** buying and selling over 24 hours.
+- Binance's **crowd vs top traders** ([6.14](#614-on-chain-crowd-vs-smart-money-whales-tab)).
+
+**The score** runs from -100 (whales selling) to +100 (whales buying):
+
+| Part | Points | When it counts |
+|---|---|---|
+| Whales' long/short balance | up to ±60 | 5+ whales and $2M+ in the coin |
+| Their last hour (opened minus closed) | ±20 | at least $500k and 5% of their position |
+| Ethereum exchange flow, 24h | ±10 | $1M+ net withdrawn (+) or deposited (-) |
+| DEX flow, 24h | ±5 | $250k+ net bought or sold by 5+ wallets |
+| Binance crowd vs top traders | ±10 | crowd short and top traders long (+), or the mirror (-) |
+
+**The calls:**
+
+| Call | Means |
+|---|---|
+| **TAKE LONG** | score 60+, the whales added longs in the last hour, 3+ whales long |
+| **TAKE SHORT** | score -60 or less, the whales added shorts in the last hour, 3+ whales short (futures only) |
+| **LEAVE** | the whales cut 30%+ of their net long in the last hour, or $5M+ of an ERC-20 token went onto exchanges in 24h: sell, or do not buy |
+| watch | anything else |
+
+The first call can come an hour after the start (the app needs an hour of positions to see what was added). One call per coin and kind every 12 hours. Every call is followed: the price 4 hours, 24 hours and 3 days later, and whether it moved the called way. The **Calls and their results** table shows that record. **Followed whales** lists the wallets, with a link to each one's positions on Hyperliquid.
+
+**Be honest with yourself about it:**
+- It is **new and not backtested**. Hyperliquid shows positions now, not a history of them, so the live record is the only test. Give it a few weeks before you trade on it.
+- **Many whales hedge.** A fund that is long BTC often shorts altcoins against it, so "whales short SOL" is not always a view on SOL. On Nov 3 2026 the followed whales were heavily short almost every altcoin (SOL: $173M short vs $4M long).
+- Following the wallets that did best so far also means following some that were lucky.
+- Telegram is **off** by default for these calls (switch "Whale signals" in Ignition › Telegram, or `WHALESIG_TELEGRAM=1`).
+
+Settings: `WHALESIG` (`0` = off), `WHALESIG_TELEGRAM`, `WHALESIG_WALLETS` (200), `WHALESIG_MIN_ACCOUNT` (1000000), `WHALESIG_MAX_TURNOVER` (300). Research signals, not financial advice.
+
+### 6.16 Liquidity: order-book heatmap and 5-exchange screener
+
+**Open:** http://localhost:3000/screener#liquidity (the **Liquidity** tab, no API key). Ported from the open-source [crypto-liquidity-terminal](https://github.com/AIUngated/crypto-liquidity-terminal) (MIT License; its copyright notice is kept in `liquidity.js`).
+
+- **Order-book heatmap:** where buy and sell orders sit for one Binance spot pair (BTCUSDT by default; type another symbol). The app rebuilds the live order book from Binance's depth stream, by Binance's documented procedure: stale updates are dropped and a missed update forces a fresh snapshot. Every second it cuts the book into price bands and keeps about 2 hours. Brighter = more money waiting at that price. The volume bars below come from the trade stream. Next to it: the order book now. Without a WebSocket it reads the order book every 2 seconds instead.
+- **5-exchange screener:** spot prices from Binance, Bybit, OKX, Coinbase and Kraken, merged per coin. For each exchange's 15 most traded coins it also reads the last hour of 1-minute candles and the top 20 order-book levels. From those: a **0-100 hotness score** and the signal checks (volume spike, pump, dump, volatility, wide spread, book imbalance, breakout, hot market). Refreshed every 15 seconds, a few coins per exchange at a time. An exchange that fails shows its error and the others carry on. Stablecoins, tokenized stocks and coins on Binance's Monitoring list are left out.
+- **What it is not:** orders can be pulled at any moment, so a "wall" is not a promise, and large players place fake walls on purpose. The hotness score ranks what is happening now. It was **not backtested** and does not predict a move. Use it to see where liquidity is, next to the tested signals in the other tabs.
+
+Settings: `LIQUIDITY` (`0` = off), `LIQ_SYMBOL` (the heatmap's first pair, `BTCUSDT`), `LIQ_REFRESH_MS` (15000).
 
 ---
 
@@ -715,7 +806,12 @@ All settings go in `.env` and are optional. Restart the app after a change.
 | Setting | Default | Meaning |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | — | See [Set up Telegram](#3-set-up-telegram-alerts) |
-| `GEMINI_API_KEY` | — | See [Set up the AI](#4-set-up-the-ai-gemini) |
+| `GEMINI_API_KEY` | — | See [Set up the AI](#4-set-up-the-ai-gemini-or-a-free-open-source-model) |
+| `AI_PROVIDER` | auto | `ollama`, `groq`, `openrouter`, `cerebras` or `custom` for a free open-source model instead of Gemini; `gemini` = Gemini only. See [Free open-source AI](#free-open-source-ai-instead-of-gemini) |
+| `AI_MODEL` / `AI_REVIEW_MODEL` | per provider | The open model for every member / for the Final Boss and the risk review |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY` | — | Free keys for open models |
+| `AI_BASE_URL`, `AI_API_KEY` | — | Any OpenAI-compatible server (`AI_PROVIDER=custom`) |
+| `AI_TIMEOUT_FACTOR` | `6` for Ollama, else `1` | How many times longer each AI request may take |
 | `GEMINI_ANALYST_MODEL` | `gemini-3.5-flash` | Model for analyses: the AI desk's data analyst, news researcher and (by default) the trader |
 | `GEMINI_REVIEW_MODEL` | `gemini-3.1-pro-preview` | Model for the Final Boss (AI desk, every analysis) and the risk review (Market Flow brief) |
 | `AI_NEWS` | on | `0` = no web news search by the AI committee |
@@ -754,6 +850,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `SCREENER_SETUP_ALERTS` | off | `1` = alerts for daily setups (watchlist) |
 | `SCREENER_REGIME_GATE` | off | `1` = hold ignition alerts while BTC is in a daily downtrend |
 | `SCREENER_MIN_QUOTE_VOLUME` | `5000000` | Minimum 24h volume |
+| `SCREENER_STREAM` | on | `0` = no live candle stream (poll as before) |
 | `SCREENER_FEE_PCT` / `SCREENER_SLIPPAGE_PCT` | `0.2` / `0.1` | Costs used in the results |
 | `SCREENER_BIGMOVE` | on | `0` = no big-move tier |
 | `SCREENER_BIGMOVE_ALERTS` | off | `1` = big-move alerts on Telegram by default |
@@ -861,8 +958,11 @@ Every other threshold is listed at the top of `early2x.js`.
 | `WHALES_EXCHANGE_ALERT_USD` / `WHALES_MINT_ALERT_USD` | `500000` / `10000000` | Exchange flow and mint / burn alerts |
 | `WHALES_TELEGRAM` / `FLOWS_TELEGRAM` | off | `1` = send these alerts to Telegram by default |
 | `WHALES_TELEGRAM_PER_HOUR` | `30` | Telegram cap |
-| `WHALES_RPC` | 6 free public nodes | Your own Ethereum node URL(s), comma-separated, best first (a free Alchemy or Infura key is steadier; see Troubleshooting) |
+| `WHALES_RPC` | 8 free public nodes (the ones that worked in Nov 2026 first) | Your own Ethereum node URL(s), comma-separated, best first (a free Alchemy or Infura key is steadier; see Troubleshooting) |
 | `WHALES_BLOCKSCOUT` | `https://eth.blockscout.com` | Where unknown addresses are named |
+| `ETHERSCAN_API_KEY` | — | Free key (etherscan.io/myapikey): when Blockscout fails or is blocked, contracts are named from Etherscan's verified contract names |
+| `WHALESIG` / `WHALESIG_TELEGRAM` | on / off | Whale signals (see [6.15](#615-whale-signals-take--leave-from-whale-wallets)) |
+| `WHALESIG_WALLETS` / `WHALESIG_MIN_ACCOUNT` / `WHALESIG_MAX_TURNOVER` | `200` / `1000000` / `300` | How many Hyperliquid accounts are followed, their smallest account in $, and the 30-day volume / account above which an account counts as a market maker |
 | `FLOWS_NETWORKS` | `eth,base,solana,bsc` | DEX networks (Ethereum comes from the blocks, the others from GeckoTerminal) |
 | `FLOWS_MIN_TRADE_USD` | `2000` | Smallest DEX swap recorded |
 | `WHALES_SWAP_MIN_LIQUIDITY_USD` | `50000` | DEX liquidity a token needs for its Ethereum swaps to count |
@@ -946,7 +1046,7 @@ The BTC rotation downloads daily candles for every narrative coin on the first s
 <details>
 <summary><b>The AI desk says the key is missing</b></summary>
 
-Check that `.env` is in the project folder (next to `server.js`), that the line is `GEMINI_API_KEY=...` with no spaces or quotes, and restart.
+Check that `.env` is in the project folder (next to `server.js`), that the line is `GEMINI_API_KEY=...` with no spaces or quotes and **a key after the `=`** (an empty `GEMINI_API_KEY=` line means no AI), and restart. No Gemini key? Use a [free open-source model](#free-open-source-ai-instead-of-gemini) instead.
 </details>
 
 ---
@@ -961,9 +1061,10 @@ git checkout main
 git merge --ff-only origin/claude/trusting-gauss-i4wkla
 git push origin main
 npm install
+npm run build
 ```
 
-Then restart the app. Your settings (`.env`), alert history and caches are not in git, so an update never touches them.
+Then restart the app (`npm start`). Your settings (`.env`), alert history and caches are not in git, so an update never touches them.
 
 If git says *"Your local changes to the following files would be overwritten"*, those are usually files the app writes while it runs. They are ignored by git now; move or delete the files git lists and run the merge again.
 
@@ -981,11 +1082,28 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 
 **Run the screener alone:** `node screener.js` (port 3001).
 
+**Next.js + TypeScript (Nov 2026).** Every page is React + TypeScript, served by Next.js (App Router):
+
+| Command | What it runs |
+|---|---|
+| `npm run build`, then `npm start` | The app (production): the engine and every page on one port |
+| `npm run dev` | The same with live reload while you change the pages |
+| `npm run start:classic` (`node server.js`) | The classic HTML pages without Next.js (a fallback for now; Node 18+) |
+| `npm run typecheck` | TypeScript check of the pages and `next-server.ts` |
+
+How it fits together: `next-server.ts` runs one Node server on one port. Every `/api` route and every scanner come from the engine in `server.js` (`createHandler()` and `startServices()`). The pages are in `src/app`: `/` (Market Flow, `src/components/market-flow/`), `/screener` (`src/components/screener/`: `ScreenerShell.tsx` is the page around the tabs: the tab bar, the status bar, the section tags, the alert popups and the setup detail window; each tab is its own folder, loaded when it is opened) and `/ai` (`src/components/ai-desk/`). The tab is picked by the address (`/screener#perps`), as before, so old links still work. The API is typed in `src/lib/api.ts` and the tabs' own files. The classic HTML pages in `public/` are kept as a fallback (`/screener-classic` shows the classic screener next to the React one) and can be removed once the React pages have proven themselves.
+
+Next.js needs a server that runs all the time (the scanners never stop), so it cannot run on Vercel-style serverless hosting. Binance also blocks US servers (error 451): host it on a VPS or container outside the US.
+
 **Project files:**
 
 | File | What it is |
 |---|---|
-| `server.js` | Starts everything; Market Flow Radar and the web pages |
+| `server.js` | Starts everything; Market Flow Radar and the web pages; exports the handler and start-up for `next-server.ts` |
+| `next-server.ts`, `src/` | The Next.js + TypeScript server and every page in React (see above) |
+| `live-klines.js` | Live 5-minute candles from Binance's WebSocket stream for the Ignition scanner |
+| `whale-signals.js` | Whale signals: Hyperliquid whales' positions + Ethereum / DEX flows + Binance crowd -> TAKE / LEAVE |
+| `ai-provider.js` | Free open-source AI (Ollama, Groq, OpenRouter, Cerebras, any OpenAI-compatible server) behind the same call as Gemini |
 | `screener.js` | Ignition screener, big-move tier, BTC rotation wiring, shared helpers |
 | `alpha.js` | Binance Alpha ignition |
 | `exits.js` | Alternative exit rules, alert speed, condition groups and AI checks on live alerts |
@@ -1003,11 +1121,11 @@ They cover the signal rules, outcome tracking, AI safety rules, the AI committee
 | `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
 | `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
 | `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
-| `public/` | The web pages (`index.html`, `screener.html`, `ai.html`) |
+| `public/` | The classic web pages (`index.html`, `screener.html`, `ai.html`, `liquidity-tab.js`): the fallback for `npm run start:classic` |
 | `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
-Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `scalp_state.json`, `spot_state.json`, `pump_state.json`, `ai_calls.json`) are kept out of git.
+Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `scalp_state.json`, `spot_state.json`, `pump_state.json`, `whalesig_state.json`, `ai_calls.json`, and Next.js's `.next/`) are kept out of git.
 
 ---
 

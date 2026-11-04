@@ -78,8 +78,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRotation } from "./rotation.js";
-import { startFlows, handleFlowsRequest, ingestOnchain, useOnchain, followToken } from "./flows.js";
-import { startWhales, handleWhalesRequest, onWhaleSwaps } from "./whales.js";
+import { startFlows, handleFlowsRequest, ingestOnchain, useOnchain, followToken, tokenFlowSummary } from "./flows.js";
+import { startWhales, handleWhalesRequest, onWhaleSwaps, tokenWhaleSummary } from "./whales.js";
+import { createWhaleSignals } from "./whale-signals.js";
+import { createLiquidity } from "./liquidity.js";
 import { startEarly2x, handleEarly2xRequest } from "./early2x.js";
 import { createAlpha } from "./alpha.js";
 import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.js";
@@ -89,6 +91,7 @@ import { createPump } from "./pump.js";
 import { createScalp } from "./scalp.js";
 import { createOnchain } from "./onchain.js";
 import { createSpot } from "./spot-trend.js";
+import { createLiveKlines } from "./live-klines.js";
 import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref, noteHeld, setCheckinExtra } from "./telegram.js";
 
 const env = process.env;
@@ -252,7 +255,7 @@ const oiCache = new Map();
 let fundingCache = { at: 0, map: new Map() };
 let binanceWeight = 0;
 export const usedWeight = () => binanceWeight;
-let polling = false, dailyBusy = false, hourlyBusy = false;
+let polling = false, pollAgain = false, dailyBusy = false, hourlyBusy = false;
 let bookCache = { at: 0, map: new Map() };
 // BTC-regime narrative rotation (own tab). Not created when the backtest imports this file.
 const rotation = LIBRARY_ONLY ? null : createRotation({
@@ -288,10 +291,26 @@ const onchain = LIBRARY_ONLY || env.ONCHAIN === "0" ? null : createOnchain({
   fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "onchain_state.demo.json" : "onchain_state.json"), reportFile: path.join(here, "onchain_report.json"),
   bundledReport: path.join(here, "data", "onchain-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
 });
+// Whales tab, "Whale signals" (whale-signals.js): TAKE / LEAVE calls from the positions of Hyperliquid's biggest profitable
+// accounts, Ethereum exchange flows (whales.js), DEX flows (flows.js) and Binance's crowd vs top traders (onchain.js).
+// WHALESIG=0 turns it off.
+let crowdMemo = { at: 0, map: new Map() };
+const crowdOf = (b) => {
+  if (Date.now() - crowdMemo.at > 60_000) crowdMemo = { at: Date.now(), map: new Map((onchain?.api().coins || []).map((c) => [c.base, c])) };
+  return crowdMemo.map.get(b) || null;
+};
+const whaleSig = LIBRARY_ONLY || env.WHALESIG === "0" ? null : createWhaleSignals({
+  fetchJson, stateFile: path.join(here, DEMO ? "whalesig_state.demo.json" : "whalesig_state.json"), demo: DEMO, crowdOf,
+  exchangeFlow: (b) => (env.SCREENER_WHALES !== "0" ? tokenWhaleSummary(b) : null), dexFlow: (b) => (env.SCREENER_WHALES !== "0" ? tokenFlowSummary(b) : null),
+  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants,
+});
 // Coins the daily lists leave out: stablecoins, tokenized stocks and gold, wrapped tokens, the blocklist, and coins on
 // Binance's Monitoring list (unless SCREENER_ALLOW_MONITORING=1).
 const notListed = (b) => { const info = meta.coins.get(b); return BLOCKLIST.has(b) || STABLES.has(b) || NONCRYPTO.has(b) || isNonCryptoInfo(info) ||
   (info?.tags || []).some((t) => /stable/i.test(t)) || (!ALLOW_MONITORING && isMonitoring(info)); };
+// Liquidity tab (liquidity.js): a live Binance order-book heatmap and a 5-exchange screener, ported from the open-source
+// crypto-liquidity-terminal (MIT). LIQUIDITY=0 turns it off.
+const liquidity = LIBRARY_ONLY || env.LIQUIDITY === "0" ? null : createLiquidity({ fetchJson, stateDir: here, excluded: notListed });
 // Spot plan (Ignition tab): hold BTC and ETH only while each is above its 50-day average, plus the same check on the
 // top 100 coins (spot-trend.js, tested by spot-backtest.js)
 const spot = LIBRARY_ONLY || env.SPOT === "0" ? null : createSpot({
@@ -1088,10 +1107,15 @@ export const columns5m = (raw) => ({
 // 5-minute candle check for the hottest tokens, on finished candles (as in the replay) (last 24h of 5m candles: buyers, persistence, trades, trend, 12h high).
 async function analyze5m(base, f) {
   try {
-    const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=5m&limit=290`, { retries: 0 });
+    const sym = base + "USDT";
+    let raw = stream?.get(sym);
+    if (raw) streamHits++;
+    else { raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=5m&limit=290`, { retries: 0 }); stream?.seed(sym, raw); streamMisses++; }
     if (!Array.isArray(raw) || raw.length < 13) return;
     const expect5 = (endMs) => (f.hourly ? expectedQuoteVolume(f.hourly, 5, endMs) : f.avgDaily / 288);
-    const k = columns5m(raw), end = raw.length - 2; // newest finished candle: the last one is still forming
+    const k = columns5m(raw);
+    let end = raw.length - 1; // newest finished candle (from REST the last one is still forming; from the stream it may be closed)
+    while (end >= 0 && k.t[end] + 300_000 > Date.now()) end--;
     const feats = fiveMinFeatures(k, end, k.t[end] + 300_000, expect5);
     if (feats) Object.assign(f, feats);
     f.early = earlyFeatures(k, end, expect5);
@@ -1554,6 +1578,7 @@ async function scan() {
   }
   kickDaily(eligible);
   kickHourly(eligible);
+  stream?.want(eligible.map(([b]) => b + "USDT"));
   const ready = [];
   for (const e of eligible) {
     const d = dailyCache.get(e[0]);
@@ -1678,8 +1703,8 @@ function demoScan() {
 
 // ───────────────────────────── poll + server ─────────────────────────────
 async function poll() {
-  if (polling) return;
-  polling = true;
+  if (polling) { pollAgain = true; return; }
+  polling = true; pollAgain = false;
   try {
     if (DEMO) demoScan();
     else {
@@ -1687,7 +1712,8 @@ async function poll() {
       catch (e) { state.status = "error"; state.errors["Binance Spot"] = e.message; state.binancePausedUntil = binancePause(); }
     }
     state.lastUpdated = Date.now();
-  } finally { polling = false; }
+    state.stream = streamStatus();
+  } finally { polling = false; if (pollAgain) setTimeout(poll, 0); }
 }
 
 const jsonResponse = (res, code, data) => {
@@ -1701,11 +1727,13 @@ export function healthSources() {
   const errs = () => Object.entries(state.errors || {}).map(([k, v]) => `${k}: ${v}`).join("; ");
   return [
     { key: "spot", name: "Spot scanner (Ignition)", every: 1, get: () => ({ status: state.status, updatedAt: state.lastUpdated,
-      error: state.status === "error" ? errs() || "scan failed" : null, warn: errs() || null, detail: state.universe ? `${state.universe.eligible} coins scanned` : "" }) },
+      error: state.status === "error" ? errs() || "scan failed" : null, warn: errs() || null, detail: state.universe ? `${state.universe.eligible} coins scanned${state.stream?.connected ? ", live candles" : state.stream?.on ? ", live candles reconnecting (polling)" : ""}` : "" }) },
     { key: "perps", name: "Perps swing signals", every: 170, get: () => (perps ? (({ status, error, updatedAt, signals }) => ({ status, error, updatedAt,
       detail: `${(signals || []).filter((x) => x.track?.status === "open").length} open signals` }))(perps.api()) : { off: true, detail: "off (PERPS=0)" }) },
     { key: "scalp", name: "Scalp scanner", every: 5, get: () => (scalp ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
       detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(scalp.api()) : { off: true, detail: "off (SCALP=0)" }) },
+    { key: "whalesig", name: "Whale signals", every: 5, get: () => (whaleSig ? (({ status, error, updatedAt, read, whales, coins }) => status === "off" ? { off: true, detail: error }
+      : { status, error, updatedAt, detail: `${read || 0}/${whales || 0} whales read, ${(coins || []).filter((c) => c.call !== "WATCH").length} calls now` })(whaleSig.api()) : { off: true, detail: "off (WHALESIG=0)" }) },
     { key: "onchain", name: "On-chain scanner", every: 45, get: () => (onchain ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
       detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(onchain.api()) : { off: true, detail: "off (ONCHAIN=0)" }) },
     { key: "bot", name: "Paper bot", every: 5, alert: false, get: () => { if (!scalp) return { off: true, detail: "off with the Scalp scanner" }; const a = scalp.api();
@@ -1761,6 +1789,8 @@ export async function handleScreenerRequest(req, res, url) {
     let b = {}; try { b = JSON.parse(body || "{}"); } catch { /* defaults */ }
     jsonResponse(res, 200, { paper: await scalp.resetPaper(b) }); return true;
   }
+  if (liquidity && await liquidity.handle(req, res, url)) return true;
+  if (url.pathname === "/api/whalesig") { jsonResponse(res, 200, whaleSig ? whaleSig.api() : { status: "off", error: "Whale signals are off (WHALESIG=0 in .env)" }); return true; }
   if (url.pathname === "/api/onchain") { jsonResponse(res, 200, onchain ? onchain.api() : { status: "off", error: "The On-chain tab is off (ONCHAIN=0 in .env)" }); return true; }
   if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
   if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
@@ -1779,11 +1809,33 @@ export async function serveScreenerPage(res) {
   } catch { res.writeHead(500).end("public/screener.html is missing"); }
 }
 
-// One extra scan 4 seconds after every 5-minute candle closes, so an ignition (which needs two finished 5m candles) is
-// seen within seconds instead of up to one refresh interval later.
+// One extra scan right after every 5-minute candle closes, so an ignition (which needs two finished 5m candles) is seen
+// within seconds instead of up to one refresh interval later. With the live stream (live-klines.js) it starts as soon
+// as 80% of the followed coins' candles have closed (usually well under a second after the close); 4 seconds after the
+// close it runs anyway (stream down, or Node without WebSocket).
+let closeScanFor = 0;
+function closeScan(boundary) {
+  if (closeScanFor >= boundary) return;
+  closeScanFor = boundary;
+  state.closeScanAfterMs = Date.now() - boundary;
+  poll();
+}
 function atCandleClose() {
-  const next = Math.floor(Date.now() / 300_000) * 300_000 + 300_000 + 4_000;
-  setTimeout(() => { poll(); atCandleClose(); }, next - Date.now());
+  const boundary = Math.floor(Date.now() / 300_000) * 300_000 + 300_000;
+  setTimeout(() => { closeScan(boundary); atCandleClose(); }, boundary + 4_000 - Date.now());
+}
+// Live 5m candles (SCREENER_STREAM=0 turns the stream off and polls as before).
+let streamHits = 0, streamMisses = 0;
+const stream = LIBRARY_ONLY || DEMO || env.SCREENER_STREAM === "0" ? null : createLiveKlines({
+  onClose: ({ boundary, closed, of }) => { if (of >= 5 && closed >= 0.8 * of) closeScan(boundary); },
+  log: (m) => console.log(`Live candles: ${m}`),
+});
+function streamStatus() {
+  if (!stream) return { on: false, why: LIBRARY_ONLY || DEMO ? "demo" : env.SCREENER_STREAM === "0" ? "off (SCREENER_STREAM=0)" : "WebSocket not available (Node 22+ needed): polling" };
+  const s = stream.status();
+  return { on: s.on, connected: s.connected, subscribed: s.subscribed, cached: s.cached, lastMsgAt: s.lastMsgAt, reconnects: s.reconnects, error: s.error,
+    fromMemory: streamHits, downloaded: streamMisses, closeScanAfterMs: state.closeScanAfterMs ?? null,
+    why: s.on ? null : "WebSocket not available (Node 22+ needed): polling" };
 }
 // Starts scanning (and the BTC rotation, whale tracker and DEX rotations). Called by server.js, or below when standalone.
 let started = false;
@@ -1814,6 +1866,8 @@ export function startScreener(baseUrl = "") {
   if (scalp && !DEMO) { scalp.start(); console.log("Perps scalp (flush bounce, 5m): on, scans a few seconds after each 5-minute close"); }
   else console.log(`Perps scalp: off (${DEMO ? "demo mode" : "SCALP=0"})`);
   if (onchain && !DEMO) { onchain.start(); console.log("On-chain (crowd vs smart money, 4h): on, scans after each 4h close and every 30 minutes"); }
+  if (liquidity && !DEMO) { liquidity.start(); console.log("Liquidity (order-book heatmap + 5-exchange screener): on, no API key"); }
+  if (whaleSig && !DEMO) { whaleSig.start(); console.log("Whale signals (Whales tab): on, Hyperliquid whales' positions every 2 minutes + Ethereum and DEX flows, no API key"); }
   else console.log(`On-chain: off (${DEMO ? "demo mode" : "ONCHAIN=0"})`);
 }
 

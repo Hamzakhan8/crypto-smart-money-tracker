@@ -38,7 +38,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const DEMO = env.DEMO === "1";
 // Free nodes that serve what the tracker needs (block-wide log queries, batches, full blocks), best first; each one's
 // limits are learned from its own errors. WHALES_RPC replaces the list (e.g. your own Alchemy / Infura URL first).
-const RPCS = (env.WHALES_RPC || "https://eth-mainnet.public.blastapi.io,https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io,https://eth.drpc.org,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com").split(",").map((s) => s.trim()).filter(Boolean);
+// Checked Nov 2026: Blast and the two Nodies nodes answer block-wide log queries and batches; dRPC answers logs but not
+// batches; the rest often refuse or time out on some networks, so they come last.
+const RPCS = (env.WHALES_RPC || "https://eth-mainnet.public.blastapi.io,https://eth-pokt.nodies.app,https://ethereum-public.nodies.app,https://eth.drpc.org,https://rpc.flashbots.net,https://ethereum-rpc.publicnode.com,https://gateway.tenderly.co/public/mainnet,https://rpc.mevblocker.io").split(",").map((s) => s.trim()).filter(Boolean);
 const MIN_USD = num("WHALES_MIN_USD", 100_000);                    // transfers below this are not kept (watched wallets excepted)
 const ALERT_USD = num("WHALES_ALERT_USD", 1_000_000);                 // non-stablecoin transfers
 const STABLE_ALERT_USD = num("WHALES_STABLE_ALERT_USD", 25_000_000);  // stablecoins move in size all day; alert only on very large ones
@@ -140,6 +142,20 @@ export function nameFromBlockscout(j) {
   if (/bridge|portal|gateway|inbox|messenger|wormhole|stargate|layerzero|hyperlane|tokenmessenger|spokepool|cctp/i.test(n)) return { name: prettyName(n), cat: "bridge" };
   return { name: prettyName(n), cat: token && !name ? "token" : "defi" };
 }
+// With a free Etherscan key (ETHERSCAN_API_KEY, etherscan.io/myapikey; 5 requests a second), names come from Etherscan
+// when Blockscout fails: the verified contract name, classified the same way. No ENS names from there.
+const ETHERSCAN_KEY = env.ETHERSCAN_API_KEY || "";
+export function nameFromEtherscan(r, contract) {
+  const name = r?.ContractName || null;
+  return nameFromBlockscout({ is_contract: !!name || contract === true, name, implementations: [] });
+}
+async function nameFromEtherscanApi(a) {
+  const res = await fetch(`https://api.etherscan.io/v2/api?chainid=1&module=contract&action=getsourcecode&address=${a}&apikey=${ETHERSCAN_KEY}`, { signal: AbortSignal.timeout(12_000) });
+  if (!res.ok) throw new Error(`Etherscan HTTP ${res.status}`);
+  const j = await res.json();
+  if (j.status !== "1") throw new Error(`Etherscan: ${String(j.result || j.message).slice(0, 80)}`);
+  return nameFromEtherscan(j.result?.[0], isContract.get(a));
+}
 function queueName(a, usd) {
   if (DEMO || !a || a === ZERO || a === DEAD || labels[a] || learned.has(a) || names.has(a)) return;
   if (nameQueue.size >= 5000 && !nameQueue.has(a) && usd < 1e6) return;
@@ -174,11 +190,18 @@ async function nameLoop() {
     nameQueue.delete(a);
     if (labels[a] || learned.has(a) || names.has(a)) continue;
     try {
-      const res = await fetch(`${BLOCKSCOUT}/api/v2/addresses/${a}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
-      if (res.status === 429) { nameStats.pausedUntil = Date.now() + 60_000; nameQueue.set(a, best); continue; }
-      if (res.status === 404) { names.set(a, { name: null, cat: isContract.get(a) ? "contract" : "wallet", at: Date.now() }); continue; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const n = nameFromBlockscout(await res.json());
+      let n;
+      try {
+        const res = await fetch(`${BLOCKSCOUT}/api/v2/addresses/${a}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
+        if (res.status === 429) { nameStats.pausedUntil = Date.now() + 60_000; nameQueue.set(a, best); continue; }
+        if (res.status === 404) { names.set(a, { name: null, cat: isContract.get(a) ? "contract" : "wallet", at: Date.now() }); continue; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        n = nameFromBlockscout(await res.json());
+      } catch (e) {
+        if (!ETHERSCAN_KEY) throw e;
+        n = await nameFromEtherscanApi(a); // Blockscout is down or blocked: the verified contract name from Etherscan
+        nameStats.etherscan = (nameStats.etherscan || 0) + 1;
+      }
       names.set(a, { ...n, at: Date.now() });
       nameStats.looked++; if (n.name) nameStats.named++; nameStats.lastError = null;
       if (n.cat === "safe") isSafe.add(a);

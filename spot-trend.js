@@ -88,13 +88,14 @@ export function createSpot({ fetchJson, base, stateFile = null, reportFile = nul
   function tick() {
     if (demo || busy) return;
     const t = now(), closed = Math.floor(t / DAY) * DAY - DAY;
-    if (t - (closed + DAY) < delayMin * MIN || t < nextTry || (loaded && store.day === closed)) return;
+    if (t - (closed + DAY) < delayMin * MIN || t < nextTry || (loaded && store.day === closed && st.updatedAt)) return;
     busy = true;
     run(closed).catch((e) => { st.error = e.message; st.status = st.updatedAt ? "ok" : "error"; nextTry = now() + 10 * MIN; }).finally(() => { busy = false; });
   }
   async function run(closed) {
     await load();
-    if (store.day === closed) return;
+    // today's check was already done (before a restart): ready, with the time it was done
+    if (store.day === closed) { Object.assign(st, { status: "ok", error: null, updatedAt: store.updatedAt ?? closed + DAY + delayMin * MIN }); return; }
     const fresh = [], daily = new Map();
     for (const c of p.coins) {
       const k = (await fetchJson(`${base}/api/v3/klines?symbol=${c}USDT&interval=1d&limit=${p.avgDays + 30}`, { retries: 1, timeoutMs: 15_000 }))
@@ -112,8 +113,8 @@ export function createSpot({ fetchJson, base, stateFile = null, reportFile = nul
     }
     store.switches = store.switches.slice(0, 200);
     try { await checkAll(closed, daily.get("BTC")); delete st.allError; } catch (e) { st.allError = e.message; }
-    store.day = closed;
-    Object.assign(st, { status: "ok", error: null, updatedAt: now() });
+    store.day = closed; store.updatedAt = now();
+    Object.assign(st, { status: "ok", error: null, updatedAt: store.updatedAt });
     await save();
     if (fresh.length && sendTelegram && wantTelegram("spot")) sendTelegram(telegramText(fresh), "spot");
   }

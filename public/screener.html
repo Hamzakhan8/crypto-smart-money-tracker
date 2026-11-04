@@ -124,7 +124,7 @@ tr.faded td{opacity:.5}.wsub{display:block;font-size:11px;color:var(--muted);mar
 details.notice summary{cursor:pointer;list-style:none}details.notice summary::-webkit-details-marker{display:none}
 details.notice summary::after{content:"Read more";margin-left:8px;text-decoration:underline;opacity:.75;white-space:nowrap}details.notice[open] summary::after{content:"Show less"}
 details.notice div{margin-top:8px}
-.btn.sm{padding:7px 10px;font-size:12px}.more{display:block;width:calc(100% - 36px);margin:10px 18px 16px;text-align:center}
+.btn.sm{padding:7px 10px;font-size:12px}.more{display:block;width:calc(100% - 36px);margin:10px 18px 16px;text-align:center}.more[hidden]{display:none}
 details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.foot[open] summary{margin-bottom:6px}
 /* phones: table rows become cards, each value under its column name */
 @media(max-width:700px){
@@ -142,7 +142,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
 <body>
 <div class="appbar"><div class="appbar-in">
  <a class="brand" href="/"><i></i><span>Smart Money Tracker</span></a>
- <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabOnchain" aria-selected="false" aria-controls="view-onchain">On-chain</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
+ <nav class="appnav" aria-label="Apps"><a id="mainLink" href="/">Market flow</a><span class="tabs" role="tablist" aria-label="Screeners"><button role="tab" id="tabIgnition" aria-selected="true" aria-controls="view-ignition">Ignition</button><button role="tab" id="tabNews" aria-selected="false" aria-controls="view-news">News</button><button role="tab" id="tabAlpha" aria-selected="false" aria-controls="view-alpha">Alpha</button><button role="tab" id="tabEarly2x" aria-selected="false" aria-controls="view-early2x">Early 2x</button><button role="tab" id="tabPerps" aria-selected="false" aria-controls="view-perps">Perps</button><button role="tab" id="tabWhales" aria-selected="false" aria-controls="view-whales">Whales</button><button role="tab" id="tabLiquidity" aria-selected="false" aria-controls="view-liquidity">Liquidity</button><button role="tab" id="tabRotation" aria-selected="false" aria-controls="view-rotation">BTC rotation</button><button role="tab" id="tabJournal" aria-selected="false" aria-controls="view-journal">Journal</button></span><a href="/ai">AI desk</a></nav>
  <span class="chip" id="liveChip"><span class="dot"></span>Connecting…</span>
 </div></div>
 <main class="wrap">
@@ -274,31 +274,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </section>
  <section data-sec="sources" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Sources</h2><p>Refreshed every 10 minutes. CoinDesk needs a free key (COINDESK_API_KEY in .env); AI labels need GEMINI_API_KEY.</p></div></div><div class="source-list" id="nSources"></div></section>
 </div>
-<div id="view-onchain" role="tabpanel" aria-labelledby="tabOnchain" hidden>
- <details class="notice"><summary><b>Read this first:</b> this tab follows one idea from @ArslanOnChain's posts: when most traders bet against a coin while the biggest traders are on the other side, the crowd is often wrong. Signals only; the app never places orders.</summary><div><b>The two numbers</b> (Binance's own futures data, every 4 hours): <b>Crowd</b> = the long/short <i>account</i> ratio of everyone with a position (0.5 = two accounts short for every one long). <b>Smart money</b> = the long/short <i>position</i> ratio of Binance's top traders (the top 20% of accounts by margin; above 1 = more money long than short). His example: crowd 0.397, top traders 1.31, so the crowd was heavily short while the big money was long. <b>The signals</b>, checked after every 4-hour close on the 50 most liquid perpetuals: <span id="ocRuleTxt"><b>LONG</b> when the crowd is at 0.5 or less and top traders at 1.2 or more (his example). <b>SHORT</b> (the mirror) when the crowd's ratio is in the top 10% of its own last 30 days, top traders are not long (1.0 or less) and price makes lower highs</span>. Each is followed with the tested exit: a stop 2x the coin's normal 4-hour range (ATR), no target, close after 3 days. <b>Honest note:</b> he has not published a full method, so these exact numbers are ours. The Backtest section shows how they did on 4.8 years of Binance's archive. This is positioning data from Binance, not wallet tracking. For wallets and exchange flows, see the Whales tab. Research, not financial advice.</div></details>
- <div class="error" id="ocErrors"></div>
- <div class="kpis" data-sec="now">
-  <div class="kpi"><div class="label">Crowd short, smart money long</div><div class="value green" id="ocK1">—</div><div class="hint">coins right now (the signal)</div></div>
-  <div class="kpi"><div class="label">Crowd long, smart money not</div><div class="value red" id="ocK2">—</div><div class="hint">coins right now (the mirror)</div></div>
-  <div class="kpi"><div class="label">Open signals</div><div class="value" id="ocK3">—</div><div class="hint" id="ocK3h">followed to their exit</div></div>
-  <div class="kpi"><div class="label">Live record</div><div class="value" id="ocK4">—</div><div class="hint" id="ocK4h">closed signals, after fees</div></div>
- </div>
- <section data-sec="now" class="panel">
-  <div class="section-head"><div><h2>Crowd vs smart money now</h2><p>The 50 most liquid Binance perpetuals, the biggest gap between top traders and the crowd first. Gap = smart money ratio ÷ crowd ratio (above 1 = the big money is more bullish than the crowd).</p></div>
-   <div class="filters"><select id="ocFilter" aria-label="Which coins"><option value="all">All coins</option><option value="crowdShort">Crowd short, smart long</option><option value="lean">Crowd leans short</option><option value="crowdLong">Crowd long, smart money not</option></select><span class="chip" id="ocChip">—</span></div></div>
-  <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Crowd (accounts L/S)</th><th>Smart money (top traders L/S)</th><th>Gap</th><th>Reading</th><th>Price 24h · OI 3d</th><th>Structure</th></tr></thead><tbody id="ocCoins"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
- </section>
- <section data-sec="signals" class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>Signals</h2><p>Every time a coin's 4-hour close showed the setup. Entry = the next 4h open; each signal is followed to its stop or its 3-day close.</p></div><span class="chip" id="ocSigChip">—</span></div>
-  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop</th><th>Result</th><th>When</th></tr></thead><tbody id="ocSignals"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
- </section>
- <section data-sec="tested" class="panel" style="margin-top:14px">
-  <div class="section-head"><div><h2>Backtest: did the idea work?</h2><p id="ocTestedSub">Binance's archive, the 50 most liquid perpetuals of each month (delisted coins included), entry at the next 4h open, 0.16% fees in and out. A rule "holds" only if it made money in both periods.</p></div></div>
-  <div class="table-wrap"><table class="table cards"><thead><tr><th>Rule</th><th>Signals</th><th>Win</th><th>Avg per trade</th><th>Before 2025 · 2025-26</th><th>Other exit (2R, 7 days)</th><th>Verdict</th></tr></thead><tbody id="ocTested"><tr><td colspan="7" class="empty">—</td></tr></tbody></table></div>
-  <p class="muted" id="ocTestedNote" style="font-size:12px;margin:10px 2px 0"></p>
- </section>
- <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Binance USDⓈ-M futures public data, no API key. Some countries and networks block it (error 451).</p></div></div><div class="source-list" id="ocHealth"></div></section>
-</div>
+<div id="view-liquidity" role="tabpanel" aria-labelledby="tabLiquidity" hidden></div>
 <div id="view-rotation" role="tabpanel" aria-labelledby="tabRotation" hidden>
  <details class="notice"><summary><b>Read this first:</b> rankings come from daily price history, measured week by week against BTC.</summary><div>Narrative lists and Binance listings are today's, so coins that died or were delisted are missing, which makes every narrative look better than it really was. A few years of data hold only a few dozen weeks of each BTC regime, so treat "low" confidence as noise. Not financial advice.</div></details>
  <div class="error" id="rotErrors"></div>
@@ -440,7 +416,55 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health</h2><p>Binance futures data, no API key.</p></div></div><div class="source-list" id="pHealth"></div></section>
 </div>
 <div id="view-whales" role="tabpanel" aria-labelledby="tabWhales" hidden>
- <details class="notice"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it. Names come from ~10,000 public labels (exchanges, funds, issuers, bridges; a June 2023 snapshot), from Blockscout for newer contracts, Safe multisigs and ENS names, from exchange addresses the tracker learns by itself, and from your own labels.</summary><div>Exchange addresses are learned the way Arkham does it: an unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address, so later deposits into it count at once (shown as "address (learned)"). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
+ <details class="notice" data-sec="signals"><summary><b>Whale signals, read this first:</b> TAKE LONG, TAKE SHORT or LEAVE from what big wallets do on-chain, scored from -100 (whales selling) to +100 (whales buying). <b>New and not backtested</b>: the live record below is its only test.</summary><div><b>Sources</b> (free, no API key): <b>Hyperliquid</b>, an on-chain futures exchange where every wallet's open positions are public: the largest profitable accounts on its leaderboard (account $1M+, in profit all-time and over the last 30 days, market makers left out) are read every 2 minutes. <b>Ethereum</b> exchange deposits and withdrawals (the whale tracker below), <b>DEX</b> buying and selling, and Binance's <b>crowd vs top traders</b>. <b>Score:</b> the whales' long/short balance (up to ±60, needs 5+ whales and $2M+ in the coin), what they opened or closed in the last hour, counted in coins so a price move alone does not count (±20, at least $500k), Ethereum exchange flow over 24h (±10, $1M+), DEX flow over 24h (±5, $250k+ by 5+ wallets), Binance crowd short and top traders long or the mirror (±10). <b>Calls:</b> <b class="green">TAKE LONG</b> = score 60+ and the whales added longs in the last hour; <b class="red">TAKE SHORT</b> = -60 or less and they added shorts (futures only); <b class="amber">LEAVE</b> = the whales cut 30%+ of their net long in the last hour, or $5M+ of an ERC-20 token went onto exchanges in 24h: sell, or do not buy. <b>Honest notes:</b> Hyperliquid shows positions now, not a history of them, so this could not be backtested. Many whales hedge (for example long BTC and short altcoins), so a short on one coin is not always a view on that coin. Following the wallets that did best so far also means following some that were lucky. Research, not financial advice.</div></details>
+ <div class="error" id="wsErrors"></div>
+ <div class="kpis" data-sec="signals">
+  <div class="kpi"><div class="label">TAKE LONG now</div><div class="value green" id="wsK1">—</div><div class="hint">whales long and adding</div></div>
+  <div class="kpi"><div class="label">TAKE SHORT now</div><div class="value red" id="wsK2">—</div><div class="hint">whales short and adding</div></div>
+  <div class="kpi"><div class="label">LEAVE now</div><div class="value amber" id="wsK3">—</div><div class="hint">whales cutting longs, or coins going to exchanges</div></div>
+  <div class="kpi"><div class="label">Live record</div><div class="value" id="wsK4">—</div><div class="hint" id="wsK4h">calls that went the called way after 24h</div></div>
+ </div>
+ <section data-sec="signals" class="panel">
+  <div class="section-head"><div><h2>Whale signals now</h2><p>Every coin the followed whales hold on Hyperliquid, the strongest reading first. Last hour = what they opened minus what they closed, in dollars at today's price.</p></div>
+   <div class="filters"><select id="wsFilter" aria-label="Which coins"><option value="calls">Calls only (TAKE / LEAVE)</option><option value="all">All coins</option><option value="long">Whales net long</option><option value="short">Whales net short</option></select><input id="wsQ" placeholder="Coin" aria-label="Find a coin" style="width:90px"><span class="chip" id="wsChip">—</span></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Call</th><th>Score</th><th>Whales long · short</th><th>Last hour</th><th>Why</th></tr></thead><tbody id="wsCoins"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="signals" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Calls and their results</h2><p>Every TAKE / LEAVE call (one per coin and kind every 12 hours) and the price 4 hours, 24 hours and 3 days later. A call is right when the price moved the called way (LEAVE: the price fell).</p></div><span class="chip" id="wsSigChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Call</th><th>After 4h</th><th>After 24h</th><th>After 3 days</th></tr></thead><tbody id="wsRecord"><tr><td colspan="4" class="empty">—</td></tr></tbody></table></div>
+  <div class="table-wrap" style="margin-top:10px"><table class="table cards"><thead><tr><th>Call</th><th>Why</th><th>Price then</th><th>4h · 24h · 3 days</th><th>When</th></tr></thead><tbody id="wsSignals"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="signals" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Followed whales</h2><p>The largest profitable Hyperliquid accounts, best all-time profit first (the top 25 of those followed). Open a wallet to see its positions on Hyperliquid.</p></div><span class="chip" id="wsWhChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Wallet</th><th>Account</th><th>Profit all-time · 30 days</th><th>Open positions</th></tr></thead><tbody id="wsWhales"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health: whale signals</h2><p>Hyperliquid's public API (no key): the leaderboard every 6 hours, positions every 2 minutes.</p></div></div><div class="source-list" id="wsHealth"></div></section>
+ <div id="ocBlock">
+ <details class="notice" data-sec="crowd" style="margin-top:14px"><summary><b>Read this first:</b> this tab follows one idea from @ArslanOnChain's posts: when most traders bet against a coin while the biggest traders are on the other side, the crowd is often wrong. Signals only; the app never places orders.</summary><div><b>The two numbers</b> (Binance's own futures data, every 4 hours): <b>Crowd</b> = the long/short <i>account</i> ratio of everyone with a position (0.5 = two accounts short for every one long). <b>Smart money</b> = the long/short <i>position</i> ratio of Binance's top traders (the top 20% of accounts by margin; above 1 = more money long than short). His example: crowd 0.397, top traders 1.31, so the crowd was heavily short while the big money was long. <b>The signals</b>, checked after every 4-hour close on the 50 most liquid perpetuals: <span id="ocRuleTxt"><b>LONG</b> when the crowd is at 0.5 or less and top traders at 1.2 or more (his example). <b>SHORT</b> (the mirror) when the crowd's ratio is in the top 10% of its own last 30 days, top traders are not long (1.0 or less) and price makes lower highs</span>. Each is followed with the tested exit: a stop 2x the coin's normal 4-hour range (ATR), no target, close after 3 days. <b>Honest note:</b> he has not published a full method, so these exact numbers are ours. The Backtest section shows how they did on 4.8 years of Binance's archive. This is positioning data from Binance, not wallet tracking. For wallets and exchange flows, see the Whales tab. Research, not financial advice.</div></details>
+ <div class="error" id="ocErrors"></div>
+ <div class="kpis" data-sec="crowd" style="margin-top:14px">
+  <div class="kpi"><div class="label">Crowd short, smart money long</div><div class="value green" id="ocK1">—</div><div class="hint">coins right now (the signal)</div></div>
+  <div class="kpi"><div class="label">Crowd long, smart money not</div><div class="value red" id="ocK2">—</div><div class="hint">coins right now (the mirror)</div></div>
+  <div class="kpi"><div class="label">Open signals</div><div class="value" id="ocK3">—</div><div class="hint" id="ocK3h">followed to their exit</div></div>
+  <div class="kpi"><div class="label">Live record</div><div class="value" id="ocK4">—</div><div class="hint" id="ocK4h">closed signals, after fees</div></div>
+ </div>
+ <section data-sec="crowd" class="panel">
+  <div class="section-head"><div><h2>Crowd vs smart money now</h2><p>The 50 most liquid Binance perpetuals, the biggest gap between top traders and the crowd first. Gap = smart money ratio ÷ crowd ratio (above 1 = the big money is more bullish than the crowd).</p></div>
+   <div class="filters"><select id="ocFilter" aria-label="Which coins"><option value="all">All coins</option><option value="crowdShort">Crowd short, smart long</option><option value="lean">Crowd leans short</option><option value="crowdLong">Crowd long, smart money not</option></select><span class="chip" id="ocChip">—</span></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Coin</th><th>Crowd (accounts L/S)</th><th>Smart money (top traders L/S)</th><th>Gap</th><th>Reading</th><th>Price 24h · OI 3d</th><th>Structure</th></tr></thead><tbody id="ocCoins"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="crowd" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Crowd vs smart money: signals</h2><p>Every time a coin's 4-hour close showed the setup. Entry = the next 4h open; each signal is followed to its stop or its 3-day close.</p></div><span class="chip" id="ocSigChip">—</span></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Signal</th><th>Why</th><th>Entry · stop</th><th>Result</th><th>When</th></tr></thead><tbody id="ocSignals"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div>
+ </section>
+ <section data-sec="crowd" class="panel" style="margin-top:14px">
+  <div class="section-head"><div><h2>Crowd vs smart money: backtest</h2><p id="ocTestedSub">Binance's archive, the 50 most liquid perpetuals of each month (delisted coins included), entry at the next 4h open, 0.16% fees in and out. A rule "holds" only if it made money in both periods.</p></div></div>
+  <div class="table-wrap"><table class="table cards"><thead><tr><th>Rule</th><th>Signals</th><th>Win</th><th>Avg per trade</th><th>Before 2025 · 2025-26</th><th>Other exit (2R, 7 days)</th><th>Verdict</th></tr></thead><tbody id="ocTested"><tr><td colspan="7" class="empty">—</td></tr></tbody></table></div>
+  <p class="muted" id="ocTestedNote" style="font-size:12px;margin:10px 2px 0"></p>
+ </section>
+ <section data-sec="health" class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Data health: crowd vs smart money</h2><p>Binance USDⓈ-M futures public data, no API key. Some countries and networks block it (error 451).</p></div></div><div class="source-list" id="ocHealth"></div></section>
+</div>
+ <details class="notice" data-sec="transfers" style="margin-top:14px"><summary><b>How to read this:</b> every Ethereum transfer above the minimum, read straight from the blockchain, with who sent it and who received it. Names come from ~10,000 public labels (exchanges, funds, issuers, bridges; a June 2023 snapshot), from Blockscout for newer contracts, Safe multisigs and ENS names, from exchange addresses the tracker learns by itself, and from your own labels.</summary><div>Exchange addresses are learned the way Arkham does it: an unlabelled address that hands its tokens to one exchange's wallet is that exchange's deposit address, so later deposits into it count at once (shown as "address (learned)"). Unlabelled does not mean unknown to everyone: open any address on Arkham for its full profile. Exchange deposits are often made to sell, but not always. Not financial advice.</div></details>
  <div class="error" id="wErrors"></div>
  <div class="watchrow">
   <section data-sec="watch" class="panel">
@@ -670,6 +694,7 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  </section>
 </div>
 
+<script src="/liquidity-tab.js"></script><!-- before the page script: a #liquidity link starts the tab at once -->
 <script>
 (()=> {
  const $=s=>document.querySelector(s);
@@ -918,6 +943,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    ${(()=>{const m=data.metaStatus||{},src=m.source||"none",ok=src==="live"||src==="demo",d=m.at?new Date(m.at).toLocaleDateString():"";
     const txt=src==="live"?`connected · ${m.coins} coins, ${m.sectors} sectors`:src==="demo"?"demo":src.startsWith("cached")?`saved copy from ${d}`:src==="built-in"?"built-in narrative lists":"not loaded yet";
     return `<div class="source-row"><span>Binance asset info (market caps, sector tags)</span><b class="status-pill ${ok?"green":"amber"}">${esc(txt)}</b></div>`;})()}
+   ${(()=>{const s=data.stream;if(!s)return"";
+    const txt=!s.on?esc(s.why||"off"):!s.connected?`reconnecting${s.error?" · "+esc(s.error):""} · polling meanwhile`:`live · ${s.subscribed} coins${s.closeScanAfterMs!=null?` · last scan started ${(s.closeScanAfterMs/1000).toFixed(1)}s after the 5m close`:""} · candles from memory ${s.fromMemory}, downloaded ${s.downloaded}`;
+    return `<div class="source-row"><span>Live 5m candles (Binance stream)</span><b class="status-pill ${s.on&&s.connected?"green":"amber"}" style="white-space:normal">${txt}</b></div>`;})()}
    <div class="source-row"><span>Binance Futures (funding, OI)</span><b class="status-pill ${cls(data.futuresStatus)}">${esc(data.futuresStatus||"not checked")}</b></div>
    <div class="source-row"><span>Time-of-day baselines</span><b class="status-pill ${data.warmup&&data.warmup.seasonal>=0.8*data.warmup.total?"green":"amber"}">${data.warmup?data.warmup.seasonal+"/"+data.warmup.total+" tokens":"—"}</b></div>
    <div class="source-row"><span>Left out: stablecoins, tokenized stocks/gold, wrapped</span><b class="status-pill">${u.excluded==null?"—":u.excluded+" tokens"}</b></div>
@@ -1051,16 +1079,16 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  syncNotify();
 
  // ---------- tabs ----------
- const LEDES={ignition:$("#lede").innerHTML,whales:"Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
+ const LEDES={ignition:$("#lede").innerHTML,liquidity:"Where the buy and sell orders sit (a live Binance order-book heatmap: brighter = more money waiting at that price) and which coins are hottest across Binance, Bybit, OKX, Coinbase and Kraken right now (a 0-100 hotness score and 10 signal checks). Ported from the open-source crypto-liquidity-terminal (MIT). Orders can be pulled at any moment: a wall is not a promise.",whales:"<b>Whale signals</b>: TAKE LONG, TAKE SHORT or LEAVE from the positions of Hyperliquid's biggest profitable wallets, Ethereum exchange flows, DEX flows and Binance's crowd vs top traders (the old On-chain tab is here now). Below that, Arkham-style whale tracking: every large Ethereum transfer of any token, who sent it and who received it (exchanges, funds, protocols, Safe multisigs, ENS names, learned exchange addresses), exchange inflows and outflows, the most active entities and wallets, plus where DEX money went: every Ethereum DEX swap and the most active pools on Base, Solana and BNB Chain. Watch any wallet, token or pair; alerts pop up on every tab.",rotation:"Ranks altcoin narratives by what Bitcoin is doing. Every day BTC's daily chart is put into a regime, and each narrative is scored on how it did against BTC in past weeks with the same regime plus its price action now. The same rules are backtested week by week, with fees."};
  LEDES.early2x="Low- and mid-cap Binance spot tokens ($10M-$1B) showing measurable signs of a possible large move up before price expands: quiet accumulation, a tested range high, or an early volume ignition. +100% is a research target, not a prediction; every listed coin is tracked so the results can be checked.";
  LEDES.perps="Swing trades on Binance USDⓈ-M perpetuals, long and short: the setups that held up best in a 4.8-year backtest (after fees and every funding payment), found live after each 4h close. TAKE is kept for the A+ setups that passed every test. Each signal gets TAKE / WAIT / SKIP from its tested record, a size and liquidation check for your account, and is followed to its result. Check any trade idea of your own the same way. Scalp (the Scalp tag): 5-minute flush-bounce longs, the only one of seven tested scalp setups that made money after fees.";
  LEDES.onchain="Is the crowd betting against the big money? For the 50 most liquid Binance perpetuals: the long/short ratio of all accounts (the crowd) next to the top traders' long/short position ratio (smart money). The idea comes from @ArslanOnChain's posts: when the crowd is heavily short while top traders are long, the crowd is often wrong. Each signal is followed to its result, and a 4.8-year backtest shows how the rule did.";
  LEDES.news="The most important crypto market news of the last 48 hours, each marked bullish, bearish or neutral for the market, and the overall news mood of the last 24 hours. From Google News, Binance's own announcements and CoinDesk (with a free API key), refreshed every 10 minutes.";
  LEDES.alpha="The same ignition idea for Binance Alpha tokens (Binance Wallet), the early on-chain tokens that are not Binance spot pairs, like EVAA: volume igniting on 5-minute candles before price runs, with pool liquidity, holders and DEX buyers vs sellers. Every alert is tracked, and a replay shows how the rule did before.";
  LEDES.journal="Your own trades next to the alerts they came from. Press \"I took it\" on an alert (Ignition or Alpha), enter your real fill, and close it with your real exit: the journal shows your results, and how far they are from the alerts' tracked results.";
- let tab="ignition",rot=null,rotTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null,ocTimer=null;
- const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["onchain","#tabOnchain"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["rotation","#tabRotation"],["journal","#tabJournal"]];
- const TITLES={ignition:"Early ignition",news:"Market news",onchain:"On-chain: crowd vs smart money",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps signals",whales:"Whale tracker",rotation:"BTC rotation",journal:"Trade journal"};
+ let tab="ignition",rot=null,rotTimer=null,wsTimer=null,aTimer=null,jTimer=null,pTimer=null,sTimer=null,nTimer=null,ocTimer=null;
+ const TABS=[["ignition","#tabIgnition"],["news","#tabNews"],["alpha","#tabAlpha"],["early2x","#tabEarly2x"],["perps","#tabPerps"],["whales","#tabWhales"],["liquidity","#tabLiquidity"],["rotation","#tabRotation"],["journal","#tabJournal"]];
+ const TITLES={ignition:"Early ignition",news:"Market news",onchain:"On-chain: crowd vs smart money",alpha:"Binance Alpha ignition",early2x:"Early 2x movers",perps:"Perps signals",whales:"Whales: on-chain signals and tracker",liquidity:"Liquidity: order-book heatmap and 5-exchange screener",rotation:"BTC rotation",journal:"Trade journal"};
  // Section tags: one button per part of each page; a click shows only that part (All shows everything). The choice is
  // remembered per page in this browser.
  const SECTIONS={
@@ -1068,9 +1096,9 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
   alpha:[["cand","Candidates"],["alerts","Alerts"],["live","Live results"],["replay","Replay"],["health","Data health"]],
   early2x:[["cand","Candidates"],["results","Measured results"],["snaps","Recent snapshots"],["health","Data health"]],
   news:[["mood","Mood"],["top","Top stories"],["list","All news"],["sources","Sources"]],
-  onchain:[["now","Crowd vs smart money"],["signals","Signals"],["tested","Backtest"],["health","Data health"]],
   perps:[["signals","Swing signals"],["scalp","Scalp"],["bot","Paper bot"],["check","Check a trade"],["risk","Risk settings"],["coins","Coins"],["live","Live results"],["tested","Backtest"],["health","Data health"]],
-  whales:[["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
+  liquidity:[["heatmap","Heatmap"],["screener","Screener"],["health","Data health"]],
+  whales:[["signals","Whale signals"],["crowd","Crowd vs smart money"],["watch","Watchlist"],["transfers","Whale transfers"],["flows","Exchange flows"],["entities","Entities"],["map","DEX: where money went"],["dex","DEX rotations"],["alerts","Alert history"],["health","Data health"]],
   rotation:[["now","This week"],["alt","Alt season"],["ranking","Narratives"],["picks","Token picks"],["record","Forward record"],["backtest","Backtest"],["regimes","BTC regimes"]],
   journal:[["add","Add a trade"],["open","Open trades"],["closed","Closed trades"]],
  };
@@ -1089,24 +1117,24 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  function setTab(t){
   tab=t;
   for(const [k,b] of TABS){$(b).setAttribute("aria-selected",String(k===t));$(b).tabIndex=k===t?0:-1;$("#view-"+k).hidden=k!==t;}
-  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":t==="onchain"?"Binance USDⓈ-M futures positioning · no API key":"Binance spot · no API key";
+  $("#lede").innerHTML=LEDES[t];$("#pageTitle").textContent=TITLES[t];$("#eyebrow").textContent=t==="alpha"?"Binance Alpha · no API key":t==="journal"?"Your trades · saved on your PC":t==="perps"?"Binance USDⓈ-M futures · no API key":t==="news"?"Google News · Binance · CoinDesk":t==="whales"?"Hyperliquid · Ethereum · DEX · Binance futures · no API key":t==="liquidity"?"Binance · Bybit · OKX · Coinbase · Kraken · no API key":"Binance spot · no API key";
   $(".header-right").style.display=t==="ignition"?"":"none"; // alert sound / popups belong to the ignition alerts
   const want=t==="ignition"?"":"#"+t;
   if(location.hash!==want)history.replaceState(null,"",want||location.pathname);
   applySec(t,store.get("sec:"+t)||"all");
-  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);clearInterval(ocTimer);
+  clearInterval(rotTimer);clearInterval(xTimer);clearInterval(aTimer);clearInterval(jTimer);clearInterval(pTimer);clearInterval(sTimer);clearInterval(nTimer);clearInterval(ocTimer);clearInterval(wsTimer);window.liquidityTab?.stop();
   if(t==="perps"){loadP();pTimer=setInterval(loadP,60000);loadS();sTimer=setInterval(loadS,15000);}
   if(t==="news"){loadN();nTimer=setInterval(loadN,60000);}
-  if(t==="onchain"){loadOc();ocTimer=setInterval(loadOc,60000);}
   if(t==="journal"){loadJ();jTimer=setInterval(loadJ,30000);}
   if(t==="alpha"){loadA();aTimer=setInterval(loadA,30000);}
   if(t==="rotation"){loadRot();rotTimer=setInterval(loadRot,30000);}
-  if(t==="whales")loadW();
+  if(t==="liquidity")window.liquidityTab?.start();
+  if(t==="whales"){loadW();loadWs();wsTimer=setInterval(loadWs,30000);loadOc();ocTimer=setInterval(loadOc,60000);}
   if(t==="early2x"){loadX();xTimer=setInterval(loadX,30000);}
  }
  for(const [k,b] of TABS)$(b).onclick=()=>setTab(k);
  document.querySelector(".tabs").addEventListener("keydown",e=>{if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;const i=TABS.findIndex(x=>x[0]===tab),n=TABS[(i+(e.key==="ArrowRight"?1:TABS.length-1))%TABS.length];setTab(n[0]);$(n[1]).focus();});
- const tabFromHash=()=>{if(location.hash==="#scalp"){store.set("sec:perps","scalp");return "perps";}return TABS.some(x=>"#"+x[0]===location.hash)?location.hash.slice(1):"ignition";};
+ const tabFromHash=()=>{if(location.hash==="#scalp"){store.set("sec:perps","scalp");return "perps";}if(location.hash==="#onchain"){store.set("sec:whales","crowd");return "whales";}return TABS.some(x=>"#"+x[0]===location.hash)?location.hash.slice(1):"ignition";};
  window.addEventListener("hashchange",()=>setTab(tabFromHash()));
 
  // ---------- whale tracker ----------
@@ -1240,6 +1268,44 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    `<div class="source-row"><span>Next scan</span><b class="status-pill">${d.nextScanAt?new Date(d.nextScanAt).toLocaleTimeString():"—"}</b></div>`;
  }
  $("#ocFilter").onchange=drawOc;
+
+ // ---------- Whale signals (/api/whalesig) ----------
+ let wsd={};
+ async function loadWs(){try{wsd=await getJson("/api/whalesig");}catch(e){$("#wsErrors").style.display="block";$("#wsErrors").textContent="Whale signals: "+e.message;return;}drawWs();}
+ const wsUsd=v=>{const a=Math.abs(v||0);return (v<0?"-":"")+(a>=1e9?"$"+(a/1e9).toFixed(2)+"B":a>=1e6?"$"+(a/1e6).toFixed(1)+"M":a>=1e3?"$"+Math.round(a/1e3)+"k":"$"+Math.round(a));};
+ const WSC={"TAKE LONG":"green","TAKE SHORT":"red","LEAVE":"amber"};
+ const wsCall=c=>c==="WATCH"?'<span class="muted">watch</span>':`<span class="badge ${WSC[c]}">${c}</span>`;
+ const wsAfter=(s,h)=>{const a=(s.after||{})[h];return a?`<span class="${a.right?"green":"red"}">${a.pct>0?"+":""}${a.pct}%</span>`:'<span class="muted">—</span>';};
+ function drawWs(){
+  const d=wsd,cs=d.coins||[];
+  $("#wsErrors").style.display=d.error?"block":"none";$("#wsErrors").textContent=d.error?"Whale signals: "+d.error:"";
+  const n=k=>cs.filter(c=>c.call===k).length;
+  $("#wsK1").textContent=cs.length?n("TAKE LONG"):"—";$("#wsK2").textContent=cs.length?n("TAKE SHORT"):"—";$("#wsK3").textContent=cs.length?n("LEAVE"):"—";
+  const rec=d.record||{},day=["TAKE LONG","TAKE SHORT","LEAVE"].map(k=>(rec[k]||{})[24]).filter(x=>x&&x.n),tot=day.reduce((a,x)=>a+x.n,0),right=day.reduce((a,x)=>a+x.n*x.rightPct/100,0);
+  $("#wsK4").textContent=tot?Math.round(right/tot*100)+"%":"—";$("#wsK4h").textContent=tot?`${tot} calls followed for 24h went the called way`:"no call followed for 24h yet";
+  const f=$("#wsFilter").value,q=$("#wsQ").value.trim().toUpperCase();
+  const rows=cs.filter(c=>(f==="all"||(f==="calls"?c.call!=="WATCH":f==="long"?c.score>0:c.score<0))&&(!q||c.base.includes(q)||c.coin.toUpperCase().includes(q)));
+  $("#wsChip").textContent=d.updatedAt?`${cs.length} coins · ${d.read}/${d.whales} whales read · ${new Date(d.updatedAt).toLocaleTimeString()}`:"—";
+  $("#wsCoins").innerHTML=rows.length?rows.map(c=>`<tr><td><b>${esc(c.base)}</b><span class="sub mono">${c.px??"—"}${c.coin!==c.base?" · Hyperliquid "+esc(c.coin):""}</span></td><td>${wsCall(c.call)}</td>
+   <td class="mono"><b class="${c.score>0?"green":c.score<0?"red":""}">${c.score>0?"+":""}${c.score}</b></td>
+   <td class="mono"><span class="green">${wsUsd(c.longUsd)}</span> · <span class="red">${wsUsd(c.shortUsd)}</span><span class="sub">${c.nLong} long · ${c.nShort} short</span></td>
+   <td class="mono">${c.flowUsd==null?'<span class="muted">—</span>':`<span class="${c.flowUsd>0?"green":c.flowUsd<0?"red":""}">${c.flowUsd>0?"+":""}${wsUsd(c.flowUsd)}</span>`}<span class="sub">${c.flowUsd==null?"needs an hour of data":c.flowUsd>0?"net long added":c.flowUsd<0?"net short added":"no change"}</span></td>
+   <td class="muted" style="font-size:12px">${(c.why||[]).map(esc).join("<br>")}</td></tr>`).join("")
+   :`<tr><td colspan="6" class="empty">${d.status==="starting"?"Reading the whales (about 30 seconds)…":d.status==="off"?esc(d.error||"off"):f==="calls"&&cs.length?"No TAKE / LEAVE call right now. A call needs an hour of history (what the whales added) and a strong reading. Pick All coins to see every reading.":"No coin in this view."}</td></tr>`;
+  $("#wsRecord").innerHTML=["TAKE LONG","TAKE SHORT","LEAVE"].map(k=>{const r=rec[k]||{};const cell=h=>{const x=r[h];return x&&x.n?`<b class="${x.rightPct>=50?"green":"red"}">${x.rightPct}% right</b><span class="sub">${x.n} calls · avg ${x.avgPct>0?"+":""}${x.avgPct}% the called way</span>`:'<span class="muted">no call yet</span>';};return `<tr><td>${wsCall(k)}</td><td>${cell(4)}</td><td>${cell(24)}</td><td>${cell(72)}</td></tr>`;}).join("");
+  const sg=d.signals||[];$("#wsSigChip").textContent=`${sg.length} calls`;
+  $("#wsSignals").innerHTML=sg.length?sg.slice(0,40).map(s=>`<tr><td>${wsCall(s.call)} <b>${esc(s.base)}</b><span class="sub">score ${s.score>0?"+":""}${s.score}</span></td><td class="muted" style="font-size:12px">${(s.why||[]).slice(0,3).map(esc).join("<br>")}</td>
+   <td class="mono">${s.px??"—"}</td><td class="mono">${wsAfter(s,4)} · ${wsAfter(s,24)} · ${wsAfter(s,72)}</td><td class="mono">${when(s.t)}</td></tr>`).join("")
+   :'<tr><td colspan="5" class="empty">No call yet. Calls start once the tab has an hour of whale positions to compare.</td></tr>';
+  const wl=d.whaleList||[];$("#wsWhChip").textContent=d.whales?`${d.whales} followed`:"—";
+  $("#wsWhales").innerHTML=wl.length?wl.map(w=>`<tr><td><a class="mono" href="https://app.hyperliquid.xyz/explorer/address/${esc(w.address)}" target="_blank" rel="noopener">${esc(w.name||w.address.slice(0,8)+"…"+w.address.slice(-4))}</a></td>
+   <td class="mono">${wsUsd(w.account)}</td><td class="mono"><span class="green">${wsUsd(w.pnlAll)}</span> · ${wsUsd(w.pnlMonth)}<span class="sub">${w.roiMonth}% in 30 days</span></td><td class="mono">${w.positions??"—"}<span class="sub">${w.notional!=null?wsUsd(w.notional)+" open":""}</span></td></tr>`).join("")
+   :'<tr><td colspan="4" class="empty">Loading the Hyperliquid leaderboard (about 40 MB, once every 6 hours)…</td></tr>';
+  $("#wsHealth").innerHTML=`<div class="source-row"><span>Hyperliquid positions</span><b class="status-pill ${d.status==="ok"&&!d.error?"green":"amber"}" style="white-space:normal">${d.status==="ok"&&!d.error?`ok · ${d.read}/${d.whales} whales · read in ${((d.scanMs||0)/1000).toFixed(0)}s`:esc(d.error||d.status||"—")}</b></div>`+
+   `<div class="source-row"><span>Whale list (leaderboard)</span><b class="status-pill">${d.whalesAt?"updated "+when(d.whalesAt):"—"}</b></div>`+
+   `<div class="source-row"><span>Hour of history for calls</span><b class="status-pill ${d.hourAgo?"green":"amber"}">${d.hourAgo?"ready":"building ("+(d.snapshots||0)+" reads so far)"}</b></div>`;
+ }
+ $("#wsFilter").onchange=drawWs;$("#wsQ").oninput=drawWs;
 
  // ---------- News tab (/api/news) ----------
  let nd={};
@@ -1486,11 +1552,14 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
    if("Notification" in window&&Notification.permission==="granted"){try{new Notification(`${WTYPES[e.type]||e.type}: ${e.title}`,{body:(e.lines||[]).join(" | ")});}catch{}}
   }
  }
+ // Whale and DEX popups show on the Whales tab; on the other tabs only your own watches (wallet, token, pair) pop up,
+ // so a stream of large swaps does not cover the ignition alerts. Every alert is still in the Whales tab's alert history.
+ const W_EVERYWHERE=new Set(["wallet","token","watch"]);
  function checkW(ev,src){
   ev=ev||[];
   const seenSet=src==="w"?wSeen:fSeen;
   if(seenSet===null){const s=new Set(ev.map(e=>e.id));if(src==="w")wSeen=s;else fSeen=s;return;}   // first load: do not replay old alerts
-  ev.filter(e=>!seenSet.has(e.id)).reverse().forEach(e=>{seenSet.add(e.id);wPopup(e,false);});
+  ev.filter(e=>!seenSet.has(e.id)).reverse().forEach(e=>{seenSet.add(e.id);if(tab==="whales"||W_EVERYWHERE.has(e.type))wPopup(e,false);});
  }
  // The full data loads only while the tab is open; otherwise just the alert lists, for popups.
  async function pollW(){
@@ -2047,4 +2116,5 @@ details.foot summary{cursor:pointer;color:var(--blue);font-weight:700}details.fo
  if(tabFromHash()!=="ignition")setTab(tabFromHash());else applySec("ignition",store.get("sec:ignition")||"all");
  load();setInterval(load,3000);
 })();
-</script></body></html>
+</script>
+</body></html>

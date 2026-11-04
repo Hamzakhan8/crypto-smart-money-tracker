@@ -128,3 +128,18 @@ test("pump watch: off in demo mode, says so", () => {
   assert.match(a.error, /live Binance data/);
   assert.equal(PUMP.targetPct, 100);
 });
+
+test("pump watch: after a restart on a day whose list is already saved, it is ready at once (not 'starting' all day)", async () => {
+  const { mkdtemp, writeFile } = await import("node:fs/promises"), { tmpdir } = await import("node:os"), path = await import("node:path");
+  const closed = START + 80 * DAY, file = path.join(await mkdtemp(path.join(tmpdir(), "pump-")), "pump_state.json");
+  await writeFile(file, JSON.stringify({ version: 1, day: closed, mood: { share: 55, ok: true }, picks: [], updatedAt: closed + DAY + 180_000, scanned: 120 }));
+  let reads = 0;
+  const p = createPump({ fetchJson: async () => { reads++; return []; }, base: "http://fake", stateFile: file, now: () => closed + DAY + 3 * 3_600_000 });
+  p.onTickers(new Map([["AAA", { lastPrice: "1", quoteVolume: "3000000" }]]));
+  for (let i = 0; i < 50 && p.api().status !== "ok"; i++) await new Promise((r) => setTimeout(r, 5));
+  const a = p.api();
+  assert.equal(a.status, "ok");
+  assert.equal(a.updatedAt, closed + DAY + 180_000);
+  assert.equal(a.scanned, 120);
+  assert.equal(reads, 0, "the saved list is not made again");
+});

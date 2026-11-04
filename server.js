@@ -5,7 +5,7 @@ import "./env.js"; // first: loads .env before any module reads its settings
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { GoogleGenAI } from "@google/genai";
 import { runAnalysis, readJsonBody, AgentError, generate, MODELS, geminiErrorText } from "./agent.js";
 import { startScreener, handleScreenerRequest, serveScreenerPage, onIgnitionAlert, annotateEvent, onAlphaAlert, annotateAlpha, setFlowContext, freshAiVerdicts, healthSources } from "./screener.js";
@@ -13,6 +13,7 @@ import { createHealth } from "./health.js";
 import { handleAiRequest, reviewAlert, reviewAlpha, setMarketFlowSource, meterAi, aiCanSpend, startAiDesk } from "./ai-trade.js";
 import { sendTelegram as tgQueue, telegramWants, telegramConfigured, telegramStatus } from "./telegram.js";
 import { createNews } from "./news.js";
+import { PRESETS, pickProvider, ollamaRunning, createOpenAiClient } from "./ai-provider.js";
 const env = process.env;
 const HOST = env.HOST || "127.0.0.1";
 const PORT = Number(env.PORT || 3000);
@@ -38,7 +39,24 @@ function watchAi(client) {
   } } });
   return Object.create(client, { models: { value: models } });
 }
-const ai = env.GEMINI_API_KEY ? watchAi(meterAi(new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }))) : null;
+// The AI: Gemini when GEMINI_API_KEY is set (and AI_PROVIDER does not name another), else a free open-source model
+// (ai-provider.js): AI_PROVIDER=ollama for Ollama on this PC, or a free GROQ_API_KEY / OPENROUTER_API_KEY / CEREBRAS_API_KEY.
+// With nothing set, Ollama is used if it is running on this PC.
+async function createAi() {
+  const want = String(env.AI_PROVIDER || "").toLowerCase().trim();
+  if (env.GEMINI_API_KEY && (!want || want === "gemini" || want === "auto")) return new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+  let p = pickProvider(env);
+  if (!p && (!want || want === "auto") && await ollamaRunning()) {
+    const model = env.AI_MODEL || PRESETS.ollama.model;
+    p = { id: "ollama", name: PRESETS.ollama.name, base: PRESETS.ollama.base, key: null, model, reviewModel: env.AI_REVIEW_MODEL || model, local: true };
+  }
+  if (!p) return null;
+  MODELS.analyst = p.model; MODELS.reviewer = p.reviewModel; // every AI member uses the open model
+  return createOpenAiClient(p);
+}
+const aiClient = await createAi();
+const ai = aiClient ? watchAi(meterAi(aiClient)) : null;
+const AI_NAME = aiClient?.provider ? `${aiClient.provider.name}: ${aiClient.provider.model}` : "Gemini";
 
 // Every new ignition alert gets one automatic AI review (TAKE / WAIT / SKIP) by the AI committee (6 Gemini requests with
 // the bull vs bear debate and the Final Boss), saved with the alert, so the screener's performance panel can show
@@ -55,11 +73,11 @@ const health = createHealth({
     ...healthSources(),
     { key: "news", name: "News", every: 10, get: () => (news ? (({ status, error, updatedAt, items, labeller }) => ({ status, error, updatedAt,
       warn: /failed/.test(labeller || "") ? labeller : null, detail: `${(items || []).length} stories` }))(news.api()) : { off: true, detail: "off (NEWS=0)" }) },
-    { key: "ai", name: "AI (Gemini)", every: 1e6, get: () => {
-      if (!ai) return { off: true, detail: "not set up: add GEMINI_API_KEY to .env" };
-      if (aiStat.lastErrorAt && !(aiStat.lastOk > aiStat.lastErrorAt)) return { error: `the last Gemini request failed: ${aiStat.lastError}`, updatedAt: aiStat.lastOk };
+    { key: "ai", name: "AI", every: 1e6, get: () => {
+      if (!ai) return { off: true, detail: "not set up: add GEMINI_API_KEY to .env, or a free open-source model (AI_PROVIDER=ollama, or a free GROQ_API_KEY): see the README" };
+      if (aiStat.lastErrorAt && !(aiStat.lastOk > aiStat.lastErrorAt)) return { error: `the last AI request (${AI_NAME}) failed: ${aiStat.lastError}`, updatedAt: aiStat.lastOk };
       return { updatedAt: Date.now(), warn: aiCanSpend() ? null : "today's AI limit is used up (AI_DAILY_REQUESTS): automatic reviews pause until midnight UTC",
-        detail: aiStat.lastOk ? `working, last answer ${new Date(aiStat.lastOk).toISOString().slice(11, 16)} UTC` : "key set, checking it" };
+        detail: `${AI_NAME} · ${aiStat.lastOk ? `working, last answer ${new Date(aiStat.lastOk).toISOString().slice(11, 16)} UTC` : "set up, checking it"}` };
     } },
     { key: "telegram", name: "Telegram", every: 1e6, alert: false, get: () => { const t = telegramStatus();
       if (!t.configured) return { off: true, detail: "not set up: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env" };
@@ -367,111 +385,122 @@ const jsonResponse = (res, code, data) => {
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(data));
 };
-// One server for everything: Market Flow Radar at /, the Early Setup Screener (with its BTC rotation and whale tracker
-// tabs) at /screener, the AI trade desk at /ai, and every API under /api.
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  if (url.pathname === "/api/status") return jsonResponse(res, 200, health.api());
-  if (url.pathname === "/api/news") return jsonResponse(res, 200, news ? news.api() : { status: "off", error: "The News tab is off (NEWS=0 in .env)" });
-  if (await handleScreenerRequest(req, res, url)) return;
-  if (await handleAiRequest(req, res, url, ai)) return;
-  if (url.pathname === "/screener" || url.pathname === "/screener/") return serveScreenerPage(res);
-  if (url.pathname === "/ai" || url.pathname === "/ai/") {
-    try {
-      const html = await readFile(path.join(here, "public", "ai.html"));
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      return res.end(html);
-    } catch { res.writeHead(500).end("public/ai.html is missing"); return; }
-  }
-  
-  if (url.pathname === "/api/health") return jsonResponse(res, 200, {
-    ok: true, marketStatus: state.marketStatus, web3Status: state.web3Status,
-    lastUpdated: state.lastUpdated, pollIntervalMs: state.pollIntervalMs, demo: state.demo,
-    errors: state.errors,
-  });
-  
-  if (url.pathname === "/api/signals") return jsonResponse(res, 200, {
-    ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals, aiVerdicts: freshAiVerdicts(), telegramConfigured: telegramConfigured(),
-  });
-
-  // NEW RECURSIVE GEMINI API ENDPOINT
-  if (url.pathname === "/api/analyze" && req.method === "POST") {
-    // Paid Gemini call: only from this site (JSON content type and same-host Origin), so other web pages cannot trigger it.
-    const sameSite = String(req.headers["content-type"] || "").includes("application/json") &&
-      (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
-    if (!sameSite) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site." });
-    if (!ai) return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
-    try {
-      const body = await readJsonBody(req);
-      const out = await runAnalysis(ai, state, body);
-      // "Send to Telegram" ticked: the brief as plain text, through the shared queue (sent even if other kinds are off)
-      const text = String(out.analysis || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)_(.+?)_(?=\s|$|[.,;])/g, "$1$2");
-      const tg = body.notify === true && text ? await tgQueue(`AI MARKET BRIEF\n${text}`, { kind: "system", force: true }) : null;
-      return jsonResponse(res, 200, tg ? { ...out, telegram: tg } : out);
-    } catch (e) {
-      const known = e instanceof AgentError;
-      if (!known) console.error("Gemini agent error:", e);
-      return jsonResponse(res, known ? e.status : 502, { error: known ? e.message : "Failed to generate AI analysis." });
+// One handler for everything: Market Flow Radar at /, the Early Setup Screener (with its BTC rotation and whale tracker
+// tabs) at /screener, the AI trade desk at /ai, and every API under /api. fallback answers what it does not (a 404 for
+// `node server.js`; the Next.js pages in next-server.ts); skip = page paths the Next.js app has taken over.
+const notFound = (req, res) => res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found");
+export function createHandler({ fallback = notFound, skip = new Set() } = {}) {
+  return async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    if (url.pathname === "/api/status") return jsonResponse(res, 200, health.api());
+    if (url.pathname === "/api/news") return jsonResponse(res, 200, news ? news.api() : { status: "off", error: "The News tab is off (NEWS=0 in .env)" });
+    if (await handleScreenerRequest(req, res, url)) return;
+    if (await handleAiRequest(req, res, url, ai)) return;
+    if ((url.pathname === "/screener" || url.pathname === "/screener/") && !skip.has("/screener")) return serveScreenerPage(res);
+    if (url.pathname === "/screener-classic") return serveScreenerPage(res); // the classic page, also when the React one serves /screener
+    if ((url.pathname === "/ai" || url.pathname === "/ai/") && !skip.has("/ai")) {
+      try {
+        const html = await readFile(path.join(here, "public", "ai.html"));
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        return res.end(html);
+      } catch { res.writeHead(500).end("public/ai.html is missing"); return; }
     }
-  }
-  
-  if (url.pathname === "/api/orderbook") {
-    const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
-    if (!/^[A-Z0-9]{3,20}USDT$/.test(symbol)) return jsonResponse(res, 400, { error: "Provide a valid Binance USDT spot symbol, e.g. SUIUSDT" });
-    try {
-      if (DEMO) {
-        const mid = symbol.startsWith("BTC") ? 65000 : symbol.startsWith("ETH") ? 3200 : symbol.startsWith("SOL") ? 150 : 1.25;
-        const bids = [], asks = [];
-        for (let i = 1; i <= 20; i++) {
-          bids.push([String(mid * (1 - i * 0.0001)), String((Math.random() * 800 + 20).toFixed(4))]);
-          asks.push([String(mid * (1 + i * 0.0001)), String((Math.random() * 800 + 20).toFixed(4))]);
-        }
-        return jsonResponse(res, 200, { symbol, lastUpdateId: null, bids, asks, source: "SIMULATED DEMO ORDER BOOK", demo: true, updatedAt: Date.now() });
+    
+    if (url.pathname === "/api/health") return jsonResponse(res, 200, {
+      ok: true, marketStatus: state.marketStatus, web3Status: state.web3Status,
+      lastUpdated: state.lastUpdated, pollIntervalMs: state.pollIntervalMs, demo: state.demo,
+      errors: state.errors,
+    });
+    
+    if (url.pathname === "/api/signals") return jsonResponse(res, 200, {
+      ...state, coins: state.coins, spot: state.coins, signals: state.web3Signals, aiVerdicts: freshAiVerdicts(), telegramConfigured: telegramConfigured(),
+    });
+
+    // NEW RECURSIVE GEMINI API ENDPOINT
+    if (url.pathname === "/api/analyze" && req.method === "POST") {
+      // Paid Gemini call: only from this site (JSON content type and same-host Origin), so other web pages cannot trigger it.
+      const sameSite = String(req.headers["content-type"] || "").includes("application/json") &&
+        (!req.headers.origin || req.headers.origin.replace(/^https?:\/\//, "") === req.headers.host);
+      if (!sameSite) return jsonResponse(res, 403, { error: "AI requests are only accepted from this site." });
+      if (!ai) return jsonResponse(res, 500, { error: "Gemini API key is not configured on the server." });
+      try {
+        const body = await readJsonBody(req);
+        const out = await runAnalysis(ai, state, body);
+        // "Send to Telegram" ticked: the brief as plain text, through the shared queue (sent even if other kinds are off)
+        const text = String(out.analysis || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|\s)_(.+?)_(?=\s|$|[.,;])/g, "$1$2");
+        const tg = body.notify === true && text ? await tgQueue(`AI MARKET BRIEF\n${text}`, { kind: "system", force: true }) : null;
+        return jsonResponse(res, 200, tg ? { ...out, telegram: tg } : out);
+      } catch (e) {
+        const known = e instanceof AgentError;
+        if (!known) console.error("Gemini agent error:", e);
+        return jsonResponse(res, known ? e.status : 502, { error: known ? e.message : "Failed to generate AI analysis." });
       }
-      const book = await fetchJson(`${BN}/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=100`, {}, 9000);
-      if (!Array.isArray(book.bids) || !Array.isArray(book.asks)) throw new Error("Unexpected Binance order-book response");
-      return jsonResponse(res, 200, { symbol, lastUpdateId: book.lastUpdateId, bids: book.bids, asks: book.asks, source: "Binance Spot REST depth snapshot", demo: false, updatedAt: Date.now() });
-    } catch (e) { return jsonResponse(res, 502, { error: `Order book unavailable: ${e.message}`, symbol }); }
-  }
-  
-  if (url.pathname === "/") {
-    try {
-      const html = await readFile(path.join(here, "public", "index.html"));
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      return res.end(html);
-    } catch { res.writeHead(500).end("public/index.html is missing"); return; }
-  }
-  if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
-  res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found");
-});
-server.on("error", (e) => {
+    }
+    
+    if (url.pathname === "/api/orderbook") {
+      const symbol = String(url.searchParams.get("symbol") || "").toUpperCase();
+      if (!/^[A-Z0-9]{3,20}USDT$/.test(symbol)) return jsonResponse(res, 400, { error: "Provide a valid Binance USDT spot symbol, e.g. SUIUSDT" });
+      try {
+        if (DEMO) {
+          const mid = symbol.startsWith("BTC") ? 65000 : symbol.startsWith("ETH") ? 3200 : symbol.startsWith("SOL") ? 150 : 1.25;
+          const bids = [], asks = [];
+          for (let i = 1; i <= 20; i++) {
+            bids.push([String(mid * (1 - i * 0.0001)), String((Math.random() * 800 + 20).toFixed(4))]);
+            asks.push([String(mid * (1 + i * 0.0001)), String((Math.random() * 800 + 20).toFixed(4))]);
+          }
+          return jsonResponse(res, 200, { symbol, lastUpdateId: null, bids, asks, source: "SIMULATED DEMO ORDER BOOK", demo: true, updatedAt: Date.now() });
+        }
+        const book = await fetchJson(`${BN}/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=100`, {}, 9000);
+        if (!Array.isArray(book.bids) || !Array.isArray(book.asks)) throw new Error("Unexpected Binance order-book response");
+        return jsonResponse(res, 200, { symbol, lastUpdateId: book.lastUpdateId, bids: book.bids, asks: book.asks, source: "Binance Spot REST depth snapshot", demo: false, updatedAt: Date.now() });
+      } catch (e) { return jsonResponse(res, 502, { error: `Order book unavailable: ${e.message}`, symbol }); }
+    }
+    
+    if (url.pathname === "/" && !skip.has("/")) {
+      try {
+        const html = await readFile(path.join(here, "public", "index.html"));
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        return res.end(html);
+      } catch { res.writeHead(500).end("public/index.html is missing"); return; }
+    }
+    if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
+    return fallback(req, res);
+  };
+}
+export const listenOn = { PORT, HOST, base: `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}` };
+export const onListenError = (e) => {
   console.error(e.code === "EADDRINUSE"
     ? `Port ${PORT} is already in use: another copy of the app may be running. Close it, or set PORT=3005 (any free port) in .env.`
     : `Server error: ${e.message}`);
   process.exit(1);
-});
-server.listen(PORT, HOST, () => {
-  const base = `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
+};
+// Starts every part (the scanners, the AI desk, news, the status bar, the Market Flow poll) once the server listens.
+export function startServices(base = listenOn.base) {
   console.log(`\nAll apps are running on one server:`);
   console.log(`  Market Flow Radar      ${base}/`);
   console.log(`  Early Setup Screener   ${base}/screener`);
   console.log(`  BTC rotation           ${base}/screener#rotation`);
-  console.log(`  Whale tracker          ${base}/screener#whales`);
   console.log(`  Early 2x movers        ${base}/screener#early2x`);
   console.log(`  Spot plan, Pump watch  ${base}/screener (Ignition tab, tags "Spot plan" and "Pump watch")`);
   console.log(`  Perps, Scalp, bot      ${base}/screener#perps (tags "Swing signals", "Scalp", "Paper bot")`);
   console.log(`  News                   ${base}/screener#news`);
-  console.log(`  On-chain               ${base}/screener#onchain`);
-  console.log(`  AI trade desk          ${base}/ai${ai ? (AI_AUTO_REVIEW ? `  (reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour)` : "") : "  (add GEMINI_API_KEY to .env to enable)"}\n`);
+  console.log(`  Whales, whale signals  ${base}/screener#whales (crowd vs smart money: tag "Crowd vs smart money")`);
+  console.log(`  AI trade desk          ${base}/ai${ai ? `  (${AI_NAME}${AI_AUTO_REVIEW ? `, reviews every new alert, up to ${AI_REVIEWS_PER_HOUR}/hour` : ""})` : "  (add GEMINI_API_KEY, or a free open model: AI_PROVIDER=ollama or GROQ_API_KEY)"}\n`);
   startScreener(`${base}/screener`);
   startAiDesk(ai); // follows every AI answer and watches WAIT triggers
   if (news) news.start();
   health.start();
   // check the Gemini key and model once at start (one tiny request), so a wrong key shows in the status bar right away
   if (ai) generate(ai, { model: MODELS.analyst, contents: "Reply with the single word OK." }, { retries: 0, timeoutMs: 30_000 })
-    .then(() => console.log(`Gemini: key and model ${MODELS.analyst} work`)).catch((e) => console.log(`Gemini: the test request failed: ${geminiErrorText(e)}`));
+    .then(() => console.log(`AI (${AI_NAME}): key and model ${MODELS.analyst} work`)).catch((e) => console.log(`AI (${AI_NAME}): the test request failed: ${geminiErrorText(e)}`));
   console.log(`Refresh: ${POLL_MS / 1000}s | symbols: ${MAX_SYMBOLS} | demo: ${DEMO}`);
-  if (ai) console.log("Gemini AI integration enabled.");
-});
-poll();
-setInterval(poll, POLL_MS);
+  if (ai) console.log(`AI enabled: ${AI_NAME}.`);
+  poll();
+  setInterval(poll, POLL_MS);
+}
+// `node server.js`: the classic server. (next-server.ts imports this file and runs the same handler inside Next.js.)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const server = http.createServer(createHandler());
+  server.on("error", onListenError);
+  server.listen(PORT, HOST, () => startServices());
+}

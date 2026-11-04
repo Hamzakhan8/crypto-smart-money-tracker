@@ -1,0 +1,45 @@
+/* The Liquidity tab (the styles public/liquidity-tab.js injects on the classic page). */
+#view-liquidity .lq-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;padding:0 18px 18px}
+#view-liquidity .lq-chart{position:relative;min-width:0}
+#view-liquidity .lq-chart canvas{display:block;width:100%}
+#view-liquidity .lq-main{height:440px;border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18)}
+#view-liquidity .lq-volc{height:90px;margin-top:6px}
+#view-liquidity .lq-tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:11px;line-height:1.55;white-space:nowrap;z-index:3;box-shadow:0 10px 30px #0008}
+#view-liquidity .lq-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 18px 12px}
+#view-liquidity .lq-controls form{display:flex;gap:6px;margin:0}
+#view-liquidity .lq-controls input[type=text]{width:128px;text-transform:uppercase;padding:8px 10px}
+#view-liquidity .lq-controls select{padding:8px}
+#view-liquidity .lq-controls .btn{padding:8px 11px;font-size:12px}
+#view-liquidity .lq-check{display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}
+#view-liquidity .lq-check input{padding:0;accent-color:var(--green)}
+#view-liquidity .lq-msg{padding:0 18px 10px;font-size:12px;color:var(--muted)}
+#view-liquidity .lq-msg.bad{color:var(--red)}
+#view-liquidity .lq-side{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:12px;font-size:12px;min-width:0;align-self:start}
+#view-liquidity .lq-side h3{margin:0;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#view-liquidity .lq-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin:10px 0}
+#view-liquidity .lq-stats span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+#view-liquidity .lq-stats b{font-family:"DM Mono",monospace;font-weight:500}
+#view-liquidity .lq-ob{width:100%;border-collapse:collapse;font-family:"DM Mono",monospace;font-size:11px}
+#view-liquidity .lq-ob td{padding:2px 4px;position:relative}
+#view-liquidity .lq-ob td.v{text-align:right;width:46%}
+#view-liquidity .lq-ob td.v i{position:absolute;right:0;top:2px;bottom:2px;border-radius:2px;opacity:.25}
+#view-liquidity .lq-ob tr.mid td{color:var(--muted);text-align:center;padding:5px 0;font-family:Manrope,system-ui,sans-serif}
+#view-liquidity .lq-walls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;font-family:"DM Mono",monospace;font-size:11px}
+#view-liquidity .lq-walls .sub{font-family:Manrope,system-ui,sans-serif}
+#view-liquidity .lq-legend{display:flex;flex-wrap:wrap;gap:14px;padding:8px 0 0;font-size:11.5px;color:var(--muted)}
+#view-liquidity .lq-legend i{display:inline-block;width:12px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+#view-liquidity .lq-sort{background:none;border:0;padding:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+#view-liquidity .lq-sort:hover,#view-liquidity .lq-sort.on{color:var(--ink)}
+/* the sort arrow of the sorted column (CSS, so it is not part of the column name the phone layout shows next to each value) */
+#view-liquidity .lq-sort.on[data-dir=up]::after{content:" \25B2"}
+#view-liquidity .lq-sort.on[data-dir=down]::after{content:" \25BC"}
+#view-liquidity .lq-sigs{display:flex;flex-wrap:wrap;gap:4px;white-space:normal;max-width:260px}
+#view-liquidity .badge.lq-blue{color:var(--blue);border-color:#2c4a77;background:#111d30}
+#view-liquidity .badge.lq-b-extreme{color:var(--red);border-color:#6e2c3a;background:#2d1720}
+#view-liquidity .badge.lq-b-hot{color:var(--amber);border-color:#6d5621;background:#2b2414}
+#view-liquidity .badge.lq-b-normal{color:var(--blue);border-color:#2c4a77;background:#111d30}
+#view-liquidity .badge.lq-b-cold{color:var(--muted)}
+#view-liquidity .scorebar i.hot{background:var(--amber)}#view-liquidity .scorebar i.extreme{background:var(--red)}#view-liquidity .scorebar i.normal{background:var(--blue)}#view-liquidity .scorebar i.cold{background:var(--muted)}
+#view-liquidity .lq-ex{font-size:11px;color:var(--muted)}#view-liquidity .lq-ex b{color:var(--ink)}
+@media(max-width:900px){#view-liquidity .lq-grid{grid-template-columns:1fr}}
+@media(max-width:600px){#view-liquidity .lq-main{height:300px}#view-liquidity .lq-volc{height:70px}#view-liquidity .lq-grid{padding:0 10px 14px}#view-liquidity .lq-controls{padding:0 10px 10px}#view-liquidity .lq-controls input[type=text]{width:110px}}

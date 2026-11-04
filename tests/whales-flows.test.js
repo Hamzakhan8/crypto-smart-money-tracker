@@ -101,3 +101,10 @@ test("token flows: bought / sold per token, ranked by real money (token-to-token
   assert.deepEqual(f[0].boughtWith.map((x) => x.key), ["ETH", "USDC"]);
   assert.deepEqual(f.slice(1).map((x) => x.tokenOnly), [true, true]);
 });
+
+test("names: Etherscan's verified contract name is classified like Blockscout's (used when Blockscout fails)", () => {
+  assert.deepEqual(wh.nameFromEtherscan({ ContractName: "UniswapV3Pool" }), { name: "Uniswap V3 Pool", cat: "dex" });
+  assert.deepEqual(wh.nameFromEtherscan({ ContractName: "GnosisSafeProxy" }), { name: "Safe multisig", cat: "safe" });
+  assert.deepEqual(wh.nameFromEtherscan({ ContractName: "" }, false), { name: null, cat: "wallet" }, "no source and no code: a wallet");
+  assert.deepEqual(wh.nameFromEtherscan({ ContractName: "" }, true), { name: null, cat: "contract" }, "unverified contract");
+});

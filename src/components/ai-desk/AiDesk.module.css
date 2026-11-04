@@ -1,0 +1,119 @@
+/* The AI Trade Desk's own look (the classic ai.html styles): violet accent, plan tiles, committee cards and the live
+   step list. Scoped to the page: every rule starts at .desk (the page's <main>), in the same order as ai.html so the
+   cascade between them is the same; the shared tokens and classes come from globals.css. */
+.page{min-height:100vh;background:radial-gradient(ellipse at top left,#1d1838 0,transparent 42%),var(--bg)}
+.desk{--violet:#a78bfa}
+.desk:global(.wrap){max-width:1440px;margin:auto;padding:20px 22px 60px}
+.desk :global(.eyebrow){color:var(--violet)}
+.desk :global(.lede){max-width:720px}
+.desk :global(.chip),.desk :global(.btn),.desk select,.desk input{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;padding:9px 12px;font:inherit;font-size:13px}
+.desk :global(.chip){color:var(--muted)}
+.desk :global(.btn){cursor:pointer;font-weight:700;text-decoration:none;display:inline-block}
+.desk :global(.btn):hover{border-color:#58718d}
+.desk :global(.btn.primary){background:var(--violet);border-color:var(--violet);color:#140d2b}
+.desk :global(.btn):disabled{opacity:.55;cursor:wait}
+.desk :global(.btn.sm){padding:6px 10px;font-size:12px}
+.desk label:global(.check){display:inline-flex;gap:6px;align-items:center;color:var(--muted);font-size:12px}
+.desk label:global(.check) input{padding:0}
+.desk :global(.notice){margin:18px 0 0;padding:12px 15px;border:1px solid #59451c;background:#251e10;color:#f9d989;border-radius:12px;line-height:1.6;font-size:12px}
+.desk :global(.error){display:none;margin:12px 0;background:#2d1720;border:1px solid #6e2c3a;color:#ffabb9;border-radius:10px;padding:12px;font-size:12px;line-height:1.6}
+.desk :global(.strip){display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+.desk :global(.strip) span{border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;color:var(--muted)}
+.desk :global(.strip) b{color:var(--ink)}
+.desk :global(.grid){display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:14px;margin-top:14px;align-items:start}
+.desk :global(.panel){background:linear-gradient(145deg,rgba(20,30,43,.96),rgba(15,23,33,.96));border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+.desk :global(.section-head){display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 18px 12px}
+.desk :global(.section-head) h2{margin:0;font-size:16px;letter-spacing:-.02em}
+.desk :global(.section-head) p{margin:5px 0 0;color:var(--muted);font-size:12px}
+.desk :global(.table-wrap){overflow:auto}
+.desk :global(.table){width:100%;border-collapse:collapse;white-space:normal}
+.desk :global(.table) th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:10px 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);white-space:nowrap}
+.desk :global(.table) td{padding:11px 12px;border-bottom:1px solid rgba(37,50,67,.72);font-size:12px;vertical-align:top}
+.desk :global(.table) tr:last-child td{border-bottom:0}
+.desk :global(.table) tbody tr:hover{background:transparent}
+.desk :global(.table) tr:global(.sel) td{background:#161d33}
+.desk :global(.sub){display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.desk :global(.green){color:var(--green)}
+.desk :global(.red){color:var(--red)}
+.desk :global(.amber){color:var(--amber)}
+.desk :global(.muted){color:var(--muted)}
+.desk :global(.badge){display:inline-block;border:1px solid var(--line);padding:3px 7px;border-radius:7px;font-size:10px;font-weight:800;white-space:nowrap}
+.desk :global(.badge.confirmed){color:var(--green);border-color:#236a53;background:#102a25}
+.desk :global(.badge.early){color:var(--blue);border-color:#2c4a77;background:#111d30}
+.desk :global(.badge.heating){color:var(--amber);border-color:#6d5621;background:#2b2414}
+.desk :global(.badge.ran){color:var(--red);border-color:#6e2c3a;background:#2d1720}
+.desk :global(.dec){display:inline-block;font-weight:800;border-radius:8px;padding:4px 9px;font-size:11px;letter-spacing:.06em}
+.desk :global(.dec.TAKE){background:#0f3a2c;color:var(--green);border:1px solid #236a53}
+.desk :global(.dec.WAIT){background:#2f2612;color:var(--amber);border:1px solid #6d5621}
+.desk :global(.dec.SKIP){background:#33171f;color:var(--red);border:1px solid #6e2c3a}
+.desk :global(.empty){padding:28px;text-align:center;color:var(--muted);line-height:1.7}
+.desk :global(.anyrow){display:flex;gap:8px;padding:0 18px 14px;flex-wrap:wrap}
+.desk :global(.anyrow) input{width:150px;text-transform:uppercase}
+.desk :global(.result){padding:4px 20px 20px}
+.desk :global(.hero){display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:6px 0 12px;border-bottom:1px solid var(--line)}
+.desk :global(.hero) :global(.big){font-size:30px;font-weight:800;letter-spacing:-.03em;padding:8px 18px;border-radius:12px}
+.desk :global(.hero) h3{margin:0;font-size:19px;letter-spacing:-.02em}
+.desk :global(.hero) p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.desk :global(.big.TAKE){background:#0f3a2c;color:var(--green)}
+.desk :global(.big.WAIT){background:#2f2612;color:var(--amber)}
+.desk :global(.big.SKIP){background:#33171f;color:var(--red)}
+.desk :global(.thesis){line-height:1.7;margin:14px 0}
+.desk :global(.plan){display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0}
+.desk :global(.plan.dim){opacity:.55}
+.desk :global(.stat){background:#151f2b;border:1px solid var(--line);border-radius:10px;padding:11px}
+.desk :global(.stat) span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.desk :global(.stat) strong{display:block;font-size:15px;margin-top:6px}
+.desk :global(.stat) small{color:var(--muted);font-size:11px}
+.desk :global(.sec){margin:16px 0 6px;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.desk :global(.cols){display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.desk :global(.cols) ul{margin:0;padding-left:18px;line-height:1.65}
+.desk :global(.callout){border-left:3px solid var(--amber);background:#1d1a12;padding:10px 12px;border-radius:8px;line-height:1.6;margin:8px 0;font-size:13px}
+.desk :global(.callout.red){border-color:var(--red);background:#22141a}
+.desk :global(.callout.blue){border-color:var(--blue);background:#121a28}
+.desk :global(.facts){display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.desk :global(.facts) :global(.stat) strong{font-size:13px}
+.desk details{margin-top:14px}
+.desk summary{cursor:pointer;color:var(--blue);font-size:12px}
+.desk pre{white-space:pre-wrap;word-break:break-word;background:#0b1118;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:11px;max-height:420px;overflow:auto}
+.desk :global(.meta){color:var(--muted);font-size:11px;margin-top:14px;line-height:1.7}
+.desk :global(.foot){color:var(--muted);font-size:11px;line-height:1.8;margin-top:20px;margin-bottom:0}
+.desk :global(.spin){display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.desk :global(.btn):focus-visible,.desk select:focus-visible,.desk input:focus-visible,.desk summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.desk :global(.chip.amber){color:var(--amber);border-color:#6d5621}
+.desk :global(.chip.red){color:var(--red);border-color:#6e2c3a}
+.desk :global(.recgrid){display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 4px}
+.desk :global(.steps){list-style:none;margin:6px 0 0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.desk :global(.steps) li{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 13px;border-bottom:1px solid rgba(37,50,67,.72)}
+.desk :global(.steps) li:last-child{border-bottom:0}
+.desk :global(.steps) :global(.ic){width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;border:1px solid var(--line);color:var(--muted)}
+.desk :global(.steps) :global(.working){background:#161d33}
+.desk :global(.steps) :global(.working) :global(.ic){border:2px solid var(--violet);border-top-color:transparent;animation:sp 1s linear infinite}
+.desk :global(.steps) :global(.done) :global(.ic){background:#0f3a2c;border-color:#236a53;color:var(--green)}
+.desk :global(.steps) :global(.failed) :global(.ic){background:#33171f;border-color:#6e2c3a;color:var(--red)}
+.desk :global(.steps) :global(.skipped){opacity:.55}
+.desk :global(.steps) b{font-size:13px}
+.desk :global(.steps) :global(.dt){display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.desk :global(.steps) :global(.working) :global(.dt){color:#c4b5fd}
+.desk :global(.steps) :global(.tm){font-family:"DM Mono",monospace;font-size:11px;color:var(--muted)}
+.desk :global(.crew){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.desk :global(.member){background:#151f2b;border:1px solid var(--line);border-radius:12px;padding:12px 13px;min-width:0}
+.desk :global(.member) h4{margin:0;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.desk :global(.member) :global(.role){display:block;color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.desk :global(.member) p{margin:7px 0 0;font-size:12.5px;line-height:1.6}
+.desk :global(.member) ul{margin:6px 0 0;padding-left:17px;line-height:1.55;font-size:12px}
+.desk :global(.member) li{margin:2px 0}
+.desk :global(.member) a{color:var(--blue);word-break:break-word}
+.desk :global(.member) details{margin-top:8px}
+/* section tags: one part of the page at a time */
+.desk:global(.filtered) :global(.grid){grid-template-columns:1fr}
+@media(max-width:1000px){
+  .desk :global(.grid){grid-template-columns:1fr}
+  .desk :global(.recgrid){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .desk :global(.facts){grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:560px){
+  .desk :global(.plan),.desk :global(.cols),.desk :global(.crew){grid-template-columns:1fr}
+  .desk:global(.wrap){padding:18px 12px}
+  .desk :global(.table) th,.desk :global(.table) td{padding:9px 8px}
+}

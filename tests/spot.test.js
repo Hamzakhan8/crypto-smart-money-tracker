@@ -103,3 +103,16 @@ test("spot: off in demo mode, says so", () => {
   assert.equal(a.status, "off");
   assert.match(a.error, /live Binance data/);
 });
+
+test("spot: after a restart on a day whose check is already saved, it is ready at once (not 'starting' all day)", async () => {
+  const { mkdtemp, writeFile } = await import("node:fs/promises"), { tmpdir } = await import("node:os"), path = await import("node:path");
+  const closed = START + 60 * DAY, file = path.join(await mkdtemp(path.join(tmpdir(), "spot-")), "spot_state.json");
+  await writeFile(file, JSON.stringify({ version: 1, day: closed, coins: {}, switches: [], all: null, updatedAt: closed + DAY + 120_000 }));
+  let reads = 0;
+  const sp = createSpot({ fetchJson: async () => { reads++; return []; }, base: "http://fake", stateFile: file, now: () => closed + DAY + 3_600_000 });
+  sp.onTickers(new Map([["BTC", { lastPrice: "1", quoteVolume: "3000000" }]]));
+  for (let i = 0; i < 50 && sp.api().status !== "ok"; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(sp.api().status, "ok");
+  assert.equal(sp.api().updatedAt, closed + DAY + 120_000);
+  assert.equal(reads, 0, "the saved check is not made again");
+});

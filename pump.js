@@ -115,13 +115,14 @@ export function createPump({ fetchJson, base, stateFile = null, reportFile = nul
     if (demo || busy || !bases.length) return;
     const t = now(), closed = Math.floor(t / DAY) * DAY - DAY; // open time of the last closed daily candle
     if (t - (closed + DAY) < delayMin * MIN || t < nextTry) return;
-    if (loaded && store.day === closed) return;
+    if (loaded && store.day === closed && st.updatedAt) return;
     busy = true;
     run(closed).catch((e) => { st.error = e.message; nextTry = now() + 10 * MIN; }).finally(() => { busy = false; });
   }
   async function run(closed) {
     await load();
-    if (store.day === closed) return;
+    // today's list was already made (before a restart): ready, with the time it was made
+    if (store.day === closed) { Object.assign(st, { status: "ok", error: null, updatedAt: store.updatedAt ?? closed + DAY + delayMin * MIN, day: closed, scanned: store.scanned ?? 0, mood: store.mood }); return; }
     const t0 = now(), seen = new Map(), feats = [];
     const want = [...new Set([...bases, ...store.picks.filter((x) => x.status === "open").map((x) => x.base)])];
     let failed = 0;
@@ -152,8 +153,8 @@ export function createPump({ fetchJson, base, stateFile = null, reportFile = nul
         target: f.close * (1 + p.targetPct / 100), stop: f.close * (1 - p.stopPct / 100), moodShare: mood?.share ?? null, moodOk: mood?.ok ?? null,
         status: "open", peakPct: 0, lowPct: 0, daysHeld: 0 }));
     store.picks = [...fresh, ...store.picks].slice(0, 400);
-    store.day = closed; store.mood = mood;
-    Object.assign(st, { status: "ok", error: null, updatedAt: now(), day: closed, scanned: feats.length, mood, scanMs: now() - t0 });
+    store.day = closed; store.mood = mood; store.updatedAt = now(); store.scanned = feats.length;
+    Object.assign(st, { status: "ok", error: null, updatedAt: store.updatedAt, day: closed, scanned: feats.length, mood, scanMs: now() - t0 });
     await save();
     // Telegram only when the market mood is OK (PUMP_TELEGRAM=all: always): under it, picks barely made money in the test
     if (fresh.length && sendTelegram && wantTelegram("pump") && (mood?.ok || env.PUMP_TELEGRAM === "all")) sendTelegram(telegramText(fresh, mood), "pump");

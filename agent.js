@@ -18,7 +18,8 @@ export const MODELS = {
   analyst: env.GEMINI_ANALYST_MODEL || "gemini-3.5-flash",
   reviewer: env.GEMINI_REVIEW_MODEL || "gemini-3.1-pro-preview",
 };
-export const MODEL_PATTERN = /^gemini-[a-z0-9.\-]+$/i;
+// Gemini names, and open model names (ai-provider.js), e.g. qwen3:4b, llama-3.3-70b-versatile, openai/gpt-oss-120b
+export const MODEL_PATTERN = /^[a-z0-9][a-z0-9._:\/\-]{1,80}$/i;
 const LEVELS = ["low", "medium", "high"];
 const MAX_TOOL_ROUNDS = 3;
 const MAX_TOOL_CALLS = 6;
@@ -424,6 +425,7 @@ async function execTool(name, args, ctx) {
 
 // Shared with ai-trade.js (the AI trade desk).
 export async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } = {}) {
+  timeoutMs *= ai?.timeoutFactor || 1; // a local open model on a CPU gets longer (ai-provider.js)
   for (let attempt = 0; ; attempt++) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -445,6 +447,7 @@ export async function generate(ai, params, { retries = 2, timeoutMs = 60_000 } =
 
 // A Gemini error in plain words, with what to do (the API returns JSON inside the message).
 export function geminiErrorText(e) {
+  if (e?.provider) return String(e.message).slice(0, 300); // an open model's error, already in plain words (ai-provider.js)
   let raw = String(e?.message || e || "");
   try { const j = JSON.parse(raw.slice(raw.indexOf("{"))); raw = j?.error?.message || raw; } catch { /* plain text */ }
   const code = Number(e?.status ?? e?.code) || (/"code":\s*(\d+)/.exec(String(e?.message || ""))?.[1] | 0);

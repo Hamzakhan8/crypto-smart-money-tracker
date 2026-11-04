@@ -80,7 +80,8 @@ const chain = (net) => CHAINS[net] || { name: net, native: [], explorer: null };
 const txUrl = (net, tx) => (chain(net).explorer ? `${chain(net).explorer}/tx/${tx}` : null);
 const walletUrl = (net, a) => (chain(net).explorer ? `${chain(net).explorer}/${chain(net).account || "address"}/${a}` : null);
 const poolUrl = (net, a) => `https://www.geckoterminal.com/${net}/pools/${a}`;
-const STABLE_RE = /USD|^DAI$|^EUR/i;
+// stablecoins, including the ones without "USD" in the name (Aave GHO, FRAX, DOLA, MIM, Liquity BOLD, savings DAI)
+const STABLE_RE = /USD|^S?DAI$|^EUR|^(ST(K)?)?GHO$|^S?FRAX$|^DOLA$|^MIM$|^BOLD$/i;
 const STOCK_RE = /^[A-Z]{1,6}[cx]$/; // tokenized stocks: a ticker with a lowercase c or x (MSTRc, SNDKc, TSLAx, SPYx)
 // Wrapped / staked BTC and ETH move with their underlying, so like ETH and stablecoins they count as "majors", not tokens.
 const MAJOR_RE = /^(W|CB|T|Z|LB|SOL)?BTC(B)?$|^BTC\.B$|^(ST|WST|WE|CB|R|EZ|RS)ETH$/i;

@@ -53,3 +53,10 @@ spot_state.demo.json
 onchain_state.json
 onchain_state.demo.json
 onchain_report.json
+whalesig_state.json
+whalesig_state.demo.json
+# Next.js
+.next/
+next-env.d.ts
+*.tsbuildinfo
+liquidity_state.json

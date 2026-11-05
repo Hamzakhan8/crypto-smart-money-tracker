@@ -1072,20 +1072,19 @@ Check that `.env` is in the project folder (next to `server.ts`), that the line 
 
 ## 11. Updating to a new version
 
-New versions are pushed to a work branch first. To bring them into your `main` branch and your PC:
+New versions are pushed to `main`. To bring one to your PC, stop the app (`Ctrl + C`) and run in the project folder:
 
 ```bash
-git fetch origin
-git checkout main
-git merge --ff-only origin/claude/trusting-gauss-i4wkla
-git push origin main
+git pull
 npm install
 npm run build
 ```
 
-Then restart the app (`npm start`). Your settings (`.env`), alert history and caches are not in git, so an update never touches them.
+Then start it again (`npm start`). Your settings (`.env`), alert history and caches are not in git, so an update never touches them.
 
-If git says *"Your local changes to the following files would be overwritten"*, those are usually files the app writes while it runs. They are ignored by git now; move or delete the files git lists and run the merge again.
+If git says *"Your local changes to the following files would be overwritten"*:
+- **`package-lock.json`:** npm sometimes adds a few lines to it during `npm install`. Drop them with `git checkout -- package-lock.json` and run `git pull` again.
+- **Other files:** usually files the app writes while it runs. They are ignored by git now; move or delete the files git lists and run `git pull` again.
 
 ---
 

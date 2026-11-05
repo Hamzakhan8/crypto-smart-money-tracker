@@ -1,0 +1,159 @@
+// Backtest of swing-trade setups on Binance USDⓈ-M perpetuals, long and short (perps.ts), on years of history from
+// Binance's public archive (perps-history.ts). Node.js 22.6+, no dependencies, no API key.
+//
+//   npm run perps-backtest                            # Dec 2021 to last month, the 50 most liquid perps of each month
+//   npm run perps-backtest -- --top 30 --cost 0.1     # fewer coins; fee + slippage per side in %
+//   npm run perps-backtest -- --split 2025-01         # older period = before, newer period = from this month on
+//   npm run perps-backtest -- --no-oi                 # quick first look without open interest (no flush / crowded setups)
+//
+// The first run downloads about 1-2 GB (an hour or more); everything is cached in ./perps_cache, so later runs only
+// fetch the new month. The result goes to perps_report.json (shown on the Perps tab) and a summary here.
+//
+// Honest by design: coins are picked by their liquidity AT THE TIME (delisted coins included); entries at the next 4h
+// open after a closed candle; fees, slippage and every funding payment counted; a candle touching stop and target is a
+// loss. A setup "holds" only if it made money in both the older and the newer period. Research tool, not advice.
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadHistory, coinData, monthOf } from "./perps-history.ts";
+import * as P from "./perps.ts";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const argv = process.argv.slice(2);
+const arg = <T>(name: string, d: T): string | T => { const i = argv.indexOf("--" + name); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
+const TOP = Number(arg("top", 50)), COST = Number(arg("cost", 0.08)), SPLIT = arg("split", "2025-01"), MAX_OPEN = Number(arg("max-open", 5));
+const FROM = arg("from", "2021-12"), TO = arg("to", undefined);
+const H4 = 14_400_000, DAY = 86_400_000;
+const splitT = Date.parse(`${SPLIT}-01T00:00:00Z`);
+const log = (m: string) => console.log(m);
+
+const hist = await loadHistory({ from: FROM, to: TO, top: TOP, log, metrics: !argv.includes("--no-oi") });
+
+// BTC regime after each daily close: up (close over the 50-day EMA, 20 over 50), down (both under), else mixed.
+const btcD = (hist.daily.get("BTCUSDT") || []).map((d) => ({ t: d[0], c: d[4] }));
+const be20 = P.ema(btcD.map((d) => d.c), 20), be50 = P.ema(btcD.map((d) => d.c), 50);
+const regimeAfter = new Map(btcD.map((d, k): [number, P.Trend | null] => [d.t + DAY, !be50[k] ? null : d.c > be50[k] && be20[k] > be50[k] ? "up" : d.c < be50[k] && be20[k] < be50[k] ? "down" : "mixed"]));
+const regimeAt = (tClose: number): P.Trend | null => regimeAfter.get(Math.floor(tClose / DAY) * DAY) ?? null;
+
+// Strength vs BTC: each day, the month's liquid coins ranked by 30-day return minus BTC's (1 = strongest).
+const closeOn = new Map<string, Map<number, number>>(); // sym -> Map(dayStart -> close)
+for (const [sym, rows] of hist.daily) closeOn.set(sym, new Map(rows.map((r) => [r[0], r[4]])));
+const rsCache = new Map<number, Map<string, P.Rank>>();
+function rsAt(tClose: number, sym: string): P.Rank | null {
+  const day = Math.floor(tClose / DAY) * DAY - DAY; // the daily candle that just closed
+  let ranks = rsCache.get(day);
+  if (!ranks) {
+    const list = hist.universe[monthOf(day)] || [], btc = closeOn.get("BTCUSDT"), b0 = btc?.get(day - 30 * DAY), b1 = btc?.get(day);
+    const rows: [string, number][] = [];
+    for (const s of list) { const m = closeOn.get(s), a = m?.get(day - 30 * DAY), b = m?.get(day); if (a > 0 && b > 0 && b0 > 0 && b1 > 0) rows.push([s, b / a - b1 / b0]); }
+    rows.sort((x, y) => y[1] - x[1]);
+    ranks = new Map(rows.map(([s], k): [string, P.Rank] => [s, { rank: k + 1, n: rows.length }]));
+    rsCache.set(day, ranks);
+  }
+  return ranks.get(sym) || null;
+}
+
+// ───────────────────────────── run every coin ─────────────────────────────
+const endD = new Date(`${hist.to}-01T00:00:00Z`); endD.setUTCMonth(endD.getUTCMonth() + 1);
+const dataEnd = endD.getTime(); // where the history ends: a coin's candles stopping before this means it was delisted
+interface BacktestTrade extends P.Trade { setup: string; rule: string; f: P.Features }
+const trades: BacktestTrade[] = []; // { setup, dir, rule, ...trade, f }
+let coinsDone = 0, signals = 0;
+for (const sym of hist.chosen) {
+  const months = hist.monthsOf(sym);
+  if (!months.length) continue;
+  const s = P.prepare(await coinData(sym, months, hist.daily));
+  const openUntil = new Map();
+  for (let i = 0; i < s.bars.length - 1; i++) {
+    const b = s.bars[i], tClose = b.t + H4;
+    if (!hist.universe[monthOf(b.t)]?.includes(sym)) continue; // only while it was among the most liquid
+    const ctx: P.Ctx = { btcRegime: regimeAt(tClose), rs: tClose % DAY === 0 ? rsAt(tClose, sym) : null, dayClose: tClose % DAY === 0 };
+    const sigs = P.signalsAt(s, i, ctx);
+    if (!sigs.length) continue;
+    const f = P.features(s, i, ctx);
+    for (const sig of sigs) {
+      signals++;
+      const ap = P.aplusOf(sig, f); // an A+ setup is also followed on its own (one position per coin and A+ setup)
+      for (const setup of ap ? [sig.setup, ap] : [sig.setup]) for (const [rule, ex] of Object.entries(P.EXITS)) {
+        const key = `${setup}|${sig.dir}|${rule}`;
+        if ((openUntil.get(key) || 0) > s.bars[i + 1].t) continue; // one position per coin, setup, side and exit rule
+        const t = P.simulate(s, { i, dir: sig.dir, stop: sig.stop }, ex, COST, dataEnd);
+        if (!t) continue;
+        openUntil.set(key, t.exitT);
+        trades.push({ setup, rule, f, ...t });
+      }
+    }
+  }
+  if (++coinsDone % 50 === 0) log(`  simulated ${coinsDone}/${hist.chosen.length} coins, ${trades.length} trades`);
+}
+
+// ───────────────────────────── report ─────────────────────────────
+const side = (d: number) => (d > 0 ? "long" : "short");
+const GROUPS = P.CONDITIONS; // shared with the live Perps tab (perps.ts)
+const pick = (setup: string, dir: number, rule: string) => trades.filter((t) => t.setup === setup && t.dir === dir && t.rule === rule);
+const ruleOf = (setup: string): string => P.APLUS[setup]?.exit || "main"; // A+ setups are judged with their own exit
+const years = [...new Set(trades.map((t) => new Date(t.t).getUTCFullYear()))].sort();
+type Portfolio = ReturnType<typeof P.portfolio>;
+interface Tested { all: P.Summary; older: P.Summary; newer: P.Summary; verdict: string; ok: boolean }
+// One setup and side in perps_report.json (the Perps tab reads these)
+interface SetupResult extends Tested {
+  setup: string; side: string; label: string; aplus: boolean; exit: string; byYear: Record<string, P.Summary>; byBtc: Record<string, P.Summary>;
+  portfolio: Portfolio; rules: Record<string, Tested>; groups: P.ConditionGroup[];
+}
+interface Report {
+  generatedAt: number; from: string; to: string; split: string; top: number; costPctPerSide: number; maxOpen: number; coins: number; signals: number;
+  setups: Record<string, string>; exits: Record<string, string>; aplus: Record<string, { label: string; base: string; side: string; exit: string }>;
+  results: SetupResult[];
+  combined?: { setups: string[]; all: Portfolio; older: Portfolio; newer: Portfolio; byYear: Record<string, Portfolio> } | null;
+  trades?: (string | number)[][]; // [setup, dir, sym, t, exitT, entry, exit, why, r, netPct, fundingPct]
+}
+const report: Report = { generatedAt: Date.now(), from: hist.from, to: hist.to, split: SPLIT, top: TOP, costPctPerSide: COST, maxOpen: MAX_OPEN,
+  coins: hist.chosen.length, signals, setups: P.SETUPS, exits: Object.fromEntries(Object.entries(P.EXITS).map(([k, v]) => [k, v.label])),
+  aplus: Object.fromEntries(Object.entries(P.APLUS).map(([k, a]) => [k, { label: a.label, base: a.setup, side: side(a.dir), exit: a.exit }])), results: [] };
+for (const setup of [...Object.keys(P.APLUS), ...Object.keys(P.SETUPS)]) for (const dir of [1, -1]) {
+  if (P.APLUS[setup] && P.APLUS[setup].dir !== dir) continue;
+  const main = pick(setup, dir, ruleOf(setup));
+  if (!main.length) continue;
+  const train = P.summary(main.filter((t) => t.t < splitT)), test = P.summary(main.filter((t) => t.t >= splitT));
+  const rules: Record<string, Tested> = {};
+  for (const rule of Object.keys(P.EXITS)) {
+    const all = pick(setup, dir, rule), tr = P.summary(all.filter((t) => t.t < splitT)), te = P.summary(all.filter((t) => t.t >= splitT));
+    rules[rule] = { all: P.summary(all), older: tr, newer: te, ...P.verdict(tr, te) };
+  }
+  const groups = GROUPS.map(([name, fn]) => {
+    const g = main.filter((t) => { try { return fn(t); } catch { return false; } });
+    const o = P.summary(g.filter((t) => t.t < splitT)), n = P.summary(g.filter((t) => t.t >= splitT));
+    return { name, trades: g.length, avgR: P.summary(g).avgR ?? null, olderR: o.avgR ?? null, newerR: n.avgR ?? null,
+      holds: o.trades >= 30 && n.trades >= 15 && o.avgR > (train.avgR ?? 0) && n.avgR > (test.avgR ?? 0) ? "better in both" : o.trades >= 30 && n.trades >= 15 && o.avgR < (train.avgR ?? 0) && n.avgR < (test.avgR ?? 0) ? "worse in both" : "unclear" };
+  }).filter((g) => g.trades > 0);
+  report.results.push({ setup, side: side(dir), label: P.APLUS[setup]?.label || P.SETUPS[setup], aplus: !!P.APLUS[setup], exit: ruleOf(setup), all: P.summary(main), older: train, newer: test, ...P.verdict(train, test),
+    byYear: Object.fromEntries(years.map((y) => [y, P.summary(main.filter((t) => new Date(t.t).getUTCFullYear() === y))])),
+    byBtc: Object.fromEntries(["up", "mixed", "down"].map((r) => [r, P.summary(main.filter((t) => t.f.btc === r))])),
+    portfolio: P.portfolio(main, MAX_OPEN), rules, groups });
+}
+// One account trading every setup that holds (main exit), at most MAX_OPEN positions, 1% risk each
+const held = report.results.filter((r) => r.ok);
+const heldTrades = trades.filter((t) => t.rule === ruleOf(t.setup) && held.some((r) => r.setup === t.setup && r.side === side(t.dir)));
+report.combined = held.length ? { setups: held.map((r) => `${r.setup} ${r.side}`), all: P.portfolio(heldTrades, MAX_OPEN),
+  older: P.portfolio(heldTrades.filter((t) => t.t < splitT), MAX_OPEN), newer: P.portfolio(heldTrades.filter((t) => t.t >= splitT), MAX_OPEN),
+  byYear: Object.fromEntries(years.map((y) => [y, P.portfolio(heldTrades.filter((t) => new Date(t.t).getUTCFullYear() === y), MAX_OPEN)])) } : null;
+// every trade with its setup's own exit, compact (the Perps tab shows a setup's history from these)
+report.trades = trades.filter((t) => t.rule === ruleOf(t.setup)).map((t) => [t.setup, t.dir, t.sym, t.t, t.exitT, +t.entry.toPrecision(6), +t.exit.toPrecision(6), t.why, t.r, t.netPct, t.fundingPct]);
+await writeFile(path.join(here, "perps_report.json"), JSON.stringify(report));
+
+// ───────────────────────────── summary ─────────────────────────────
+const pad = (v: unknown, n: number) => String(v ?? "—").padStart(n);
+log(`\nSwing setups on Binance USDⓈ-M perps, ${hist.from} to ${hist.to}: ${TOP} most liquid each month (${hist.chosen.length} coins over time).`);
+log(`Costs: ${COST}% per side + funding. Exit: ${P.EXITS.main.label} (A+ setups: ${P.EXITS.wide.label}). Older = before ${SPLIT}, newer = from ${SPLIT}. R = result in units of the risk.\n`);
+log(`${"setup".padEnd(12)} ${"side".padEnd(5)} ${pad("trades", 6)} ${pad("win%", 5)} ${pad("avg R", 6)} ${pad("PF", 5)} ${pad("older R", 8)} ${pad("newer R", 8)} ${pad("fund%", 6)} ${pad("5-pos acct %", 13)} ${pad("max DD %", 9)}  verdict`);
+for (const r of report.results) log(`${(r.aplus ? "A+ " + r.setup : r.setup).padEnd(12)} ${r.side.padEnd(5)} ${pad(r.all.trades, 6)} ${pad(r.all.winRatePct, 5)} ${pad(r.all.avgR, 6)} ${pad(r.all.profitFactor, 5)} ${pad(r.older.avgR, 8)} ${pad(r.newer.avgR, 8)} ${pad(r.all.avgFundingPct, 6)} ${pad(r.portfolio.returnPct, 13)} ${pad(r.portfolio.maxDrawdownPct, 9)}  ${r.verdict}`);
+const best = report.results.map((r) => ({ r, alt: Object.entries(r.rules).filter(([, x]) => x.ok).map(([k]) => k) })).filter((x) => x.alt.length);
+log(`\nOther exits that hold: ${best.length ? best.map((x) => `${x.r.setup} ${x.r.side}: ${x.alt.join(", ")}`).join(" | ") : "none"}`);
+if (report.combined) {
+  const c = report.combined;
+  log(`\nOne account with every setup that holds (${c.setups.join(", ")}), max ${MAX_OPEN} open, 1% risk each:`);
+  log(`  all: ${c.all.returnPct}% (max drawdown ${c.all.maxDrawdownPct}%, ${c.all.taken} trades) | older: ${c.older.returnPct}% | newer: ${c.newer.returnPct}%`);
+  log(`  by year: ${Object.entries(c.byYear).map(([y, p]) => `${y} ${p.returnPct ?? 0}%`).join(" · ")}`);
+} else log("\nNo setup holds in both periods with the main exit.");
+log(`\n${report.results.length * Object.keys(P.EXITS).length} setup / side / exit combinations were tested: by luck alone a few can look good. Trust a setup that holds with the main exit, with a large count, and keeps holding in the live tracking.`);
+log(`Report: perps_report.json (${report.trades.length} trades, each setup with its own exit)`);

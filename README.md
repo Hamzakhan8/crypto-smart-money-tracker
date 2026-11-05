@@ -81,7 +81,7 @@ Check it in a terminal (Command Prompt / PowerShell on Windows, Terminal on Mac)
 node -v
 ```
 
-You should see `v22.6` or higher (the app is a Next.js + TypeScript app since Nov 2026; the classic pages, `npm run start:classic`, still run on Node 18).
+You should see `v22.6` or higher: the whole app is TypeScript, and Node runs it directly.
 
 ### Step 2: Download the project
 
@@ -129,7 +129,7 @@ TELEGRAM_CHAT_ID=123456789
 npm start
 ```
 
-Then open **http://localhost:3000** in your browser. (`npm run dev` starts it with live reload while you change the code. `npm run start:classic` runs the classic HTML pages instead, without Next.js, as before.)
+Then open **http://localhost:3000** in your browser. (`npm run dev` starts it with live reload while you change the code.)
 
 ### Step 6: Check the startup lines
 
@@ -213,7 +213,7 @@ Now the AI desk works, the Market Flow Radar's **✨ AI Analysis** button works,
 
 ### Free open-source AI instead of Gemini
 
-No Gemini key? The app can use a free, open-source model instead (`ai-provider.js`). Every AI part works the same way: the AI desk committee, alert reviews, the Market Flow brief and the News labels. Pick one:
+No Gemini key? The app can use a free, open-source model instead (`ai-provider.ts`). Every AI part works the same way: the AI desk committee, alert reviews, the Market Flow brief and the News labels. Pick one:
 
 | Option | Cost | Set in `.env` | Good to know |
 |---|---|---|---|
@@ -407,7 +407,7 @@ Lists the coins the screener flags as igniting or heating up.
 - **Alpha tokens:** press **Ask AI** on any row of the Alpha tab. The AI gets Alpha's own 1h / 4h candles, DexScreener buyers vs sellers, pool liquidity, holders and supply, with Alpha's own rule (+40% / -10% / 7 days, 1% costs) and its replay and live results. Extra hard stops: DEX sellers in control, pool under $50k.
 - **It learns from your live data:** the AI is shown how past alerts with the same conditions did (BTC trend, alt season, time of day, buyers…; groups with 10+ resolved alerts), so a condition that keeps losing lowers its chances.
 
-**The AI committee:** six AI members, each with one job, its own carefully written instructions and its own thinking depth (`ai-committee.js`). The page shows one card per member.
+**The AI committee:** six AI members, each with one job, its own carefully written instructions and its own thinking depth (`ai-committee.ts`). The page shows one card per member.
 
 | # | Member | Model · thinking | Job |
 |---|---|---|---|
@@ -484,9 +484,9 @@ The top of the page shows your closed trades, win rate, total profit or loss in 
 
 **Open:** http://localhost:3000/screener#perps (no API key; uses Binance's futures data, fapi.binance.com)
 
-Swing trades (held up to 14 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `node perps-backtest.js` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
+Swing trades (held up to 14 days) on Binance USDⓈ-M perpetuals, **long and short**, using the setups tested by `npm run perps-backtest` (see [Backtests](#8-backtests-and-replays)), with exactly the same code.
 
-**The tested record:** the app ships with the results of a full run (Dec 2021 to Sep 2026) in `data/perps-report.json`, so verdicts work from the first start. Run `node perps-backtest.js` yourself (1-2 hours the first time) to refresh them with the newest months: your own `perps_report.json` then replaces the shipped copy automatically. Re-run it every month or so.
+**The tested record:** the app ships with the results of a full run (Dec 2021 to Sep 2026) in `data/perps-report.json`, so verdicts work from the first start. Run `npm run perps-backtest` yourself (1-2 hours the first time) to refresh them with the newest months: your own `perps_report.json` then replaces the shipped copy automatically. Re-run it every month or so.
 
 - **Signals:** after every 4h close (00, 04, 08, 12, 16, 20 UTC), the 50 most liquid perpetuals (by 30-day volume, without stablecoins or perpetuals on stocks, ETFs and commodities) are checked for the two setups worth watching:
   - **20-day breakout / breakdown on volume**, long and short;
@@ -553,7 +553,7 @@ Most of them break even **before** fees, so fees turn them into losses. That is 
 - The page shows the balance, the return since the start, the win rate, the worst drop, open trades with their live profit, and every closed trade with the balance after it. Telegram sends each closed trade and the new balance (switch "Scalp paper bot" in Ignition › Telegram).
 - **Settings and reset:** change the start, the risk per trade, the leverage and the maximum open trades, and start again from zero.
 - What to expect: in the test, 1% risk per trade made about **+90% over 27 months**, with a worst drop of 12% and a losing run of 17 trades. So with $100 the gains are small (cents to about $1.50 a trade) and slow. Let it run for a few weeks before deciding anything.
-- **Real account later:** the bot sends every trade through one "broker" part (`paper-bot.js`). Trading a real Binance account means replacing that part with one that places the real orders (entry, stop and take-profit), using an API key that cannot withdraw, an IP whitelist, a daily loss limit and a stop switch. Do this only after the paper bot has made money for several weeks.
+- **Real account later:** the bot sends every trade through one "broker" part (`paper-bot.ts`). Trading a real Binance account means replacing that part with one that places the real orders (entry, stop and take-profit), using an API key that cannot withdraw, an IP whitelist, a daily loss limit and a stop switch. Do this only after the paper bot has made money for several weeks.
 
 **Be ready for this:**
 - It is **rare**: about 20 signals a month across 50 coins, mostly when the market drops fast. Many days have none.
@@ -586,7 +586,7 @@ Most altcoins kept falling against BTC over these years, so strategies that hold
 
 **What to expect:** it **trails simply holding in strong bull years** (2021: +178% vs +231%; 2024: +49% vs +70%), because it sells on dips that recover, and it **loses much less in bad years** (2022: -41% vs -67%; 2025: +42% vs -9%; 2026 so far: +19% vs -18%). The worst drop was still -56% (2021-22): use money you can leave for years.
 
-**The page:** each coin's state (HOLD or CASH), its close and 50-day average, since when, and the close that would flip it; the plan in percent; every switch; the full test. `node spot-backtest.js` refreshes the test with the newest days.
+**The page:** each coin's state (HOLD or CASH), its close and 50-day average, since when, and the close that would flip it; the plan in percent; every switch; the full test. `npm run spot-backtest` refreshes the test with the newest days.
 
 **All coins: trend check.** The same idea for every spot coin trading $2M+ a day (up to 100), checked after each daily close. For each coin: how far it is above or below its own 50-day average, whether it has been **stronger than BTC** over the same 50 days (its price in BTC above its average), and its 30-day change. **BUY OK** needs all three: above its own average, stronger than BTC, and BTC above its own average. Filter the list by BUY OK, above or under the average.
 
@@ -631,7 +631,7 @@ News is context, not a trade signal: big news is often priced in within minutes.
 
 **The table** shows every coin: both ratios, the gap between them (smart money ÷ crowd), the reading, the 24h price change, open interest over 3 days, and the price structure. Each signal is followed to its stop or its 3-day close, and the live record is shown.
 
-**The backtest** (`node onchain-backtest.js`, using the tab's own code): Binance's archive from December 2021 to October 2026, the 50 most liquid perpetuals of each month (412 coins, delisted ones included), entry at the next 4-hour open, 0.16% fees in and out:
+**The backtest** (`npm run onchain-backtest`, using the tab's own code): Binance's archive from December 2021 to October 2026, the 50 most liquid perpetuals of each month (412 coins, delisted ones included), entry at the next 4-hour open, 0.16% fees in and out:
 
 | Rule | Before 2025 | 2025-26 | Random trades, same coins (before · after) |
 |---|---|---|---|
@@ -690,7 +690,7 @@ Settings: `WHALESIG` (`0` = off), `WHALESIG_TELEGRAM`, `WHALESIG_WALLETS` (200),
 
 ### 6.16 Liquidity: order-book heatmap and 5-exchange screener
 
-**Open:** http://localhost:3000/screener#liquidity (the **Liquidity** tab, no API key). Ported from the open-source [crypto-liquidity-terminal](https://github.com/AIUngated/crypto-liquidity-terminal) (MIT License; its copyright notice is kept in `liquidity.js`).
+**Open:** http://localhost:3000/screener#liquidity (the **Liquidity** tab, no API key). Ported from the open-source [crypto-liquidity-terminal](https://github.com/AIUngated/crypto-liquidity-terminal) (MIT License; its copyright notice is kept in `liquidity.ts`).
 
 - **Order-book heatmap:** where buy and sell orders sit for one Binance spot pair (BTCUSDT by default; type another symbol). The app rebuilds the live order book from Binance's depth stream, by Binance's documented procedure: stale updates are dropped and a missed update forces a fresh snapshot. Every second it cuts the book into price bands and keeps about 2 hours. Brighter = more money waiting at that price. The volume bars below come from the trade stream. Next to it: the order book now. Without a WebSocket it reads the order book every 2 seconds instead.
 - **5-exchange screener:** spot prices from Binance, Bybit, OKX, Coinbase and Kraken, merged per coin. For each exchange's 15 most traded coins it also reads the last hour of 1-minute candles and the top 20 order-book levels. From those: a **0-100 hotness score** and the signal checks (volume spike, pump, dump, volatility, wide spread, book imbalance, breakout, hot market). Refreshed every 15 seconds, a few coins per exchange at a time. An exchange that fails shows its error and the others carry on. Stablecoins, tokenized stocks and coins on Binance's Monitoring list are left out.
@@ -742,20 +742,20 @@ Run these in a second terminal (the app can keep running). Each one caches its d
 
 | Command | What it tests | First run |
 |---|---|---|
-| `node screener-backtest.js` | Ignition tiers (early, confirmed) on 5-minute candles | a few minutes |
-| `node bigmove-backtest.js` | Big-move tier (+40% before -10%) on every Binance USDT pair, month by month | 30-60 minutes |
-| `node alpha-backtest.js` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
-| `node rotation-backtest.js` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
-| `node perps-backtest.js` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
-| `node spot-backtest.js` | The Spot plan's BTC + ETH 50-day trend rule since 2021, vs holding, by year and half, other average lengths, double fees; writes `spot_report.json`, which the Spot plan shows (until then it shows `data/spot-report.json`) | under a minute |
-| `node scalp-backtest.js` | The Scalp section's flush bounce on every 5-minute candle of the top-50 perps since July 2024 (delisted coins included), with late-entry and worse-fill checks, calm coins and the short version for comparison; writes `scalp_report.json`, which the Scalp section shows (until then it shows `data/scalp-report.json`) | 20-40 minutes, about 650 MB |
-| `node pump-backtest.js` | Pump watch on the daily candles of every Binance USDT pair since 2021 (delisted ones too), vs any coin on any day, by half-year; writes `pump_report.json`, which the Pump watch panel shows (until then it shows the copy shipped in `data/pump-report.json`) | 5-30 minutes |
+| `npm run backtest` | Ignition tiers (early, confirmed) on 5-minute candles | a few minutes |
+| `npm run bigmove-backtest` | Big-move tier (+40% before -10%) on every Binance USDT pair, month by month | 30-60 minutes |
+| `npm run alpha-backtest` | Alpha tiers on every Alpha token, vs random entries; fills the Alpha tab's **Replay** panel | 20-40 minutes |
+| `npm run rotation-backtest` | BTC rotation strategies and variants, older vs newer half | 5-15 minutes |
+| `npm run perps-backtest` | Swing setups on Binance USDⓈ-M perpetuals, long and short, since Dec 2021, with fees and every funding payment (see below) | 1-2 hours, about 1-2 GB |
+| `npm run spot-backtest` | The Spot plan's BTC + ETH 50-day trend rule since 2021, vs holding, by year and half, other average lengths, double fees; writes `spot_report.json`, which the Spot plan shows (until then it shows `data/spot-report.json`) | under a minute |
+| `npm run scalp-backtest` | The Scalp section's flush bounce on every 5-minute candle of the top-50 perps since July 2024 (delisted coins included), with late-entry and worse-fill checks, calm coins and the short version for comparison; writes `scalp_report.json`, which the Scalp section shows (until then it shows `data/scalp-report.json`) | 20-40 minutes, about 650 MB |
+| `npm run pump-backtest` | Pump watch on the daily candles of every Binance USDT pair since 2021 (delisted ones too), vs any coin on any day, by half-year; writes `pump_report.json`, which the Pump watch panel shows (until then it shows the copy shipped in `data/pump-report.json`) | 5-30 minutes |
 
 Useful options: `--days 45`, `--end 2026-10-28T08` (repeat an earlier window), `--cost 2` (alpha). Re-run them every month: a rule that only worked in one kind of market shows up as one good month and one bad one.
 
 ### Perpetual futures swing backtest
 
-`node perps-backtest.js` tests swing-trade setups (held 2-20 days) on Binance USDⓈ-M perpetuals, long and short. It reads Binance's public history archive (data.binance.vision), so no API key is needed, and it works even where the futures API is blocked.
+`npm run perps-backtest` tests swing-trade setups (held 2-20 days) on Binance USDⓈ-M perpetuals, long and short. It reads Binance's public history archive (data.binance.vision), so no API key is needed, and it works even where the futures API is blocked.
 
 - **Data:**
   - 4h and daily candles;
@@ -944,7 +944,7 @@ The `..._TELEGRAM` and `..._ALERTS` settings only set the defaults: the switches
 | `EARLY2X_SCAN_MINUTES` | `5` | Scan interval |
 | `COINGECKO_API_KEY` | — | Free CoinGecko demo key (faster supply data) |
 
-Every other threshold is listed at the top of `early2x.js`.
+Every other threshold is listed at the top of `early2x.ts`.
 </details>
 
 <details>
@@ -1000,8 +1000,8 @@ Telegram works; the rules are holding the signals back. Open the Ignition tab an
 The Telegram section and the status bar say what is wrong in plain words. The usual causes:
 - **Token or chat id:** the token looks like `123456789:AAH...`, with nothing before or after it. Open your bot in Telegram and press **Start** once. A group id starts with `-100`; if your group was upgraded, Telegram gives it a new id and the app tells you which one to use.
 - **.env:** if a `TELEGRAM_` line appears twice, the last one is used. Quotes are fine: `TELEGRAM_BOT_TOKEN="123:abc"  # my bot`.
-- **VPN or proxy:** Node.js does not use the Windows proxy setting. Switch the VPN to full-tunnel (TUN) mode, or run `set HTTPS_PROXY=http://127.0.0.1:PORT` and start with `node --use-env-proxy server.js`.
-- **Antivirus HTTPS scanning or a wrong PC clock** ("certificate" in the error): fix the clock, exclude api.telegram.org from scanning, or start with `node --use-system-ca server.js`.
+- **VPN or proxy:** Node.js does not use the Windows proxy setting. Switch the VPN to full-tunnel (TUN) mode, or run `set HTTPS_PROXY=http://127.0.0.1:PORT` then `set NODE_OPTIONS=--use-env-proxy` and `npm start` in the same terminal.
+- **Antivirus HTTPS scanning or a wrong PC clock** ("certificate" in the error): fix the clock, exclude api.telegram.org from scanning, or run `set NODE_OPTIONS=--use-system-ca` and then `npm start` in the same terminal.
 </details>
 
 <details>
@@ -1065,7 +1065,7 @@ The BTC rotation downloads daily candles for every narrative coin on the first s
 <details>
 <summary><b>The AI desk says the key is missing</b></summary>
 
-Check that `.env` is in the project folder (next to `server.js`), that the line is `GEMINI_API_KEY=...` with no spaces or quotes and **a key after the `=`** (an empty `GEMINI_API_KEY=` line means no AI), and restart. No Gemini key? Use a [free open-source model](#free-open-source-ai-instead-of-gemini) instead.
+Check that `.env` is in the project folder (next to `server.ts`), that the line is `GEMINI_API_KEY=...` with no spaces or quotes and **a key after the `=`** (an empty `GEMINI_API_KEY=` line means no AI), and restart. No Gemini key? Use a [free open-source model](#free-open-source-ai-instead-of-gemini) instead.
 </details>
 
 ---
@@ -1099,18 +1099,16 @@ npm test
 
 They cover the signal rules, outcome tracking, AI safety rules, the AI committee (with a fake Gemini: who is asked and in what order, what each member sees, thinking settings per model, the debate, the Final Boss overturning either way and the code turning an unsafe YES into WATCH, news hard stops, unverified news, the fast NO, the boss's confidence cap and audit list, the 1% liquidity test, resistance from swing highs and EMAs), the AI track record (following answers with their plans, the scorecard, WAIT triggers, the daily limit), the big-move tier, the Pump watch (the rule, its exit, market mood, and the daily list end to end with a fake Binance), the Scalp section (the flush bounce, its exit, and the live scan end to end with a fake Binance futures API), the Scalp paper bot (position size, margin cap, opening and closing trades after fees), the Spot plan (the trend rule, the simulation, the daily plan with its switch messages, and the all-coins check), the News tab (the sources, merging one story from several sites, the labels and the mood), Early 2x scoring and tracking, BTC rotation, Binance Alpha, perps, the alternative exit rules and the trade journal.
 
-**Run the screener alone:** `node screener.js` (port 3001).
-
 **Next.js + TypeScript (Nov 2026).** Every page is React + TypeScript, served by Next.js (App Router):
 
 | Command | What it runs |
 |---|---|
 | `npm run build`, then `npm start` | The app (production): the engine and every page on one port |
 | `npm run dev` | The same with live reload while you change the pages |
-| `npm run start:classic` (`node server.js`) | The classic HTML pages without Next.js (a fallback for now; Node 18+) |
-| `npm run typecheck` | TypeScript check of the pages and `next-server.ts` |
+| `npm run typecheck` | TypeScript check of the pages (`tsconfig.json`, strict) and of the engine (`tsconfig.engine.json`) |
+| `npm test` | The engine's tests (no internet or API key needed) |
 
-How it fits together: `next-server.ts` runs one Node server on one port. Every `/api` route and every scanner come from the engine in `server.js` (`createHandler()` and `startServices()`). The pages are in `src/app`: `/` (Market Flow, `src/components/market-flow/`), `/screener` (`src/components/screener/`: `ScreenerShell.tsx` is the page around the tabs: the tab bar, the status bar, the section tags, the alert popups and the setup detail window; each tab is its own folder, loaded when it is opened) and `/ai` (`src/components/ai-desk/`). The tab is picked by the address (`/screener#perps`), as before, so old links still work. The API is typed in `src/lib/api.ts` and the tabs' own files. The classic HTML pages in `public/` are kept as a fallback (`/screener-classic` shows the classic screener next to the React one) and can be removed once the React pages have proven themselves.
+How it fits together: `next-server.ts` runs one Node server on one port. Every `/api` route and every scanner come from the engine in `server.ts` (`createHandler()` and `startServices()`). The pages are in `src/app`: `/` (Market Flow, `src/components/market-flow/`), `/screener` (`src/components/screener/`: `ScreenerShell.tsx` is the page around the tabs: the tab bar, the status bar, the section tags, the alert popups and the setup detail window; each tab is its own folder, loaded when it is opened) and `/ai` (`src/components/ai-desk/`). The tab is picked by the address (`/screener#perps`), as before, so old links still work. The API is typed in `src/lib/api.ts` and the tabs' own files. The classic HTML pages in `public/` are kept as a fallback (`/screener-classic` shows the classic screener next to the React one) and can be removed once the React pages have proven themselves.
 
 Next.js needs a server that runs all the time (the scanners never stop), so it cannot run on Vercel-style serverless hosting. Binance also blocks US servers (error 451): host it on a VPS or container outside the US.
 
@@ -1120,30 +1118,30 @@ Next.js needs a server that runs all the time (the scanners never stop), so it c
 
 | File | What it is |
 |---|---|
-| `server.js` | Starts everything; Market Flow Radar and the web pages; exports the handler and start-up for `next-server.ts` |
+| `server.ts` | The engine's entry: every `/api` route, the Market Flow poll and the start-up of every part, used by `next-server.ts` |
 | `next-server.ts`, `src/` | The Next.js + TypeScript server and every page in React (see above) |
-| `live-klines.js` | Live 5-minute candles from Binance's WebSocket stream for the Ignition scanner |
-| `whale-signals.js` | Whale signals: Hyperliquid whales' positions + Ethereum / DEX flows + Binance crowd -> TAKE / LEAVE |
-| `ai-provider.js` | Free open-source AI (Ollama, Groq, OpenRouter, Cerebras, any OpenAI-compatible server) behind the same call as Gemini |
-| `screener.js` | Ignition screener, big-move tier, BTC rotation wiring, shared helpers |
-| `alpha.js` | Binance Alpha ignition |
-| `exits.js` | Alternative exit rules, alert speed, condition groups and AI checks on live alerts |
-| `journal.js` | Your trade journal ("I took it") |
-| `early2x.js` | Early 2x movers |
-| `whales.js`, `flows.js` | Whale tracker (transfers, names, learned exchange addresses, Ethereum DEX swaps) and DEX flows |
-| `rotation.js` | BTC regimes, narratives, alt season meter, forward record |
-| `perps.js`, `perps-history.js` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
-| `perps-live.js` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
-| `health.js` | The system status bar: each part working / warning / not working / off, and the Telegram warnings |
-| `news.js` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
-| `spot-trend.js` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.js`), the daily plan and the all-coins check |
-| `paper-bot.js` | The Scalp paper bot: account, position size from the risk, margin check, trades from the scalp signals, and the broker part a real account would replace |
-| `scalp.js` | Scalp (in the Perps tab): the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.js`), and the live scan after each 5-minute close |
-| `pump.js` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.js`), and the live daily list |
-| `ai-trade.js`, `ai-committee.js`, `ai-tracker.js`, `agent.js` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
-| `telegram.js` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
-| `public/` | The classic web pages (`index.html`, `screener.html`, `ai.html`, `liquidity-tab.js`): the fallback for `npm run start:classic` |
-| `*-backtest.js` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
+| `live-klines.ts` | Live 5-minute candles from Binance's WebSocket stream for the Ignition scanner |
+| `whale-signals.ts` | Whale signals: Hyperliquid whales' positions + Ethereum / DEX flows + Binance crowd -> TAKE / LEAVE |
+| `ai-provider.ts` | Free open-source AI (Ollama, Groq, OpenRouter, Cerebras, any OpenAI-compatible server) behind the same call as Gemini |
+| `screener.ts` | Ignition screener, big-move tier, BTC rotation wiring, shared helpers |
+| `alpha.ts` | Binance Alpha ignition |
+| `exits.ts` | Alternative exit rules, alert speed, condition groups and AI checks on live alerts |
+| `journal.ts` | Your trade journal ("I took it") |
+| `early2x.ts` | Early 2x movers |
+| `whales.ts`, `flows.ts` | Whale tracker (transfers, names, learned exchange addresses, Ethereum DEX swaps) and DEX flows |
+| `rotation.ts` | BTC regimes, narratives, alt season meter, forward record |
+| `perps.ts`, `perps-history.ts` | Perpetual futures swing setups, exits with fees and funding, verdicts (shared by the backtest and the Perps tab), and the Binance archive downloader |
+| `perps-live.ts` | The Perps tab: live scan after each 4h close, TAKE / WAIT / SKIP, tracking, check a trade |
+| `health.ts` | The system status bar: each part working / warning / not working / off, and the Telegram warnings |
+| `news.ts` | News tab: Google News, Binance announcements and CoinDesk, merged and ranked, labelled bullish / bearish / neutral, and the news mood |
+| `spot-trend.ts` | Spot plan: the BTC + ETH 50-day trend rule and its simulation (shared with `spot-backtest.ts`), the daily plan and the all-coins check |
+| `paper-bot.ts` | The Scalp paper bot: account, position size from the risk, margin check, trades from the scalp signals, and the broker part a real account would replace |
+| `scalp.ts` | Scalp (in the Perps tab): the flush bounce on 5-minute candles and its exit (shared with `scalp-backtest.ts`), and the live scan after each 5-minute close |
+| `pump.ts` | Pump watch: the daily rule, its exit and market mood (shared with `pump-backtest.ts`), and the live daily list |
+| `ai-trade.ts`, `ai-committee.ts`, `ai-tracker.ts`, `agent.ts` | AI desk (data, the committee's prompts, code checks, track record, WAIT triggers, daily limit) and the AI market brief (Gemini) |
+| `telegram.ts` | Telegram delivery queue (retries, switches, daily check-in) and diagnostics |
+| `util.ts` | Small helpers the engine shares (settings from .env, rounding, safe file writes, parallel jobs, JSON answers, the same-site check) |
+| `*-backtest.ts` | Replay tests (see [Backtests](#8-backtests-and-replays)) |
 | `data/` | Wallet labels and your token unlock / catalyst list |
 
 Files the app writes while running (`*_state.json`, `*_cache/`, `*_report.json`, `rotation_record.json`, `journal.json`, `whales_names.json`, `perps_state.json`, `scalp_state.json`, `spot_state.json`, `pump_state.json`, `whalesig_state.json`, `ai_calls.json`, and Next.js's `.next/`) are kept out of git.

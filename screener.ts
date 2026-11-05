@@ -1,0 +1,1955 @@
+// Early-Setup Screener v6 (port of screener.py + fast intraday layer). Node.js 22.6+, no dependencies.
+//
+// Two layers:
+//   SETUP layer (slow context): Binance USDT spot tokens (largest 500 by market cap), scored 0-100 on
+//     volume (25) · chart setup (25) · hot narrative (20) · MC/FDV (10) · futures (10) · liquidity (10).
+//   IGNITION layer (fast, every ~20s): 15-minute volume vs that token's normal volume FOR THIS HOUR OF THE DAY,
+//     confirmed by 1h volume, volume persistence across 5m candles, trade count, taker-buy pressure, a rising 4h
+//     trend, price still holding near the spike high, a calm BTC and a tight spread, while price has NOT run yet.
+//     Scored 0-100 (ignition score).
+//   OUTCOME tracking: every alert is followed (win = +TARGET% before -STOP%, flat = exit at the horizon price),
+//     fees are subtracted, and every alert records the logic version, so each version is measured on its own.
+//
+// v4, based on the first 36 tracked outcomes (11% win rate, 22 of 36 "flat"):
+//   - Removes assets that cannot move +TARGET% within the horizon: stablecoins (new ones too, detected by their peg),
+//     tokenized stocks/ETFs/gold and wrapped/staked tokens (Binance sector tags), and any token whose typical 6-hour
+//     range is too small for the target.
+//   - Narrative strength = median 24h change of the sector's own coins (a category's market cap jumps when new coins are
+//     added, which produced fake "+118%" narratives).
+//   - Only Binance is used (no CoinGecko, no API key): market caps and sector tags come from Binance's product list.
+//     Coins on Binance's Monitoring list (delisting risk) never alert.
+//   - New ignition gates: BTC not falling over the last hour, price above a rising 4h average and not stretched far
+//     above it, still near the spike high, no long upper wicks. Breaking the prior 12h high adds points.
+//   - Daily-setup alerts are off by default (9% win rate). The daily score still feeds the ignition score.
+//   - The signal functions are exported, so screener-backtest.js replays exactly this logic on past candles.
+//
+// v5, from a 60-day replay of 65 tokens on 5-minute candles (screener-backtest.js), keeping only changes that helped in
+// both the tuning period and the unseen period:
+//   - Earlier trigger: two hot finished 5-minute candles in a row (each SCREENER_EARLY_RVOL x normal for the hour),
+//     price up and buyers in control, instead of waiting for the 15-minute average. On moves both versions caught, v5's
+//     early tier fired up to ~13 min sooner (median 5 min) at a ~0.5% better price.
+//   - Quality gates: daily RSI <= 65 (overbought tokens failed), not an exhausted candle (last 5m candle closed at its high
+//     with a big body), not the top tick of the 2h range, BTC not falling over 4 hours, no market-wide surge.
+//   - Two alert tiers: "Early ignition" (first signal) and "Confirmed ignition" (same rule plus ignition score >= 65).
+//     Replay, +4% / -2.5% in 6h, 0.2% fees: v4 21% wins, -0.04% avg; early tier ~22% wins, about +0.2%;
+//     confirmed tier 26% wins, +0.55% avg (positive in all six 10-day blocks; v4 was negative in four).
+//   - The 5-minute features use finished candles only, exactly like the replay.
+//
+// v6 (same signals, new exit and honest measurement), from the same replay on crypto only (51 tokens, tokenized stocks
+// removed), with 0.2% fees plus 0.1% slippage:
+//   - Exit +6% / -3% within 12h (was +4% / -2.5% within 6h). Only 45% of confirmed signals ever reached +4% in 12h, so
+//     the old box cut winners short. Confirmed tier: avg +1.09% per trade (was +0.45%), target hit 31% (27%), closed in
+//     profit 51% (52%); early tier +0.19% (-0.03%). Neighbouring settings (+5..+7 / -3..-3.5 / 12..16h) agree. Trailing
+//     stops won more often (60-70% in profit) but made almost nothing in the unseen period, so they were not used.
+//   - Outcomes are judged on 1-minute candles (high / low, stop checked first inside a candle) instead of a price sample
+//     every 20s, and every result is net of fees and an estimated slippage (SCREENER_SLIPPAGE_PCT).
+//   - "Closed in profit" is reported next to "hit target", and each alert can carry an AI review (TAKE / WAIT / SKIP)
+//     so the performance panel shows whether the AI's calls actually do better.
+//
+// v7 (same trigger, two more quality checks), from the first live v6 results plus a 90-day replay (Aug 1 - Oct 29 2026,
+// 96 Binance crypto tokens, each counted only while it had $5M+ 24h volume, as live):
+//   - Live v6, Oct 27-29: 17 quick alerts resolved, 1 hit the target, 10 hit the stop. The AI said SKIP to 7 of them
+//     (all 7 lost), mostly because price sat right under a recent high. The replay agreed: alerts less than 1% under the
+//     12h high (or 1.5% under the 24h high) averaged -0.5% per trade, and alerts below the coin's 20-day average -0.5%.
+//   - New checks: room above (not just under the 12h / 24h high: wait for the break) and price above its 20-day average.
+//     Replay (screener-backtest.js --days 90 --end 2026-10-29T12), +6% / -3% / 12h after costs: confirmed -0.12% ->
+//     +0.49% per trade (older half -0.35%, newer +1.03%; v6 was worse in both), early +0.09% -> +0.46%, with about 40%
+//     fewer alerts. Exit rules, the BTC regime gate and time exits were also
+//     tested; none beat the current rule in both halves, so they are unchanged.
+//
+// Whale tracker ("Whale tracker" tab): whales.js follows every large Ethereum transfer with Arkham-style labels
+// (/api/whales), flows.js follows DEX swaps and token rotations (/api/flows). SCREENER_WHALES=0 switches both off.
+//
+// BTC rotation (rotation.js, "BTC rotation" tab, /api/rotation): ranks altcoin narratives by how they did vs BTC in
+// past weeks with the same BTC regime plus their current price action, backtested week by week. Every ignition
+// candidate carries that context (BTC regime, its narratives' rank) and the performance panel measures whether it helps.
+// SCREENER_REGIME_GATE=1 also holds ignition alerts while BTC's daily regime is a downtrend.
+//
+// "Already moved" guard: tokens that are up a lot in 24h/1h or far above their 20-day high are capped at score 55
+// and never alert; they are shown separately so you can see them but not chase them.
+//
+// Runs inside the app (`npm start`: one server, one port; the page is /screener, its APIs /api/screener, /api/rotation,
+// /api/whales, /api/flows). Own state file.
+// It flags early setups; it cannot predict price moves. Research signal only, not financial advice.
+
+import "./env.ts"; // first: loads .env before any setting below is read
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRotation } from "./rotation.ts";
+import { startFlows, handleFlowsRequest, ingestOnchain, useOnchain, followToken, tokenFlowSummary } from "./flows.ts";
+import { startWhales, handleWhalesRequest, onWhaleSwaps, tokenWhaleSummary } from "./whales.ts";
+import { createWhaleSignals } from "./whale-signals.ts";
+import { createLiquidity } from "./liquidity.ts";
+import { startEarly2x, handleEarly2xRequest } from "./early2x.ts";
+import { createAlpha } from "./alpha.ts";
+import { exitRulesFor, newExits, applyExits, exitsOpen, recordAfter, exitSummary, speedSummary, groupSummary, aiCalibration, maxHours } from "./exits.ts";
+import { createJournal } from "./journal.ts";
+import { createPerps } from "./perps-live.ts";
+import { createPump } from "./pump.ts";
+import { createScalp } from "./scalp.ts";
+import { createOnchain } from "./onchain.ts";
+import { createSpot } from "./spot-trend.ts";
+import { createLiveKlines } from "./live-klines.ts";
+import { sendTelegram as tgSend, telegramStatus, startTelegram, telegramWants, setTelegramPref, noteHeld, setCheckinExtra } from "./telegram.ts";
+import { clamp, fromThisSite, jsonResponse, num, sleep } from "./util.ts";
+import type { Candle, Exits, ExitItem, Group, Mark } from "./exits.ts";
+import type { HealthSource } from "./health.ts";
+import type { AlphaAlert, AlphaTier } from "./alpha.ts";
+
+const env = process.env;
+const LIBRARY_ONLY = env.SCREENER_LIBRARY_ONLY === "1"; // set by screener-backtest.js: export the logic, start nothing
+export const LOGIC_VERSION = 7;
+const DEMO = env.DEMO === "1";
+const POLL_MS = Math.max(10, num("SCREENER_POLL_SECONDS", 20)) * 1000;
+const TOP_N = Math.min(1000, Math.max(50, num("SCREENER_TOP_N", 500)));
+const MIN_QUOTE_VOLUME = num("SCREENER_MIN_QUOTE_VOLUME", 5_000_000);
+const MIN_SCORE_ALERT = num("SCREENER_MIN_SCORE", 70);
+const SETUP_ALERTS = env.SCREENER_SETUP_ALERTS === "1";        // daily-setup alerts: off by default (9% win rate so far)
+const COOLDOWN_MS = num("SCREENER_COOLDOWN_HOURS", 12) * 3_600_000;
+// ---- early-ignition tuning (all adjustable; screener-backtest.js shows which values hold up on past data) ----
+const IGNITE_RVOL = num("SCREENER_IGNITE_RVOL", 4);            // v4 15m trigger level (v5 triggers on 5m candles; kept for the replay)
+const IGNITE_RVOL_1H = num("SCREENER_IGNITE_RVOL_1H", 1.5);    // 1h volume vs normal 1h volume (sustained, not one print)
+const MIN_RET15 = num("SCREENER_MIN_MOVE_15M", 0.2);           // v4: % 15m move needed (v5 uses SCREENER_EARLY_MIN_MOVE over 10m)
+const MAX_RET15 = num("SCREENER_MAX_MOVE_15M", 4);             // % above this in 15m = already running
+const MAX_RET1H = num("SCREENER_MAX_MOVE_1H", 8);              // % above this in 1h = already moved
+const MAX_MOVED_24H = num("SCREENER_MAX_MOVE_24H", 12);        // % above this in 24h = already moved
+const MIN_BUY_RATIO = num("SCREENER_MIN_BUY_RATIO", 58);       // % of 15m volume that was aggressive buying
+const IGNITE_MIN_SCORE = num("SCREENER_IGNITE_MIN_SCORE", 65); // minimum ignition confidence score (0-100) to alert
+const EARLY_RVOL = num("SCREENER_EARLY_RVOL", 3);              // v5 trigger: each of the last two finished 5m candles vs normal
+const EARLY_MIN_MOVE = num("SCREENER_EARLY_MIN_MOVE", 0.2);     // % price rise over those two candles
+const EARLY_ALERTS = env.SCREENER_EARLY_ALERTS !== "0";          // "Early ignition" tier (the confirmed tier needs the score too)
+const EARLY_TG_SIGNS = Math.max(0, Math.min(4, num("SCREENER_EARLY_MIN_SIGNS", 3))); // early alerts go to Telegram (and get an AI review) with this many quality signs (0 = all)
+// Quality gate (v8): Telegram + AI review only when the move is made of normal-sized trades (not a few big tickets) and the
+// coin was calm over the last 24h. Tested on 3 periods, including an older one nobody tuned on; see README "Ignition quality gate".
+const GATE_ON = env.SCREENER_IGNITION_GATE !== "0";
+const GATE_MAX_SIZE = num("SCREENER_GATE_MAX_TICKET", 1.5);      // average trade size of the alert candle vs normal for this hour
+const GATE_MAX_RANGE24 = num("SCREENER_GATE_MAX_RANGE24", 13);   // % high-low range of the 24h before the alert candle
+const MAX_DAILY_RSI = num("SCREENER_MAX_DAILY_RSI", 65);        // overbought on the daily chart = no ignition
+const BTC_4H_MIN = num("SCREENER_BTC_4H_MIN", -0.1);            // % no ignition while BTC is falling over 4 hours
+const MIN_PERSIST = num("SCREENER_MIN_PERSIST", 2);            // of the last 3 five-minute candles, how many must run at 2x normal volume
+const MAX_SPREAD_BPS = num("SCREENER_MAX_SPREAD_BPS", 20);     // skip thin, wide-spread order books (noisy)
+const MARKET_WIDE_SHARE = num("SCREENER_MARKET_WIDE_SHARE", 0.3); // if this share of tokens surges at once, raise the bar
+const MIN_RANGE_RATIO = num("SCREENER_MIN_RANGE_RATIO", 0.5);  // typical 6h high-low range must be >= this x target (else too slow to win)
+const BTC_1H_MIN = num("SCREENER_BTC_1H_MIN", -0.6);           // % no ignition alerts while BTC is down more than this over 1h
+const REQUIRE_TREND = env.SCREENER_REQUIRE_TREND !== "0";       // price above a rising 4h average
+const MAX_EXTENSION = num("SCREENER_MAX_EXTENSION", 4);        // % max distance above the 4h average (stretched = late)
+const MAX_FADE = num("SCREENER_MAX_FADE", 1);                  // % max pullback from the last 15m high (burst fading)
+const MAX_WICK = num("SCREENER_MAX_WICK", 0.55);               // max share of the last 15m range that is upper wick (selling)
+const ROOM_12H = num("SCREENER_ROOM_12H", 1);                  // % no ignition while price sits less than this under its 12h high (resistance: wait for the break)
+const ROOM_24H = num("SCREENER_ROOM_24H", 1.5);                // % the same for the 24h high
+const DAILY_TREND = env.SCREENER_DAILY_TREND !== "0";           // price above its 20-day average
+const TARGET_PCT = num("SCREENER_TARGET_PCT", 6);              // exit / outcome tracking: win = +target% before -stop%
+const STOP_PCT = num("SCREENER_STOP_PCT", 3);
+const OUTCOME_MS = num("SCREENER_OUTCOME_HOURS", 12) * 3_600_000;
+const FEE_PCT = num("SCREENER_FEE_PCT", 0.2);                  // round-trip fees subtracted from every result (0.1% in + 0.1% out)
+const SLIPPAGE_PCT = num("SCREENER_SLIPPAGE_PCT", 0.1);        // estimated fill cost per trade, also subtracted
+const COST_PCT = FEE_PCT + SLIPPAGE_PCT;
+// ---- big-move tier: a 5m ignition on a smaller coin whose daily volume is already expanding, tracked as +40% before
+// -10% within 7 days (its own exit rule). Separate from the quick tiers above, which stay as they are. bigmove-backtest.js
+// replays it on every Binance USDT pair.
+const BIG_ON = env.SCREENER_BIGMOVE !== "0";
+const BIG_ALERTS = () => telegramWants("bigmove");             // Telegram for this tier (on by default; switch on the page or SCREENER_BIGMOVE_ALERTS=0)
+const BIG_TARGET_PCT = num("SCREENER_BIGMOVE_TARGET_PCT", 40);
+const BIG_STOP_PCT = num("SCREENER_BIGMOVE_STOP_PCT", 10);
+const BIG_OUTCOME_MS = num("SCREENER_BIGMOVE_OUTCOME_HOURS", 168) * 3_600_000;
+// Alternative exits followed on every new alert next to its own rule (see exits.js), so live data shows which exit works.
+const EXIT_RULES = { quick: exitRulesFor({ targetPct: TARGET_PCT, stopPct: STOP_PCT, hours: OUTCOME_MS / 3_600_000 }),
+  bigmove: exitRulesFor({ targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hours: BIG_OUTCOME_MS / 3_600_000 }) };
+const exitRulesOf = (e: AlertEvent) => (e.tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick);
+const AFTER_MARKS: Mark[] = [["m1", 1], ["m2", 2], ["m5", 5]];
+const BIG_COOLDOWN_MS = num("SCREENER_BIGMOVE_COOLDOWN_HOURS", 24) * 3_600_000;
+const BIG_5M_LIMIT = 20;                                        // small coins per scan that get the 5m check
+const ROOM_REF_PCT = 4;                                         // move the "too slow" check and the score's room points were tuned on
+const LEGACY_RULE = { targetPct: 4, stopPct: 2.5, hz: 6 * 3_600_000 }; // how alerts before v6 were tracked
+const EXCLUDE_NONCRYPTO = env.SCREENER_EXCLUDE_NONCRYPTO !== "0";
+const REGIME_GATE = env.SCREENER_REGIME_GATE === "1";          // hold ignition alerts while BTC's daily regime is a downtrend
+const HOURLY_REFRESH_MS = 6 * 3_600_000;
+const IGNITE_COOLDOWN_MS = num("SCREENER_IGNITE_COOLDOWN_HOURS", 4) * 3_600_000;
+const MOVED_SCORE_CAP = 55;
+const WEIGHT_GUARD = num("SCREENER_WEIGHT_GUARD", 4800);       // skip the fast scan if Binance used-weight per minute gets this high
+const DEEP_SCAN_LIMIT = 40;
+const MAX_ALERTS_PER_SCAN = 4;
+const HOT_CATEGORY_MIN_CHANGE = 3.0;                            // % median 24h change of a category's coins
+const MAX_HOT_CATEGORIES = 8;
+const BTC_DROP_PAUSE = -3.0;
+const listEnv = (k: string) => new Set((env[k] || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
+const BLOCKLIST = listEnv("SCREENER_BLOCKLIST");
+const ALLOWLIST = listEnv("SCREENER_ALLOWLIST"); // never removed by the tag exclusion
+const ALLOW_MONITORING = env.SCREENER_ALLOW_MONITORING === "1"; // let coins on Binance's Monitoring list alert
+export const STABLES = new Set(["USDT", "USDC", "FDUSD", "TUSD", "DAI", "USDE", "USDD", "PYUSD", "USD1", "BUSD", "USDP", "EUR", "AEUR",
+  "RLUSD", "USDS", "USDG", "USDF", "USD0", "BFUSD", "XUSD", "FRAX", "GHO", "LUSD", "CRVUSD", "EURC", "EURI", "USDB", "SUSDE", "USDX", "USDQ"]);
+// Gold, wrapped and liquid-staked tokens: they track another asset and almost never move +4% in 6h on their own.
+export const NONCRYPTO = new Set(["PAXG", "XAUT", "WBTC", "WBETH", "BNSOL", "STETH", "WSTETH", "CBBTC", "BETH", "WETH"]);
+const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = env.TELEGRAM_CHAT_ID;
+const BN = (env.BINANCE_SPOT_URL || "https://api.binance.com").replace(/\/$/, ""); // e.g. https://data-api.binance.vision
+const BF = "https://fapi.binance.com";
+const here = path.dirname(fileURLToPath(import.meta.url));
+const STATE_FILE = path.join(here, DEMO ? "screener_state.demo.json" : "screener_state.json"); // demo never touches real history
+const KLINE_REFRESH_MS = 60 * 60_000;
+const DAY_MS = 86_400_000;
+const MAX_EVENTS = 400;
+
+// Ignition rules as one object, so the backtest can replay them with other values.
+export const DEFAULT_IGNITION = {
+  rvol: IGNITE_RVOL, rvol1h: IGNITE_RVOL_1H, minRet15: MIN_RET15, maxRet15: MAX_RET15, maxRet1h: MAX_RET1H, maxMove24h: MAX_MOVED_24H,
+  minBuy: MIN_BUY_RATIO, minPersist: MIN_PERSIST, maxSpread: MAX_SPREAD_BPS, minRangeRatio: MIN_RANGE_RATIO, targetPct: ROOM_REF_PCT,
+  btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExt: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
+  earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, maxRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+  room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
+};
+export type IgnitionRules = typeof DEFAULT_IGNITION;
+export const DEFAULT_BIGMOVE = {
+  minVolume: num("SCREENER_BIGMOVE_MIN_VOLUME", 1_000_000), maxVolume: num("SCREENER_BIGMOVE_MAX_VOLUME", 10_000_000), // 24h quote volume, USDT
+  minDailyRvol: num("SCREENER_BIGMOVE_MIN_DAILY_RVOL", 1.5),    // 24h volume vs its 20-day average
+  r5: num("SCREENER_BIGMOVE_R5", 2.5), prevR5: num("SCREENER_BIGMOVE_PREV_R5", 2), minBuy: num("SCREENER_BIGMOVE_MIN_BUY", 52),
+  targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, outcomeHours: BIG_OUTCOME_MS / 3_600_000,
+};
+export type BigMoveRules = typeof DEFAULT_BIGMOVE;
+export const CONFIG = {
+  version: LOGIC_VERSION, targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
+  igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, igniteMinScore: IGNITE_MIN_SCORE, btcDropPausePct: BTC_DROP_PAUSE,
+  minMove15m: MIN_RET15, maxMove15m: MAX_RET15, marketWideShare: MARKET_WIDE_SHARE, minQuoteVolume: MIN_QUOTE_VOLUME,
+  bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
+};
+
+// ───────────────────────────── types ─────────────────────────────
+// A Binance kline row as the REST API sends it (numbers partly as text).
+type Kline = (string | number)[];
+// A Binance 24h (or rolling-window) ticker: the fields used here, numbers as text.
+export interface Ticker { symbol: string; lastPrice: string; quoteVolume: string; priceChangePercent: string }
+// The ticker fields a candidate is built from (the demo makes its own, with numbers).
+type TickerLike = Record<"lastPrice" | "quoteVolume" | "priceChangePercent", string | number>;
+// A coin from Binance's product list: name, circulating supply (cs) and sector tags.
+export interface MetaCoin { name: string; cs: number | null; tags: string[] }
+// A coin in the universe: mc = market cap, fdv unknown on Binance (null).
+export interface CoinInfo { id?: string; name?: string; mc?: number | null; fdv?: number | null; rank?: number | null; tags?: string[] }
+// [base, info, 24h ticker] of a coin the scan looks at.
+type EligibleCoin = [base: string, info: CoinInfo, tk: Ticker];
+// Closed daily candles (closes, highs, lows, quote volumes), oldest first.
+export interface DailyCandles { at?: number; day?: number; closes: number[]; highs: number[]; lows?: number[]; qvols: number[] }
+export interface TechMetrics { rvol: number; avgDailyQuote: number; distToHigh: number; aboveSma: boolean; rsi: number | null; compressed: boolean }
+// Hourly candles as columns (arrays or typed arrays); trades is optional.
+export interface HourlyColumns { t: ArrayLike<number>; high: ArrayLike<number>; low: ArrayLike<number>; qv: ArrayLike<number>; trades?: ArrayLike<number> }
+export interface HourlyProfile { hours: number[]; range6h: number | null; n: number; tradeHours: number[] | null }
+// 5-minute candles as columns: t = open time, qv = quote volume, buy = taker-buy quote volume.
+export interface Candles5m { t: ArrayLike<number>; open: ArrayLike<number>; high: ArrayLike<number>; low: ArrayLike<number>; close: ArrayLike<number>; qv: ArrayLike<number>; trades: ArrayLike<number>; buy: ArrayLike<number> }
+export interface GateInput { ticketSize: number | null; range24: number | null }
+export type Gate = ReturnType<typeof ignitionGate>;
+export interface FiveMinFeatures {
+  buy15: number | null; persist: number; persistOf: number; tradesRatio: number | null; rangePos: number | null; nearHigh: boolean; fadePct: number;
+  wickShare: number; trendUp: boolean | null; extPct: number | null; breakout: boolean | null; distTo12hHigh: number | null; distTo24hHigh: number | null;
+}
+export interface EarlyFeatures { r5: number | null; prevR5: number | null; ret10: number; buy10: number | null; closePos5: number | null; body5: number }
+// A coin's fast-layer metrics (fastLayer): 15m / 1h windows vs normal, BTC, the 5m features, the gate inputs and the
+// daily RSI / 20-day average (set by buildCandidate).
+export interface FastMetrics extends Partial<FiveMinFeatures> {
+  avgDaily?: number; hourly?: (HourlyProfile & { at?: number }) | null; seasonal?: boolean; rvol15?: number; ret15?: number; spreadBps?: number | null;
+  range6h?: number | null; monitoring?: boolean; qv24?: number; rvolD?: number | null; marketWide?: boolean; rs15?: number; regimeOff?: string | null;
+  btc1h?: number | null; btc4h?: number | null; rvol1h?: number | null; ret1h?: number | null; early?: EarlyFeatures | null; bigEarly?: EarlyFeatures | null;
+  gate?: GateInput; rsiD?: number | null; aboveSma20d?: boolean | null;
+}
+// A hot narrative a coin belongs to: the strongest median 24h change and every matching narrative's name.
+export interface Narrative { change: number; names: string[] }
+export interface IgnitionVerdict { state: "ignited" | "heating" | "ran" | null; moved: boolean; movedWhy: string[]; miss: string[]; slow: boolean }
+export interface BigMoveInput { quoteVolume: number; rvolD: number | null; r5?: number | null; prevR5?: number | null; ret10?: number | null; buy10?: number | null; monitoring?: boolean }
+export interface EarlySignsInput { buy10?: number | null; rvolD?: number | null; closePos5?: number | null; extPct?: number | null }
+export type EarlyQuality = ReturnType<typeof earlyQuality>;
+export type Candidate = ReturnType<typeof buildCandidate>;
+export type MarketContext = ReturnType<typeof marketContext>;
+// What an alert saved about its coin: the candidate at alert time, the market around it and the AI's call.
+export type AlertDetail = Candidate & { ctx?: MarketContext; aiDecision?: string };
+// How an alert is tracked: win = +targetPct% before -stopPct% within hz ms.
+export interface TrackRule { targetPct: number; stopPct: number; hz: number }
+// An alert's outcome tracking. hiW / loW = best / worst price inside the window; exits = the alternative exits (exits.ts);
+// after = price 1, 2 and 5 minutes after the alert.
+export interface AlertTrack {
+  entry: number; high?: number; low?: number; last?: number; hiW?: number; loW?: number; rule?: TrackRule; exits?: Exits;
+  after?: Record<string, number | false | null>; outcome?: string; exitPct?: number; outcomeAt?: number; estimated?: boolean; candles?: boolean;
+  lastCandleT?: number; lastClose?: number; checkedAt?: number;
+}
+// An AI review saved with an alert (TAKE / WAIT / SKIP), or the error that stopped it.
+export interface AiReview { decision?: string; error?: string; at?: number; headline?: string | null; expectedValuePct?: number | null; probTargetPct?: number | null }
+// One alert (state.events, saved in screener_state.json).
+export interface AlertEvent {
+  id: string; type: string; tier: string; v: number; symbol: string; score: number; label: string; time: number; message: string;
+  quality?: EarlyQuality; aplus?: boolean; gate?: Gate; quiet?: boolean; quietWhy?: string | null; detail?: AlertDetail; track?: AlertTrack; ai?: AiReview;
+}
+// The live state (/api/screener; screenerSnapshot() for the AI desk).
+export interface ScreenerState {
+  startedAt: number; lastUpdated: number | null; lastScanMs: number | null; pollIntervalMs: number; demo: boolean; status: string;
+  metaStatus: { source: string; at?: number | null; coins?: number; sectors?: number; error?: string | null }; futuresStatus: string;
+  errors: Record<string, string>; regime: { btcChange24hPct: number | null; btc1hPct: number | null; btc4hPct?: number | null; ok: boolean };
+  universe: { binance: number; eligible: number; excluded: number; slow: number; smallCoins?: number; rankedBy?: string; monitoring?: number };
+  warmup: { loaded: number; total: number; seasonal: number }; breadth: { hotShare: number | null; marketWide: boolean };
+  stats: ReturnType<typeof computeStats> | null; hotNarratives: { id: string; name: string; change24hPct: number | null }[];
+  candidates: Candidate[]; events: AlertEvent[]; config: Record<string, unknown>; telegramConfigured: boolean; mainUrl: string;
+  binancePausedUntil?: number | null; stream?: StreamStatus; closeScanAfterMs?: number;
+}
+export interface StreamStatus {
+  on: boolean; why: string | null; connected?: boolean; subscribed?: number; cached?: number; lastMsgAt?: number | null; reconnects?: number;
+  error?: string | null; fromMemory?: number; downloaded?: number; closeScanAfterMs?: number | null;
+}
+
+const state: ScreenerState = {
+  startedAt: Date.now(),
+  lastUpdated: null,
+  lastScanMs: null,
+  pollIntervalMs: POLL_MS,
+  demo: DEMO,
+  status: "starting",
+  metaStatus: { source: "none" },
+  futuresStatus: "not_checked",
+  errors: {},
+  regime: { btcChange24hPct: null, btc1hPct: null, btc4hPct: null, ok: true },
+  universe: { binance: 0, eligible: 0, excluded: 0, slow: 0 },
+  warmup: { loaded: 0, total: 0, seasonal: 0 },
+  breadth: { hotShare: null, marketWide: false },
+  stats: null,
+  hotNarratives: [],
+  candidates: [],
+  events: [],
+  config: {
+    version: LOGIC_VERSION, minScore: MIN_SCORE_ALERT, setupAlerts: SETUP_ALERTS, cooldownHours: COOLDOWN_MS / 3_600_000,
+    minQuoteVolume: MIN_QUOTE_VOLUME, topN: TOP_N, btcDropPausePct: BTC_DROP_PAUSE, igniteRvol: IGNITE_RVOL, igniteRvol1h: IGNITE_RVOL_1H,
+    minBuyRatio: MIN_BUY_RATIO, maxMove15m: MAX_RET15, maxMove1h: MAX_RET1H, maxMove24h: MAX_MOVED_24H, igniteMinScore: IGNITE_MIN_SCORE,
+    maxSpreadBps: MAX_SPREAD_BPS, minPersist: MIN_PERSIST, minRangeRatio: MIN_RANGE_RATIO, minRange6hPct: MIN_RANGE_RATIO * ROOM_REF_PCT,
+    btc1hMin: BTC_1H_MIN, requireTrend: REQUIRE_TREND, maxExtension: MAX_EXTENSION, maxFade: MAX_FADE, maxWick: MAX_WICK,
+    targetPct: TARGET_PCT, stopPct: STOP_PCT, outcomeHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT,
+    igniteCooldownHours: IGNITE_COOLDOWN_MS / 3_600_000, excludeNonCrypto: EXCLUDE_NONCRYPTO, regimeGate: REGIME_GATE,
+    earlyRvol: EARLY_RVOL, earlyMinMove: EARLY_MIN_MOVE, earlyAlerts: EARLY_ALERTS, earlyMinSigns: EARLY_TG_SIGNS, maxDailyRsi: MAX_DAILY_RSI, btc4hMin: BTC_4H_MIN,
+    gate: { on: GATE_ON, maxTicket: GATE_MAX_SIZE, maxRange24: GATE_MAX_RANGE24 },
+    room12h: ROOM_12H, room24h: ROOM_24H, dailyTrend: DAILY_TREND,
+    bigmove: { on: BIG_ON, get telegram() { return BIG_ALERTS(); }, ...DEFAULT_BIGMOVE, cooldownHours: BIG_COOLDOWN_MS / 3_600_000 },
+  },
+  telegramConfigured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID),
+  mainUrl: env.MAIN_URL || "/", // the Market Flow Radar is on the same server
+};
+const lastAlertAt = new Map<string, number>();
+const dailyCache = new Map<string, DailyCandles>();   // base -> closed daily candles (refreshed hourly / on UTC day change)
+const dailyRetryAt = new Map<string, number>(); // base -> time before which a failed load is not retried
+const hourlyCache = new Map<string, HourlyProfile & { at: number }>();  // base -> hour-of-day volume medians + typical 6h range
+const hourlyRetryAt = new Map<string, number>();
+const oiCache = new Map<string, { at: number; v: number | null }>();
+let fundingCache = { at: 0, map: new Map<string, number>() };
+let binanceWeight = 0;
+export const usedWeight = () => binanceWeight;
+let polling = false, pollAgain = false, dailyBusy = false, hourlyBusy = false;
+let bookCache = { at: 0, map: new Map<string, number>() };
+// BTC-regime narrative rotation (own tab). Not created when the backtest imports this file.
+const rotation = LIBRARY_ONLY ? null : createRotation({
+  fetchJson: (...a: Parameters<typeof fetchJson>) => fetchJson(...a), cacheDir: path.join(here, DEMO ? "rotation_cache_demo" : "rotation_cache"), stables: STABLES, nonCrypto: NONCRYPTO,
+  getNarratives: (prices) => binanceNarratives(prices), demo: DEMO, days: Math.min(2000, Math.max(300, num("ROTATION_DAYS", 1000))), holdDays: num("ROTATION_HOLD_DAYS", 7), feePct: FEE_PCT,
+  only: (env.ROTATION_NARRATIVES || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean),
+  startDelayMs: num("ROTATION_START_DELAY_SECONDS", 45) * 1000, usedWeight: () => binanceWeight,
+  recordFile: path.join(here, DEMO ? "rotation_record.demo.json" : "rotation_record.json"), // daily coin lists + live weekly picks
+  sendTelegram: (t) => tgSend(t, { kind: "rotation" }), telegramOn: () => telegramWants("rotation"), // regime / holdings change message: off by default
+});
+// Binance Alpha tokens (Binance Wallet), which are not spot pairs: same ignition idea on their 5m candles
+const alphaHooks: ((a: AlphaAlert) => unknown)[] = [];
+const alpha = LIBRARY_ONLY || env.ALPHA === "0" ? null : createAlpha({
+  fetchJson, stateFile: path.join(here, "alpha_state.json"), reportFile: path.join(here, "alpha_report.json"),
+  sendTelegram: (t, kind) => tgSend(t, { kind }), telegramConfigured: () => telegramStatus().configured, wantTelegram: telegramWants,
+  context: () => marketContext(Date.now()), onAlert: (a) => { for (const h of alphaHooks) Promise.resolve().then(() => h(a)).catch(() => {}); },
+});
+// Perps tab: swing setups on Binance USDⓈ-M perpetuals, the ones tested by perps-backtest.js (perps-live.js)
+const perps = LIBRARY_ONLY || env.PERPS === "0" ? null : createPerps({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "perps_state.demo.json" : "perps_state.json"), reportFile: path.join(here, "perps_report.json"),
+  bundledReport: path.join(here, "data", "perps-report.json"), // shipped results, until you run perps-backtest.js yourself
+  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, telegramConfigured: () => telegramStatus().configured, heldTelegram: noteHeld,
+  top: num("PERPS_TOP", 50), costPct: num("PERPS_COST_PCT", 0.08), demo: DEMO,
+});
+// Scalp tab: 5-minute flush-bounce longs on the top-50 perpetuals, tested by scalp-backtest.js (scalp.js)
+const scalp = LIBRARY_ONLY || env.SCALP === "0" ? null : createScalp({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "scalp_state.demo.json" : "scalp_state.json"), reportFile: path.join(here, "scalp_report.json"),
+  bundledReport: path.join(here, "data", "scalp-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+  extraSignals: () => perps?.paperSignals?.() || [], // the paper bot also takes the Perps A+ TAKE trades
+});
+// On-chain tab: crowd vs smart money positioning (Binance long/short ratios) on the top-50 perpetuals (onchain.js)
+const onchain = LIBRARY_ONLY || env.ONCHAIN === "0" ? null : createOnchain({
+  fetchJson, base: env.BINANCE_FUTURES_URL || BF, stateFile: path.join(here, DEMO ? "onchain_state.demo.json" : "onchain_state.json"), reportFile: path.join(here, "onchain_report.json"),
+  bundledReport: path.join(here, "data", "onchain-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO,
+});
+// Whales tab, "Whale signals" (whale-signals.js): TAKE / LEAVE calls from the positions of Hyperliquid's biggest profitable
+// accounts, Ethereum exchange flows (whales.js), DEX flows (flows.js) and Binance's crowd vs top traders (onchain.js).
+// WHALESIG=0 turns it off.
+let crowdMemo = { at: 0, map: new Map() };
+const crowdOf = (b: string) => {
+  if (Date.now() - crowdMemo.at > 60_000) crowdMemo = { at: Date.now(), map: new Map((onchain?.api().coins || []).map((c) => [c.base, c])) };
+  return crowdMemo.map.get(b) || null;
+};
+const whaleSig = LIBRARY_ONLY || env.WHALESIG === "0" ? null : createWhaleSignals({
+  fetchJson, stateFile: path.join(here, DEMO ? "whalesig_state.demo.json" : "whalesig_state.json"), demo: DEMO, crowdOf,
+  exchangeFlow: (b) => (env.SCREENER_WHALES !== "0" ? tokenWhaleSummary(b) : null), dexFlow: (b) => (env.SCREENER_WHALES !== "0" ? tokenFlowSummary(b) : null),
+  sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants,
+});
+// Coins the daily lists leave out: stablecoins, tokenized stocks and gold, wrapped tokens, the blocklist, and coins on
+// Binance's Monitoring list (unless SCREENER_ALLOW_MONITORING=1).
+const notListed = (b: string) => { const info = meta.coins.get(b); return BLOCKLIST.has(b) || STABLES.has(b) || NONCRYPTO.has(b) || isNonCryptoInfo(info) ||
+  (info?.tags || []).some((t) => /stable/i.test(t)) || (!ALLOW_MONITORING && isMonitoring(info)); };
+// Liquidity tab (liquidity.js): a live Binance order-book heatmap and a 5-exchange screener, ported from the open-source
+// crypto-liquidity-terminal (MIT). LIQUIDITY=0 turns it off.
+const liquidity = LIBRARY_ONLY || env.LIQUIDITY === "0" ? null : createLiquidity({ fetchJson, stateDir: here, excluded: notListed });
+// Spot plan (Ignition tab): hold BTC and ETH only while each is above its 50-day average, plus the same check on the
+// top 100 coins (spot-trend.js, tested by spot-backtest.js)
+const spot = LIBRARY_ONLY || env.SPOT === "0" ? null : createSpot({
+  fetchJson, base: BN, stateFile: path.join(here, DEMO ? "spot_state.demo.json" : "spot_state.json"), reportFile: path.join(here, "spot_report.json"),
+  bundledReport: path.join(here, "data", "spot-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO, excluded: notListed,
+});
+// Pump watch (Ignition tab): once a day after the daily close, coins near their 90-day high on 2x+ volume (pump.js,
+// tested by pump-backtest.js). It gets the coin list and prices from each scan.
+const pump = LIBRARY_ONLY || env.PUMP === "0" ? null : createPump({
+  fetchJson, base: BN, stateFile: path.join(here, DEMO ? "pump_state.demo.json" : "pump_state.json"), reportFile: path.join(here, "pump_report.json"),
+  bundledReport: path.join(here, "data", "pump-report.json"), sendTelegram: (t, kind) => tgSend(t, { kind }), wantTelegram: telegramWants, demo: DEMO, heldTelegram: noteHeld,
+  excluded: notListed,
+});
+// server.js runs the AI review on new Alpha alerts and saves it with them; the AI desk reads an Alpha token's live data.
+export const onAlphaAlert = (fn: (a: AlphaAlert) => unknown) => { alphaHooks.push(fn); };
+export const annotateAlpha = (id: string, patch: Partial<AlphaAlert>) => {
+  const a = alpha?.alertById(id);
+  if (a && patch.ai?.decision) noteAiVerdict("A:" + a.alphaId, patch.ai);
+  return alpha?.annotate(id, patch) ?? false;
+};
+export const alphaTokenFor = (key: string) => alpha?.tokenFor(key) ?? null;
+export const alphaSnapshot = () => alpha?.api() ?? null;
+export const alphaMatchingFor = (a: Partial<AlphaAlert>, tier: AlphaTier | null = null) => alpha?.matchingGroups(a, 10, tier) ?? [];
+// Your own trades ("I took it"), linked to the alerts they came from.
+const journal = createJournal({ file: path.join(here, DEMO ? "journal.demo.json" : "journal.json"),
+  priceOf: async (j) => {
+    if (j.tool === "alpha") return alpha?.tokenFor(j.alphaId || j.symbol)?.price ?? null;
+    if (j.tool === "perps" && perps?.priceOf(j.symbol)) return perps.priceOf(j.symbol);
+    const base = String(j.symbol || "").toUpperCase().replace(/USDT$/, "");
+    const c = state.candidates.find((x) => x.base === base);
+    if (c?.price) return c.price;
+    try { return Number((await fetchJson(`${BN}/api/v3/ticker/price?symbol=${encodeURIComponent(base)}USDT`, { retries: 0 })).price) || null; } catch { return null; }
+  },
+  alertResult: (id) => { // the alert's own tracked result after its standard costs, to compare with yours
+    const e = state.events.find((x) => x.id === id);
+    if (e) return { price: e.track?.entry ?? null, netPct: resolvedOk(e) ? round(resultOf(e) - COST_PCT, 2) : null, status: e.track?.outcome || "open", label: e.label, time: e.time };
+    const a = alpha?.alertById(id);
+    if (a) return { price: a.f.close, netPct: a.track.status !== "open" ? a.track.resultPct : null, status: a.track.status, label: `Alpha ${a.tier}`, time: a.t };
+    return perps?.signalById(id) || null;
+  } });
+
+// ───────────────────────────── utilities ─────────────────────────────
+const n = (v: unknown): number | null => {
+  const x = Number(v);
+  return v === null || v === undefined || v === "" || !Number.isFinite(x) ? null : x;
+};
+const round = (v: number | null | undefined, d = 2): number | null => (Number.isFinite(v) ? Number(v.toFixed(d)) : null);
+const mean = (a: number[]): number => a.reduce((s, x) => s + x, 0) / a.length;
+const pstdev = (a: number[]): number => { const m = mean(a); return Math.sqrt(mean(a.map((x) => (x - m) ** 2))); };
+export const median = (a: number[]): number | null => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+class HttpError extends Error {
+  declare status: number;
+  declare retryAfterMs: number | null;
+  declare noRetry?: boolean; // the caller must not retry (rate limit: wait for the pause)
+  constructor(message: string, status: number, retryAfterMs: number | null = null) { super(message); this.status = status; this.retryAfterMs = retryAfterMs; }
+}
+const RETRYABLE = [418, 429, 500, 502, 503, 504];
+const SOURCES: [string, string][] = [["fapi.binance.com", "Binance Futures"], ["api.binance.com", "Binance Spot"], ["/alpha-trade/", "Binance Alpha"], ["/cex/alpha/", "Binance Alpha"], ["www.binance.com", "Binance asset info"], ["api.telegram.org", "Telegram"]];
+const sourceOf = (url: string): string => (SOURCES.find(([h]) => String(url).includes(h)) || [, "API"])[1];
+// After a 429/418 Binance tells us how long to back off (Retry-After). Until then no request is sent to that host,
+// because hammering a rate-limited Binance IP escalates to a temporary ban (418).
+const hostPause = new Map<string, number>();
+export const binancePause = () => { const t = Math.max(hostPause.get("Binance Spot") || 0, hostPause.get("Binance Futures") || 0); return t > Date.now() ? t : null; };
+
+export interface FetchOptions { headers?: Record<string, string>; method?: string; body?: string; timeoutMs?: number; retries?: number; retry429?: boolean }
+// The parsed JSON answer (any: each caller reads its own API's fields).
+export async function fetchJson(url: string, { headers = {}, method = "GET", body, timeoutMs = 12_000, retries = 2, retry429 = true }: FetchOptions = {}): Promise<any> {
+  const src = sourceOf(url);
+  const paused = hostPause.get(src);
+  if (paused && paused > Date.now()) throw new HttpError(`${src} is paused for ${Math.ceil((paused - Date.now()) / 1000)}s after a rate limit`, 429, paused - Date.now());
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method, body, signal: ctrl.signal,
+        headers: { "user-agent": "EarlySetupScreener/4.0", accept: "application/json", ...headers },
+      });
+      if (String(url).startsWith(BN) && typeof res.headers?.get === "function") {
+        const w = Number(res.headers.get("x-mbx-used-weight-1m"));
+        if (Number.isFinite(w) && w > 0) binanceWeight = w;
+      }
+      if (res.ok) return await res.json();
+      const hint = res.status === 403 || res.status === 451 ? " (access blocked in this region)"
+        : res.status === 418 ? " (IP temporarily banned for too many requests)" : res.status === 429 ? " (rate limited)" : "";
+      const ra = Number(typeof res.headers?.get === "function" ? res.headers.get("retry-after") : NaN);
+      const retryAfterMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 3600) * 1000 : null;
+      lastErr = new HttpError(`${src} HTTP ${res.status}${hint}`, res.status, retryAfterMs);
+      if ((res.status === 429 || res.status === 418) && src.startsWith("Binance")) {
+        hostPause.set(src, Date.now() + (retryAfterMs ?? (res.status === 418 ? 300_000 : 60_000)));
+        lastErr.noRetry = true;
+        throw lastErr;
+      }
+      if (res.status === 429 && !retry429) lastErr.noRetry = true; // the caller handles the wait
+      if (!RETRYABLE.includes(res.status) || lastErr.noRetry) throw lastErr;
+    } catch (e) {
+      if (e instanceof HttpError && (!RETRYABLE.includes(e.status) || e.noRetry)) throw e;
+      lastErr = e;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < retries) await sleep(lastErr?.retryAfterMs ?? 1500 * (attempt + 1) * (lastErr?.status === 429 ? 4 : 1));
+  }
+  throw lastErr;
+}
+
+// A failed item's result is { _error, _item } instead of fn's value, so callers check x._error first.
+export type MapResult<T, R> = R & { _error?: string; _item?: T };
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<MapResult<T, R>[]> {
+  const results: (R | { _error: string; _item: T })[] = new Array(items.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) break;
+      try { results[i] = await fn(items[i], i); }
+      catch (e) { results[i] = { _error: e.message, _item: items[i] }; }
+      await sleep(25);
+    }
+  }));
+  return results as MapResult<T, R>[];
+}
+
+// ───────────────────────────── indicators ─────────────────────────────
+export function rsi(closes: number[], len = 14): number | null {
+  if (closes.length < len + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= len; i++) {
+    gains += Math.max(closes[i] - closes[i - 1], 0);
+    losses += Math.max(closes[i - 1] - closes[i], 0);
+  }
+  gains /= len; losses /= len;
+  for (let i = len + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    gains = (gains * (len - 1) + Math.max(d, 0)) / len;
+    losses = (losses * (len - 1) + Math.max(-d, 0)) / len;
+  }
+  return losses === 0 ? 100 : 100 - 100 / (1 + gains / losses);
+}
+
+// d = closed daily candles {closes, highs, qvols}; lastPrice and vol24 come from the live 24h ticker.
+export function techMetrics(d: DailyCandles | null | undefined, lastPrice: number, vol24: number): TechMetrics | null {
+  if (!d || d.closes.length < 29) return null;
+  const avgVol = mean(d.qvols.slice(-20));
+  const rets: number[] = [];
+  for (let i = 1; i < d.closes.length; i++) rets.push(d.closes[i] / d.closes[i - 1] - 1);
+  const sdRecent = pstdev(rets.slice(-7));
+  const sdPrior = pstdev(rets.slice(-27, -7));
+  return {
+    rvol: avgVol > 0 ? vol24 / avgVol : 0,
+    avgDailyQuote: avgVol,
+    distToHigh: lastPrice / Math.max(...d.highs.slice(-20)) - 1, // <0 below the 20d high, >0 above
+    aboveSma: lastPrice > mean(d.closes.slice(-20)),
+    rsi: rsi([...d.closes, lastPrice]),
+    compressed: sdPrior > 0 && sdRecent < 0.7 * sdPrior,
+  };
+}
+
+// Hour-of-day volume (and trade count) medians and the typical (median) 6-hour high-low range, from ~14 days of closed
+// hourly candles. c = columns {t, high, low, qv, trades?}; [from, to) selects the candles. Shared with the backtest.
+export function hourlyProfile(c: HourlyColumns, from = 0, to = c.t.length): HourlyProfile | null {
+  const byHour = Array.from({ length: 24 }, (): number[] => []), all: number[] = [], trByHour = Array.from({ length: 24 }, (): number[] => []), allTr: number[] = [];
+  for (let i = from; i < to; i++) {
+    const v = c.qv[i];
+    if (!Number.isFinite(v)) continue;
+    const h = Math.floor(c.t[i] / 3_600_000) % 24;
+    byHour[h].push(v);
+    all.push(v);
+    const tr = c.trades?.[i];
+    if (Number.isFinite(tr)) { trByHour[h].push(tr); allTr.push(tr); }
+  }
+  if (all.length < 120) return null;
+  const overall = median(all), overallTr = allTr.length >= 120 ? median(allTr) : null, ranges: number[] = [];
+  for (let i = from; i + 6 <= to; i++) {
+    let hi = -Infinity, lo = Infinity, ok = true;
+    for (let j = i; j < i + 6; j++) {
+      const h = c.high[j], l = c.low[j];
+      if (!Number.isFinite(h) || !Number.isFinite(l)) { ok = false; break; }
+      if (h > hi) hi = h;
+      if (l < lo) lo = l;
+    }
+    if (ok && lo > 0) ranges.push((hi / lo - 1) * 100);
+  }
+  return { hours: byHour.map((a) => (a.length >= 4 ? median(a) : overall)), range6h: ranges.length ? median(ranges) : null, n: all.length,
+    tradeHours: overallTr == null ? null : trByHour.map((a) => (a.length >= 4 ? median(a) : overallTr)) };
+}
+
+// Quality-gate inputs for the alert candle (index end of 5m columns k, the newest finished one) and h = hourlyProfile:
+// ticketSize = its average trade size (USDT per trade) vs the normal average trade size for this hour of the day;
+// range24 = % high-low range of the 288 five-minute candles before it. Shared with the backtest.
+export function gateFeatures(k: Pick<Candles5m, "t" | "high" | "low" | "qv" | "trades">, end: number, h: HourlyProfile | null | undefined): GateInput {
+  let ticketSize = null, range24 = null;
+  const hr = new Date(k.t[end]).getUTCHours(), nv = h?.hours?.[hr], nt = h?.tradeHours?.[hr];
+  if (nv > 0 && nt > 0 && k.trades[end] > 0) ticketSize = (k.qv[end] / k.trades[end]) / (nv / nt);
+  if (end >= 288) {
+    let hi = -Infinity, lo = Infinity;
+    for (let i = end - 288; i < end; i++) { if (k.high[i] > hi) hi = k.high[i]; if (k.low[i] < lo) lo = k.low[i]; }
+    if (lo > 0 && Number.isFinite(hi)) range24 = (hi / lo - 1) * 100;
+  }
+  return { ticketSize, range24 };
+}
+// Gate verdict. Missing data = not passed (the alert still shows; it just is not sent).
+export function ignitionGate(x: Partial<GateInput> | null, maxTicket = GATE_MAX_SIZE, maxRange24 = GATE_MAX_RANGE24) {
+  const ticketSize = x?.ticketSize ?? null, range24 = x?.range24 ?? null;
+  const smallTickets = ticketSize == null ? null : ticketSize <= maxTicket, calmRange = range24 == null ? null : range24 <= maxRange24;
+  return { ticketSize: round(ticketSize, 2), range24: round(range24, 1), smallTickets, calmRange, pass: smallTickets === true && calmRange === true };
+}
+
+// Confirmation features from 5-minute candles. k = columns {t, open, high, low, close, qv, trades, buy};
+// end = index of the newest candle (may be unfinished live); expect5(endMs) = normal volume for the 5 min ending at endMs.
+export function fiveMinFeatures(k: Candles5m, end: number, nowMs: number, expect5: (endMs: number) => number): FiveMinFeatures | null {
+  if (end < 11) return null;
+  let total = 0, buy = 0, persist = 0, considered = 0, wick = 0, span = 0, hi3 = -Infinity, rec = 0;
+  for (let i = end - 2; i <= end; i++) {
+    total += k.qv[i]; buy += k.buy[i];
+    hi3 = Math.max(hi3, k.high[i]);
+    wick += k.high[i] - Math.max(k.open[i], k.close[i]);
+    span += k.high[i] - k.low[i];
+    const elapsed = clamp((nowMs - k.t[i]) / 300_000, 0, 1);
+    rec += k.trades[i] / clamp(elapsed, 0.3, 1);
+    if (elapsed < 0.3) continue; // too early in this candle to judge it
+    considered++;
+    const exp = expect5(k.t[i] + 300_000) * elapsed;
+    if (exp > 0 && k.qv[i] / exp >= 2) persist++;
+  }
+  const close = k.close[end], baseT: number[] = [];
+  for (let i = Math.max(0, end - 11); i <= end - 3; i++) baseT.push(k.trades[i]);
+  const baseTrades = median(baseT);
+  let hi = -Infinity, lo = Infinity;
+  for (let i = Math.max(0, end - 23); i <= end; i++) { hi = Math.max(hi, k.high[i]); lo = Math.min(lo, k.low[i]); }
+  const out: FiveMinFeatures = {
+    buy15: total > 0 ? (buy / total) * 100 : null,
+    persist, persistOf: considered,
+    tradesRatio: baseTrades > 0 ? rec / 3 / baseTrades : null,
+    rangePos: hi > lo ? (close - lo) / (hi - lo) : null,          // position in the 2h range
+    nearHigh: close >= hi * 0.995,
+    fadePct: hi3 > 0 && close > 0 ? (hi3 / close - 1) * 100 : 0,  // pullback from the last 15m high
+    wickShare: span > 0 ? wick / span : 0,                         // share of the last 15m range that is upper wick
+    trendUp: null, extPct: null, breakout: null, distTo12hHigh: null, distTo24hHigh: null,
+  };
+  if (end >= 59) { // 4h average and its slope over the last hour
+    let s = 0, sp = 0;
+    for (let i = end - 47; i <= end; i++) s += k.close[i];
+    for (let i = end - 59; i <= end - 12; i++) sp += k.close[i];
+    const sma = s / 48, smaPrev = sp / 48;
+    out.trendUp = close > sma && sma > smaPrev;
+    out.extPct = (close / sma - 1) * 100;
+  }
+  if (end >= 146) { // prior 12h high, excluding the last 15 minutes
+    let h12 = -Infinity;
+    for (let i = end - 146; i <= end - 3; i++) h12 = Math.max(h12, k.high[i]);
+    out.breakout = close > h12;
+    out.distTo12hHigh = (close / h12 - 1) * 100;
+  }
+  if (end >= 287) { // prior 24h high, excluding the last 15 minutes
+    let h24 = -Infinity;
+    for (let i = end - 287; i <= end - 3; i++) h24 = Math.max(h24, k.high[i]);
+    out.distTo24hHigh = (close / h24 - 1) * 100;
+  }
+  return out;
+}
+
+// v5 trigger features from the newest two finished 5-minute candles (end = the newest finished one).
+export function earlyFeatures(k: Omit<Candles5m, "trades">, end: number, expect5: (endMs: number) => number): EarlyFeatures | null {
+  if (end < 3) return null;
+  const e1 = expect5(k.t[end] + 300_000), e0 = expect5(k.t[end - 1] + 300_000);
+  const span = k.high[end] - k.low[end], qv2 = k.qv[end] + k.qv[end - 1];
+  return {
+    r5: e1 > 0 ? k.qv[end] / e1 : null, prevR5: e0 > 0 ? k.qv[end - 1] / e0 : null,
+    ret10: (k.close[end] / k.close[end - 2] - 1) * 100,
+    buy10: qv2 > 0 ? ((k.buy[end] + k.buy[end - 1]) / qv2) * 100 : null,
+    closePos5: span > 0 ? (k.close[end] - k.low[end]) / span : null, // 1 = closed at the candle's high
+    body5: span > 0 ? (k.close[end] - k.open[end]) / span : 0,        // share of the range that is green body
+  };
+}
+
+// ───────────────────────────── scoring ─────────────────────────────
+// t = techMetrics; info = {mc, fdv} (fdv unknown on Binance: neutral); narrative = {change, names}; funding = per-8h rate.
+export function scoreToken(t: Omit<TechMetrics, "avgDailyQuote">, info: CoinInfo | null, narrative: Narrative | null, funding: number | null, oiChg: number | null, quoteVol: number, priceChg: number) {
+  const reasons: string[] = [];
+  const parts = {
+    volume: { pts: 0, max: 25 }, technical: { pts: 0, max: 25 }, narrative: { pts: 0, max: 20 },
+    tokenomics: { pts: 0, max: 10 }, futures: { pts: 0, max: 10 }, liquidity: { pts: 0, max: 10 },
+  };
+
+  const rv = t.rvol;
+  parts.volume.pts = rv >= 3 ? 25 : rv >= 2 ? 18 : rv >= 1.5 ? 10 : 0;
+  if (parts.volume.pts) reasons.push(`24h volume ${rv.toFixed(1)}x its 20d average`);
+
+  const d = t.distToHigh;
+  let tech = 0;
+  if (d >= -0.03 && d < 0) { tech += 12; reasons.push("within 3% of 20d high (coiling)"); }
+  else if (d >= 0 && d <= 0.08) { tech += 12; reasons.push("fresh 20d breakout"); }
+  else if (d > 0.08) { reasons.push("already extended above 20d high"); } // no points: do not reward chasing
+  if (t.compressed) { tech += 5; reasons.push("volatility compression"); }
+  if (t.aboveSma) tech += 4;
+  if (t.rsi != null && t.rsi >= 45 && t.rsi <= 72) tech += 4;
+  parts.technical.pts = tech;
+
+  if (narrative) {
+    parts.narrative.pts = narrative.change >= 8 ? 20 : narrative.change >= 5 ? 15 : 10;
+    const names = [...new Set(narrative.names)].join(", ").slice(0, 60);
+    reasons.push(`hot narrative: ${names} (coins ${narrative.change >= 0 ? "+" : ""}${narrative.change.toFixed(1)}% 24h)`);
+  }
+
+  const fdv = info?.fdv, mc = info?.mc || 0;
+  if (fdv && mc) {
+    const ratio = mc / fdv;
+    parts.tokenomics.pts = ratio >= 0.7 ? 10 : ratio >= 0.5 ? 7 : ratio >= 0.3 ? 4 : 0;
+    if (ratio < 0.3) reasons.push(`low MC/FDV ${Math.round(ratio * 100)}% (dilution risk)`);
+  } else parts.tokenomics.pts = 5; // unknown: neutral
+
+  let fut = 0;
+  if (funding == null) fut = 5; // no futures market: neutral
+  else {
+    if (funding > 0.0005) { fut -= 5; reasons.push(`crowded longs, funding ${(funding * 100).toFixed(3)}%`); }
+    else if (funding >= -0.0001 && funding <= 0.0003) fut += 4;
+    if (oiChg != null && oiChg >= 0.03 && priceChg > 0) {
+      fut += 6; reasons.push(`open interest +${Math.round(oiChg * 100)}% with rising price`);
+    }
+  }
+  parts.futures.pts = fut;
+
+  parts.liquidity.pts = quoteVol >= 50e6 ? 10 : quoteVol >= 20e6 ? 7 : 4;
+
+  const score = clamp(Math.round(Object.values(parts).reduce((a, p) => a + p.pts, 0)), 0, 100);
+  return { score, reasons, parts };
+}
+
+// f = fast-layer metrics (or undefined), with f.early = earlyFeatures, f.rsiD = daily RSI, f.btc4h = BTC % over 4h,
+// f.aboveSma20d = price above its 20-day average (daily closes).
+// moved: the token has already run (hide / never alert).
+// state: ignited | heating | ran | null. miss = what a "heating" token still lacks (shown on the page).
+// slow = its typical 6h range is too small to reach the target, so it is never an ignition.
+export function classifyIgnition(f: FastMetrics | null | undefined, change24h: number, distToHigh = 0, p: IgnitionRules = DEFAULT_IGNITION): IgnitionVerdict {
+  const movedWhy: string[] = [];
+  if (change24h > p.maxMove24h) movedWhy.push(`+${change24h.toFixed(1)}% in 24h`);
+  if (distToHigh > 0.08) movedWhy.push(`${Math.round(distToHigh * 100)}% above its 20d high`);
+  if (f && f.ret1h != null && f.ret1h > p.maxRet1h) movedWhy.push(`+${f.ret1h.toFixed(1)}% in 1h`);
+  if (f && f.ret15 > p.maxRet15) movedWhy.push(`+${f.ret15.toFixed(1)}% in 15m`);
+  const moved = movedWhy.length > 0;
+  const slow = !!f && f.range6h != null && f.range6h < p.minRangeRatio * p.targetPct;
+  const e = f?.early;
+  if (!f || !(f.rvol15 >= 2 || e?.r5 >= p.earlyRvol)) return { state: null, moved, movedWhy, miss: [], slow };
+  if (moved) return { state: "ran", moved, movedWhy, miss: [], slow };
+  if (slow) return { state: null, moved, movedWhy, miss: [], slow };
+  const miss: string[] = [];
+  // trigger: two hot finished 5-minute candles, price rising, buyers in control
+  if (!e) miss.push("5m check");
+  else {
+    if (!(e.r5 >= p.earlyRvol && e.prevR5 >= p.earlyRvol)) miss.push(`two 5m candles at ${p.earlyRvol}x normal volume`);
+    if (!(e.ret10 >= p.earlyMinMove)) miss.push("price turning up");
+    if (e.buy10 == null) miss.push("buyer check"); else if (e.buy10 < p.minBuy) miss.push(`buyers ${p.minBuy}%+`);
+    if (e.closePos5 >= 0.9 && e.body5 >= 0.6) miss.push("a calmer candle (the last one closed at its high)");
+  }
+  if (f.marketWide) miss.push("no market-wide surge");
+  if ((f.rvol1h ?? 0) < p.rvol1h) miss.push("1h volume");
+  if (f.range6h == null) miss.push("volatility history");
+  if (f.btc1h != null && f.btc1h < p.btc1hMin) miss.push(`steady BTC (BTC ${f.btc1h.toFixed(1)}% 1h)`);
+  if (f.btc4h != null && f.btc4h < p.btc4hMin) miss.push(`BTC not falling (BTC ${f.btc4h.toFixed(1)}% 4h)`);
+  if (f.rsiD != null && f.rsiD > p.maxRsi) miss.push(`daily RSI under ${p.maxRsi} (now ${Math.round(f.rsiD)})`);
+  if (p.dailyTrend && f.aboveSma20d === false) miss.push("price above its 20-day average");
+  // resistance right overhead: an ignition just under a recent high usually stalls there (v7)
+  const under = (d: number | null | undefined, room: number) => d != null && room > 0 && d <= 0 && d > -room;
+  if (under(f.distTo12hHigh, p.room12h)) miss.push(`a break of its 12h high (${Math.abs(f.distTo12hHigh).toFixed(1)}% above)`);
+  else if (under(f.distTo24hHigh, p.room24h)) miss.push(`a break of its 24h high (${Math.abs(f.distTo24hHigh).toFixed(1)}% above)`);
+  if (f.regimeOff) miss.push(`BTC daily trend (${f.regimeOff})`);
+  if (f.monitoring) miss.push("off Binance's Monitoring list (delisting risk)");
+  if (f.persist != null) {
+    if (p.requireTrend && f.trendUp !== true) miss.push("rising 4h trend");
+    if (f.extPct != null && f.extPct > p.maxExt) miss.push(`less stretched (${f.extPct.toFixed(1)}% above 4h avg)`);
+    if (f.fadePct > p.maxFade) miss.push(`holding the spike (faded ${f.fadePct.toFixed(1)}%)`);
+    if (f.wickShare > p.maxWick) miss.push("no selling wicks");
+    if (f.rangePos >= 0.96 && f.fadePct < 0.08) miss.push("a small pause below the top of the 2h range");
+  }
+  if (f.spreadBps != null && f.spreadBps > p.maxSpread) miss.push("tighter spread");
+  return { state: miss.length ? "heating" : "ignited", moved, movedWhy, miss, slow };
+}
+
+// Ignition confidence score, 0-100. Needs the 5m confirmation data (f.persist != null).
+// Buyer share did not separate winners from losers in the first results, so it now weighs less; price structure
+// (12h breakout, rising 4h trend) and room to move weigh more.
+// Big-move tier. x: { quoteVolume, rvolD (24h volume vs 20-day average), r5, prevR5, ret10, buy10 } from finished
+// candles. "ignited" = small coin waking up AND the 5m ignition fired; "watch" = waking up, the 5m trigger has not fired.
+export function classifyBigMove(x: BigMoveInput | null, p: BigMoveRules = DEFAULT_BIGMOVE): { state: "ignited" | "watch" | null; miss: string[] } {
+  if (!x || !(x.quoteVolume >= p.minVolume) || x.quoteVolume > p.maxVolume) return { state: null, miss: [] };
+  if (!(x.rvolD >= p.minDailyRvol)) return { state: null, miss: [`24h volume ${p.minDailyRvol}x its 20-day average`] };
+  const miss: string[] = [];
+  if (x.r5 == null || x.prevR5 == null) miss.push("5m check");
+  else if (!(x.r5 >= p.r5 && x.prevR5 >= p.prevR5)) miss.push(`two 5m candles at ${p.prevR5}x and ${p.r5}x normal volume`);
+  if (!(x.ret10 > 0)) miss.push("price turning up");
+  if (!(x.buy10 >= p.minBuy)) miss.push(`buyers ${p.minBuy}%+`);
+  if (x.monitoring) miss.push("off Binance's Monitoring list (delisting risk)"); // all 3 such live alerts hit -10%
+  return { state: miss.length ? "watch" : "ignited", miss };
+}
+
+export function ignitionScore(f: FastMetrics, ctxScore: number, funding: number | null, narrative: Narrative | null, p: IgnitionRules = DEFAULT_IGNITION) {
+  const parts = {
+    volume: { pts: 0, max: 20 }, persistence: { pts: 0, max: 15 }, buyers: { pts: 0, max: 10 }, structure: { pts: 0, max: 20 },
+    strength: { pts: 0, max: 5 }, context: { pts: 0, max: 15 }, quality: { pts: 0, max: 15 },
+  };
+  const r = f.rvol15;
+  parts.volume.pts = r >= 8 ? 20 : r >= 6 ? 17 : r >= 4 ? 13 : r >= 3 ? 8 : 0;
+  const per = f.persist ?? 0, tr = f.tradesRatio ?? 0;
+  parts.persistence.pts = (per >= 3 ? 9 : per === 2 ? 6 : per === 1 ? 2 : 0) + (tr >= 2 ? 6 : tr >= 1.5 ? 4 : tr >= 1.2 ? 2 : 0);
+  const b = f.buy15 ?? 0;
+  parts.buyers.pts = b >= 70 ? 10 : b >= 64 ? 8 : b >= 58 ? 5 : b >= 52 ? 2 : 0;
+  const rp = f.rangePos ?? 0;
+  parts.structure.pts = (rp >= 0.8 ? 6 : rp >= 0.6 ? 3 : 0) + (f.breakout ? 6 : 0) + (f.nearHigh ? 2 : 0)
+    + (f.ret15 >= 0.2 && f.ret15 <= 2 ? 3 : f.ret15 > 2 ? 1 : 0) + (f.trendUp ? 3 : 0);
+  const rs = f.rs15 ?? 0;
+  parts.strength.pts = rs >= 0.5 ? 5 : rs >= 0.1 ? 3 : 0;
+  parts.context.pts = Math.round(clamp(ctxScore, 0, 100) * 0.15);
+  const room = f.range6h == null ? null : f.range6h / p.targetPct;
+  parts.quality.pts = (f.spreadBps == null ? 2 : f.spreadBps <= 5 ? 5 : f.spreadBps <= 10 ? 3 : f.spreadBps <= 20 ? 1 : 0)
+    + (funding == null ? 1 : funding <= 0.0003 ? 3 : 0) + (narrative ? 2 : 0)
+    + (room == null ? 0 : room >= 1.5 ? 5 : room >= 1 ? 3 : room >= 0.75 ? 2 : 1);
+  const score = clamp(Math.round(Object.values(parts).reduce((a, q) => a + q.pts, 0)), 0, 100);
+  return { score, parts };
+}
+// Quality signs of an early ignition (v7.1). In the 90-day replay, early alerts with 3+ of these 4 hit the stop about
+// half as often (16-22% vs 31-42%) and averaged +0.6% to +2.4% per trade vs +0.1% to +0.3% for all early alerts, in both
+// halves of the period and on three versions of the replay; they did not help confirmed alerts. x = { buy10 (% aggressive
+// buying, last 10 min), rvolD (24h volume vs its 20-day average), closePos5 (where the last 5m candle closed, 1 = high),
+// extPct (% above the 4h average) }. Unknown values count as missing.
+export const EARLY_SIGNS: [name: string, test: (x: EarlySignsInput) => boolean][] = [
+  ["buyers in control (65%+ aggressive buying)", (x) => x.buy10 >= 65],
+  ["a fresh start (daily volume under 1.5x normal)", (x) => x.rvolD != null && x.rvolD < 1.5],
+  ["a strong close (top 30% of the last 5m candle)", (x) => x.closePos5 >= 0.7],
+  ["not stretched (under 1.5% above the 4h average)", (x) => x.extPct != null && x.extPct < 1.5],
+];
+export function earlyQuality(x: EarlySignsInput | null) {
+  const has = EARLY_SIGNS.filter(([, fn]) => { try { return !!fn(x || {}); } catch { return false; } }).map(([name]) => name);
+  return { n: has.length, has, missing: EARLY_SIGNS.map(([name]) => name).filter((name) => !has.includes(name)) };
+}
+const labelFor = (score: number) => score >= MIN_SCORE_ALERT ? "Early setup" : score >= 55 ? "Watch closely" : score >= 40 ? "Developing" : "Weak";
+
+function buildCandidate(base: string, info: CoinInfo | null, tk: TickerLike, t: Omit<TechMetrics, "avgDailyQuote">, narrative: Narrative | null, funding: number | null, oiChg: number | null, fast: FastMetrics | undefined) {
+  const quoteVol = n(tk.quoteVolume) || 0;
+  const priceChg = n(tk.priceChangePercent) || 0;
+  const s = scoreToken(t, info, narrative, funding, oiChg, quoteVol, priceChg);
+  if (fast) { fast.rsiD = t.rsi; fast.aboveSma20d = t.aboveSma; }
+  // coins under SCREENER_MIN_QUOTE_VOLUME are scanned for the big-move tier only; the quick tiers never see them
+  const core = quoteVol >= MIN_QUOTE_VOLUME;
+  const ig: IgnitionVerdict = core ? classifyIgnition(fast, priceChg, t.distToHigh) : { state: null, moved: false, movedWhy: [], miss: [], slow: false };
+  const e5 = fast?.early ?? fast?.bigEarly ?? null;
+  const bm: ReturnType<typeof classifyBigMove> = BIG_ON && fast ? classifyBigMove({ quoteVolume: quoteVol, rvolD: t.rvol, r5: e5?.r5, prevR5: e5?.prevR5, ret10: e5?.ret10, buy10: e5?.buy10, monitoring: fast.monitoring }) : { state: null, miss: [] };
+  let score = s.score, label = labelFor(score);
+  if (ig.moved) { score = Math.min(score, MOVED_SCORE_CAP); label = "Already moved"; }
+  let igs = null;
+  if (core && fast && fast.persist != null && !ig.moved && !ig.slow) igs = ignitionScore(fast, score, funding, narrative);
+  return {
+    symbol: base + "USDT", base, name: info?.name || base, rank: info?.rank ?? null, marketCap: info?.mc ?? null,
+    monitoring: isMonitoring(info), seed: isSeed(info),
+    price: n(tk.lastPrice), change24h: priceChg, quoteVolume: quoteVol,
+    rvol: round(t.rvol, 2), distToHigh: round(t.distToHigh, 4), aboveSma: t.aboveSma,
+    rsi: round(t.rsi, 1), compressed: t.compressed,
+    mcFdv: info?.fdv && info?.mc ? round(info.mc / info.fdv, 3) : null,
+    narrative: narrative ? { change24hPct: round(narrative.change, 2), names: [...new Set(narrative.names)] } : null,
+    fundingPct: funding == null ? null : round(funding * 100, 4),
+    oiChange24hPct: oiChg == null ? null : round(oiChg * 100, 2),
+    // fast layer
+    rvol15: round(fast?.rvol15, 2), rvol1h: round(fast?.rvol1h, 2), ret15m: round(fast?.ret15, 2), ret1h: round(fast?.ret1h, 2),
+    buyRatio15m: round(fast?.buy15, 1), ignition: ig.state, moved: ig.moved, movedWhy: ig.movedWhy, missing: ig.miss, slow: ig.slow,
+    persist: fast?.persist ?? null, persistOf: fast?.persistOf ?? null, tradesRatio: round(fast?.tradesRatio, 2),
+    rangePos: round(fast?.rangePos, 2), spreadBps: round(fast?.spreadBps, 1), rs15: round(fast?.rs15, 2),
+    range6h: round(fast?.range6h, 2), btc1h: round(fast?.btc1h, 2), trendUp: fast?.trendUp ?? null, extPct: round(fast?.extPct, 2),
+    fadePct: round(fast?.fadePct, 2), wickShare: round(fast?.wickShare, 2), breakout: fast?.breakout ?? null,
+    distTo12hHigh: round(fast?.distTo12hHigh, 2), distTo24hHigh: round(fast?.distTo24hHigh, 2),
+    r5: round(fast?.early?.r5, 2), prevR5: round(fast?.early?.prevR5, 2), ret10m: round(fast?.early?.ret10, 2), buyRatio10m: round(fast?.early?.buy10, 1),
+    closePos5: round(fast?.early?.closePos5, 2), btc4h: round(fast?.btc4h, 2),
+    seasonalBaseline: fast ? !!fast.seasonal : null, marketWide: !!fast?.marketWide,
+    igScore: igs ? igs.score : null, igParts: igs ? igs.parts : null,
+    earlySigns: fast?.early ? earlyQuality({ buy10: fast.early.buy10, rvolD: t.rvol, closePos5: fast.early.closePos5, extPct: fast.extPct }).n : null,
+    gate: fast?.gate ? ignitionGate(fast.gate) : null,
+    core, bigmove: bm.state, bigMissing: bm.miss,
+    big: bm.state ? { r5: round(e5?.r5, 2), prevR5: round(e5?.prevR5, 2), ret10m: round(e5?.ret10, 2), buyRatio10m: round(e5?.buy10, 1) } : null,
+    rotation: rotation ? rotation.context(base) : null,
+    score, label, reasons: s.reasons, parts: s.parts, updatedAt: Date.now(),
+  };
+}
+
+// ───────────────────────────── data: Binance asset info (market caps + sector tags) ─────────────────────────────
+// Binance's documented spot API has prices and volumes but no market caps or sectors. Those come from the product list
+// that binance.com's own Markets page loads: circulating supply and sector tags (AI, Meme, RWA, Layer1_Layer2, Gaming,
+// Monitoring, Seed ...). It needs no API key and is fetched once every 6 hours. It is not part of the documented API,
+// so it could change: the last good copy is kept in binance_meta.json, and without any copy the screener ranks coins by
+// 24h volume and uses the built-in narrative lists below.
+const META_URL = "https://www.binance.com/bapi/asset/v2/public/asset-service/product/get-products?includeEtf=true";
+const META_FILE = path.join(here, DEMO ? "binance_meta.demo.json" : "binance_meta.json");
+const META_REFRESH_MS = 6 * 3_600_000;
+// Binance sector tag -> narrative name. Unlisted tags also become narratives when 4+ coins carry them and they are not
+// programme or chain labels (TAG_IGNORE).
+const TAG_NARRATIVES: [RegExp, string][] = [
+  [/^ai$|artificial.?intelligence/i, "AI"], [/meme/i, "Meme"], [/layer.?1.?.?layer.?2/i, "Layer 1 / Layer 2"], [/^layer.?1$|^l1$/i, "Layer 1"],
+  [/^layer.?2$|^l2$/i, "Layer 2"], [/^defi$/i, "DeFi"], [/rwa|real.?world/i, "RWA"], [/gaming|gamefi/i, "Gaming"], [/metaverse/i, "Metaverse"],
+  [/^nft$/i, "NFT"], [/depin/i, "DePIN"], [/storage/i, "Storage"], [/infrastructure/i, "Infrastructure"], [/privacy/i, "Privacy"],
+  [/oracle/i, "Oracles"], [/liquid.?staking|^lsd$/i, "Liquid staking"], [/restaking/i, "Restaking"], [/payment/i, "Payments"],
+  [/^zk|zero.?knowledge/i, "Zero knowledge"], [/solana/i, "Solana ecosystem"], [/polkadot/i, "Polkadot ecosystem"], [/^bitcoin.?eco|^btcfi/i, "Bitcoin ecosystem"],
+];
+const TAG_IGNORE = /^(pos|pow|bsc|bnb.?chain|launchpool|launchpad|megadrop|hodler.*|mining.?zone|monitoring|seed|innovation.*|new.*|alpha|fan.?token|etf|margin|isolated|.*airdrop.*|.*pool.*|grayscale|a16z.*|.*holdings|.*portfolio|arbitrum|base|polygon|avalanche|ethereum|optimism)$/i;
+// Binance tags its tokenized stocks and ETFs "bStocks" (one word, so \bstocks\b alone misses it) and names them
+// "Tesla (bStocks)"; the name check is a backup in case a tag is missing.
+const NONCRYPTO_TAG = /stable|tokeni[sz]ed|[bx]stocks?|\bstocks?\b|equit|\bgold\b|silver|commodit|wrapped|bridged/i;
+const NONCRYPTO_NAME = /[bx]stocks?\b|\btokeni[sz]ed\b/i;
+export const isNonCryptoInfo = (info: CoinInfo | null | undefined): boolean => !!info && ((info.tags || []).some((t) => NONCRYPTO_TAG.test(t)) || NONCRYPTO_NAME.test(info.name || ""));
+const isMonitoring = (info: CoinInfo | null | undefined): boolean => !!info?.tags?.some((t) => /monitoring/i.test(t));
+const isSeed = (info: CoinInfo | null | undefined): boolean => !!info?.tags?.some((t) => /^seed$/i.test(t));
+// Used only when Binance's product list cannot be read and no saved copy exists. Coins that are not listed are skipped.
+export const BUILTIN_NARRATIVES: Record<string, string[]> = {
+  "AI": ["FET", "RENDER", "TAO", "WLD", "ARKM", "IO", "VIRTUAL", "NEAR", "GRT", "PHB", "NFP", "AI", "THETA"],
+  "Meme": ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "WIF", "BOME", "MEME", "PEOPLE", "TRUMP", "PENGU", "NEIRO", "TURBO", "1000SATS"],
+  "Layer 1": ["ETH", "SOL", "BNB", "ADA", "AVAX", "DOT", "APT", "SUI", "SEI", "TON", "ATOM", "ALGO", "ICP", "TRX", "HBAR", "EGLD", "INJ"],
+  "Layer 2": ["ARB", "OP", "POL", "STRK", "MANTA", "IMX", "ZK", "METIS", "SCR"],
+  "DeFi": ["UNI", "AAVE", "LDO", "CRV", "COMP", "SUSHI", "1INCH", "DYDX", "PENDLE", "JUP", "ENA", "CAKE", "RUNE", "GMX", "SNX"],
+  "RWA": ["ONDO", "OM", "POLYX", "PLUME", "TRU", "USUAL", "SYRUP"],
+  "Gaming": ["AXS", "SAND", "MANA", "GALA", "ILV", "YGG", "PIXEL", "PORTAL", "BEAMX", "XAI", "ACE"],
+  "DePIN": ["FIL", "AR", "IOTX", "STORJ", "THETA", "RENDER", "IO"],
+  "Oracles": ["LINK", "PYTH", "BAND", "API3", "TRB", "UMA"],
+  "Privacy": ["ZEC", "DASH", "ZEN", "ROSE"],
+  "Interoperability": ["DOT", "ATOM", "QNT", "AXL", "ZRO", "W"],
+  "Liquid staking": ["LDO", "RPL", "JTO", "SSV", "ETHFI", "LISTA", "EIGEN"],
+};
+// A narrative: the Binance tags it came from and its coins.
+interface NarrativeGroup { tags: Set<string>; bases: Set<string> }
+const meta: { at: number; source: string; coins: Map<string, MetaCoin>; narratives: Map<string, NarrativeGroup>; nextTry: number; loaded: boolean; error: string | null } =
+  { at: 0, source: "none", coins: new Map(), narratives: new Map(), nextTry: 0, loaded: false, error: null };
+const prettyTag = (t: string) => t.replace(/[_-]+/g, " ").trim().replace(/^./, (ch) => ch.toUpperCase());
+function narrativeOf(tag: string): string | null {
+  for (const [re, name] of TAG_NARRATIVES) if (re.test(tag)) return name;
+  return TAG_IGNORE.test(tag) || NONCRYPTO_TAG.test(tag) ? null : "auto:" + tag;
+}
+function setMeta(coins: Map<string, MetaCoin> | null, source: string, at: number) {
+  const groups = new Map<string, NarrativeGroup>();
+  if (coins) {
+    for (const [base, c] of coins) for (const tag of c.tags) {
+      const name = narrativeOf(tag);
+      if (!name) continue;
+      if (!groups.has(name)) groups.set(name, { tags: new Set(), bases: new Set() });
+      groups.get(name).tags.add(tag); groups.get(name).bases.add(base);
+    }
+  }
+  const narratives = new Map<string, NarrativeGroup>();
+  for (const [name, g] of groups) {
+    if (!name.startsWith("auto:")) narratives.set(name, g);
+    else if (g.bases.size >= 4 && !groups.has(prettyTag(name.slice(5)))) narratives.set(prettyTag(name.slice(5)), g);
+  }
+  if (!narratives.size) { // no usable tags (format changed or no copy): built-in lists
+    for (const [name, list] of Object.entries(BUILTIN_NARRATIVES)) narratives.set(name, { tags: new Set(["built-in"]), bases: new Set(list) });
+    if (source === "live" || source === "cached") source += " (no sector tags, built-in narratives)";
+  }
+  Object.assign(meta, { coins: coins || new Map(), narratives, source, at, loaded: true });
+}
+// One request at a time: callers that arrive while it is running (scan, rotation tab) wait for the same result.
+let metaJob: Promise<void> | null = null;
+function refreshMeta(): Promise<void> {
+  if (metaJob) return metaJob;
+  if (meta.loaded && Date.now() < meta.nextTry) return Promise.resolve();
+  metaJob = loadMeta().finally(() => { metaJob = null; });
+  return metaJob;
+}
+async function loadMeta() {
+  try {
+    const r = await fetchJson(META_URL, { retries: 1, timeoutMs: 20_000 });
+    const rows = Array.isArray(r?.data) ? r.data : null;
+    if (!rows?.length) throw new Error("Unexpected Binance product list response");
+    const coins = new Map<string, MetaCoin>();
+    for (const p of rows) {
+      if (p.q !== "USDT" || !p.b || p.etf) continue;
+      coins.set(String(p.b).toUpperCase(), { name: p.an || p.b, cs: n(p.cs), tags: Array.isArray(p.tags) ? p.tags.map(String) : [] });
+    }
+    if (coins.size < 50) throw new Error("Binance product list looks incomplete");
+    setMeta(coins, "live", Date.now());
+    writeFile(META_FILE, JSON.stringify({ at: meta.at, coins: [...coins] })).catch(() => {});
+    meta.error = null; delete state.errors["Binance asset info"];
+  } catch (e) {
+    meta.nextTry = Date.now() + 15 * 60_000;
+    if (!meta.loaded) {
+      try { const c = JSON.parse(await readFile(META_FILE, "utf8")); setMeta(new Map(c.coins), "cached", c.at); }
+      catch { setMeta(null, "built-in", Date.now()); }
+    }
+    meta.error = e.message;
+    state.errors["Binance asset info"] = `${e.message}; ` + (meta.source.startsWith("cached") ? `using the saved copy from ${new Date(meta.at).toISOString().slice(0, 10)}`
+      : meta.source === "built-in" ? "ranking by 24h volume and using the built-in narrative lists (retrying every 15 min)" : "using the last good copy");
+  }
+}
+// The first scan waits for one request; later refreshes run in the background.
+async function ensureMeta() {
+  if (!meta.loaded) await refreshMeta();
+  else if (meta.source !== "live" || Date.now() - meta.at > META_REFRESH_MS) refreshMeta();
+}
+const metaStatus = () => ({ source: meta.source, at: meta.at || null, coins: meta.coins.size, sectors: meta.narratives.size, error: meta.error });
+const marketCap = (base: string, price: number): number | null => { const cs = meta.coins.get(base)?.cs; return cs && price > 0 ? cs * price : null; };
+// Read-only access for the Early 2x Movers screen (same product list: circulating supply, name, sector tags).
+export const assetInfo = (base: string): MetaCoin | null => meta.coins.get(base) || null;
+export const assetInfoStatus = () => metaStatus();
+export const loadAssetInfo = () => ensureMeta();
+
+// Universe: Binance USDT pairs, largest market cap first (coins without supply data after them, by 24h volume).
+function buildUniverse(tickers: Map<string, Ticker>): [string, CoinInfo][] {
+  const rows = [...tickers].map(([base, tk]) => {
+    const m = meta.coins.get(base);
+    return { base, vol: n(tk.quoteVolume) || 0, info: { id: base, name: m?.name || base, mc: marketCap(base, n(tk.lastPrice)), fdv: null, rank: null, tags: m?.tags || [] } };
+  });
+  rows.sort((a, b) => Number(a.info.mc == null) - Number(b.info.mc == null) || (b.info.mc ?? 0) - (a.info.mc ?? 0) || b.vol - a.vol);
+  let rank = 0;
+  for (const r of rows) if (r.info.mc != null) r.info.rank = ++rank;
+  // only coins that trade enough can be scanned anyway: filter first, then keep the top N (else liquid coins with no
+  // market-cap data, listed after all the others, were cut off)
+  const floor = BIG_ON ? Math.min(MIN_QUOTE_VOLUME, DEFAULT_BIGMOVE.minVolume) : MIN_QUOTE_VOLUME;
+  return rows.filter((r) => r.vol >= floor).slice(0, TOP_N).map((r): [string, CoinInfo] => [r.base, r.info]);
+}
+
+// Hot narratives, every scan, from data already fetched: median 24h change of each sector's liquid coins.
+function hotNarratives(tickers: Map<string, Ticker>): Map<string, Narrative> {
+  const hot: { name: string; med: number; bases: Set<string> }[] = [];
+  for (const [name, g] of meta.narratives) {
+    const chg = [...g.bases].map((b) => tickers.get(b)).filter((tk) => tk && (n(tk.quoteVolume) || 0) >= 1_000_000)
+      .map((tk) => n(tk.priceChangePercent)).filter((v) => v != null);
+    if (chg.length < 5) continue;
+    const med = median(chg);
+    if (med >= HOT_CATEGORY_MIN_CHANGE) hot.push({ name, med, bases: g.bases });
+  }
+  hot.sort((a, b) => b.med - a.med);
+  const mapping = new Map<string, Narrative>();
+  for (const { name, med, bases } of hot.slice(0, MAX_HOT_CATEGORIES)) {
+    for (const b of bases) {
+      const prev = mapping.get(b) || { change: -Infinity, names: [] };
+      mapping.set(b, { change: Math.max(prev.change, med), names: [...prev.names, name] });
+    }
+  }
+  state.hotNarratives = hot.slice(0, MAX_HOT_CATEGORIES).map(({ name, med }) => ({ id: name, name, change24hPct: round(med, 2) }));
+  return mapping;
+}
+
+// Narratives for the rotation tab: [{ name, category, coins: [bases, largest market cap first] }].
+export async function binanceNarratives(priceByBase: Map<string, number>) {
+  await ensureMeta();
+  const mc = (b: string) => marketCap(b, priceByBase.get(b)) ?? 0;
+  return [...meta.narratives].map(([name, g]) => ({
+    name, category: g.tags.has("built-in") ? "built-in list" : "Binance tag: " + [...g.tags].join(", "),
+    coins: [...g.bases].filter((b) => priceByBase.has(b)).sort((a, b) => mc(b) - mc(a)),
+  })).filter((x) => x.coins.length >= 3).sort((a, b) => b.coins.length - a.coins.length);
+}
+
+// ───────────────────────────── data: Binance ─────────────────────────────
+async function binanceTickers(): Promise<Map<string, Ticker>> {
+  const data = await fetchJson(`${BN}/api/v3/ticker/24hr`, { timeoutMs: 15_000 });
+  if (!Array.isArray(data)) throw new Error("Unexpected 24h ticker response");
+  const out = new Map<string, Ticker>();
+  for (const t of data) {
+    const s = t.symbol || "";
+    if (s.endsWith("USDT") && !/(UP|DOWN|BULL|BEAR)USDT$/.test(s)) out.set(s.slice(0, -4), t);
+  }
+  return out;
+}
+
+async function loadDaily(base: string): Promise<DailyCandles> {
+  const k = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=1d&limit=40`);
+  if (!Array.isArray(k) || k.length < 30) throw new Error("Not enough daily candles");
+  const closed = k.slice(0, -1); // drop the unfinished current day
+  return {
+    at: Date.now(), day: Math.floor(Date.now() / DAY_MS),
+    closes: closed.map((x) => Number(x[4])), highs: closed.map((x) => Number(x[2])), lows: closed.map((x) => Number(x[3])),
+    qvols: closed.map((x) => Number(x[7])),
+  };
+}
+const dailyStale = (d: DailyCandles | undefined) => !d || Date.now() - d.at > KLINE_REFRESH_MS || d.day !== Math.floor(Date.now() / DAY_MS);
+// A coin near $1 that stayed within 3% for 20 days is a stablecoin, whatever its name.
+const looksPegged = (d: DailyCandles, price: number) => {
+  if (!d?.lows || !(price > 0.97 && price < 1.03)) return false;
+  const hi = Math.max(...d.highs.slice(-20)), lo = Math.min(...d.lows.slice(-20));
+  return lo > 0 && hi / lo - 1 < 0.03;
+};
+
+// Daily candles load in the background (stale data stays usable), so they never block the fast scan.
+function kickDaily(eligible: EligibleCoin[]) {
+  if (dailyBusy) return;
+  const now = Date.now();
+  const need = eligible.filter(([b]) => dailyStale(dailyCache.get(b)) && now >= (dailyRetryAt.get(b) || 0));
+  if (!need.length) return;
+  dailyBusy = true;
+  (async () => {
+    let failed = 0;
+    await mapLimit(need, 6, async ([b]) => {
+      try { dailyCache.set(b, await loadDaily(b)); dailyRetryAt.delete(b); }
+      catch { failed++; dailyRetryAt.set(b, Date.now() + 10 * 60_000); }
+    });
+    if (failed) state.errors["Some candles"] = `${failed}/${need.length} symbols failed to load daily candles; retrying in 10 min`;
+    else delete state.errors["Some candles"];
+  })().finally(() => { dailyBusy = false; });
+}
+
+// Time-of-day baseline + typical 6h range from the last 14 days of hourly candles.
+async function loadHourly(base: string): Promise<HourlyProfile & { at: number }> {
+  const k = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(base)}USDT&interval=1h&limit=336`);
+  if (!Array.isArray(k) || k.length < 121) throw new Error("Not enough hourly candles");
+  const closed = k.slice(0, -1);
+  const prof = hourlyProfile({
+    t: closed.map((c) => Number(c[0])), high: closed.map((c) => Number(c[2])), low: closed.map((c) => Number(c[3])), qv: closed.map((c) => Number(c[7])),
+    trades: closed.map((c) => Number(c[8])),
+  });
+  if (!prof) throw new Error("Not enough hourly candles");
+  return { at: Date.now(), ...prof };
+}
+function kickHourly(eligible: EligibleCoin[]) {
+  if (hourlyBusy) return;
+  const now = Date.now();
+  const need = eligible.filter(([b]) => (!hourlyCache.has(b) || now - hourlyCache.get(b).at > HOURLY_REFRESH_MS) && now >= (hourlyRetryAt.get(b) || 0));
+  if (!need.length) return;
+  hourlyBusy = true;
+  mapLimit(need, 6, async ([b]) => {
+    try { hourlyCache.set(b, await loadHourly(b)); hourlyRetryAt.delete(b); }
+    catch { hourlyRetryAt.set(b, Date.now() + 30 * 60_000); } // new listings: no ignition until 5+ days of hourly history
+  }).finally(() => { hourlyBusy = false; });
+}
+// Expected traded volume (USDT) over the `minutes` ending at endMs, from the token's own hour-of-day medians.
+export function expectedQuoteVolume(h: Pick<HourlyProfile, "hours">, minutes: number, endMs = Date.now()): number {
+  const steps = Math.max(1, Math.round(minutes)), per = minutes / steps;
+  let sum = 0;
+  for (let i = 0; i < steps; i++) sum += (h.hours[new Date(endMs - (i + 0.5) * per * 60_000).getUTCHours()] * per) / 60;
+  return sum;
+}
+
+async function fundingRates(): Promise<Map<string, number>> {
+  if (Date.now() - fundingCache.at < 60_000) return fundingCache.map;
+  try {
+    const rows = await fetchJson(`${BF}/fapi/v1/premiumIndex`, { retries: 1 });
+    const out = new Map<string, number>();
+    for (const x of rows) if (String(x.symbol).endsWith("USDT")) out.set(x.symbol.slice(0, -4), Number(x.lastFundingRate));
+    fundingCache = { at: Date.now(), map: out };
+    state.futuresStatus = "connected";
+    delete state.errors["Binance Futures"];
+    return out;
+  } catch (e) {
+    state.futuresStatus = "unavailable";
+    state.errors["Binance Futures"] = `${e.message}; futures scoring treated as neutral`;
+    fundingCache = { at: Date.now() - 30_000, map: fundingCache.map }; // retry in ~30s
+    return fundingCache.map;
+  }
+}
+
+async function oiChange24h(base: string): Promise<number | null> {
+  const hit = oiCache.get(base);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.v;
+  let v = null;
+  try {
+    const h = await fetchJson(`${BF}/futures/data/openInterestHist?symbol=${encodeURIComponent(base)}USDT&period=1h&limit=24`, { retries: 0 });
+    const first = Number(h[0].sumOpenInterestValue), last = Number(h[h.length - 1].sumOpenInterestValue);
+    v = first ? last / first - 1 : null;
+  } catch { /* leave null */ }
+  oiCache.set(base, { at: Date.now(), v });
+  return v;
+}
+
+// ───────────────────────────── fast layer ─────────────────────────────
+// Rolling-window ticker (GET /api/v3/ticker?windowSize=15m): real 15-minute volume and price change for up to
+// 100 symbols per request, so the whole universe costs only a few requests per scan.
+async function windowTickers(symbols: string[], windowSize: string): Promise<{ map: Map<string, Ticker>; error: string | null }> {
+  const out = new Map<string, Ticker>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < symbols.length; i += 100) chunks.push(symbols.slice(i, i + 100));
+  const results = await Promise.all(chunks.map((chunk) =>
+    fetchJson(`${BN}/api/v3/ticker?windowSize=${windowSize}&symbols=${encodeURIComponent(JSON.stringify(chunk))}`, { retries: 1 })
+      .catch((e) => ({ _error: e.message }))));
+  let err = null;
+  for (const r of results) {
+    if (Array.isArray(r)) for (const t of r) out.set(t.symbol, t);
+    else err = r._error;
+  }
+  return { map: out, error: err };
+}
+
+// Best bid/ask spread in basis points for every USDT pair (one request).
+async function bookSpreads(): Promise<Map<string, number>> {
+  if (Date.now() - bookCache.at < 15_000) return bookCache.map;
+  try {
+    const rows = await fetchJson(`${BN}/api/v3/ticker/bookTicker`, { retries: 0 });
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      if (!String(r.symbol).endsWith("USDT")) continue;
+      const bid = Number(r.bidPrice), ask = Number(r.askPrice);
+      if (bid > 0 && ask > 0) map.set(r.symbol.slice(0, -4), ((ask - bid) / ((ask + bid) / 2)) * 1e4);
+    }
+    bookCache = { at: Date.now(), map };
+    delete state.errors.Spreads;
+  } catch (e) {
+    state.errors.Spreads = `${e.message}; spread filter skipped`;
+    bookCache = { at: Date.now() - 5_000, map: bookCache.map };
+  }
+  return bookCache.map;
+}
+
+export const columns5m = (raw: Kline[]): Candles5m => ({
+  t: raw.map((c) => Number(c[0])), open: raw.map((c) => Number(c[1])), high: raw.map((c) => Number(c[2])), low: raw.map((c) => Number(c[3])),
+  close: raw.map((c) => Number(c[4])), qv: raw.map((c) => Number(c[7])), trades: raw.map((c) => Number(c[8])), buy: raw.map((c) => Number(c[10])),
+});
+
+// 5-minute candle check for the hottest tokens, on finished candles (as in the replay) (last 24h of 5m candles: buyers, persistence, trades, trend, 12h high).
+async function analyze5m(base: string, f: FastMetrics) {
+  try {
+    const sym = base + "USDT";
+    let raw = stream?.get(sym);
+    if (raw) streamHits++;
+    else { raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=5m&limit=290`, { retries: 0 }); stream?.seed(sym, raw); streamMisses++; }
+    if (!Array.isArray(raw) || raw.length < 13) return;
+    const expect5 = (endMs: number) => (f.hourly ? expectedQuoteVolume(f.hourly, 5, endMs) : f.avgDaily / 288);
+    const k = columns5m(raw);
+    let end = raw.length - 1; // newest finished candle (from REST the last one is still forming; from the stream it may be closed)
+    while (end >= 0 && k.t[end] + 300_000 > Date.now()) end--;
+    const feats = fiveMinFeatures(k, end, k.t[end] + 300_000, expect5);
+    if (feats) Object.assign(f, feats);
+    f.early = earlyFeatures(k, end, expect5);
+    f.gate = gateFeatures(k, end, f.hourly);
+  } catch { /* leave unconfirmed: the token stays "heating", never "ignited" */ }
+}
+
+// Returns Map(base -> metrics). "Normal" volume = that token's median for this hour of the day (14 days), falling back
+// to its 20-day average only until hourly history has loaded.
+async function fastLayer(ready: EligibleCoin[]): Promise<Map<string, FastMetrics>> {
+  const out = new Map<string, FastMetrics>();
+  state.universe.slow = 0;
+  if (binanceWeight > WEIGHT_GUARD) {
+    state.errors["Rate guard"] = `Binance used-weight is ${binanceWeight}/min; fast scan skipped this cycle to avoid a ban`;
+    return out;
+  }
+  delete state.errors["Rate guard"];
+  const [w15, spreads] = await Promise.all([windowTickers(ready.map(([b]) => b + "USDT"), "15m"), bookSpreads()]);
+  if (w15.error) state.errors["15m windows"] = w15.error; else delete state.errors["15m windows"];
+  let seasonal = 0, slow = 0;
+  const slowBelow = MIN_RANGE_RATIO * ROOM_REF_PCT;
+  const core = new Set(ready.filter(([, , tk]) => (n(tk.quoteVolume) || 0) >= MIN_QUOTE_VOLUME).map(([b]) => b));
+  for (const [base, info, tk] of ready) {
+    const w = w15.map.get(base + "USDT");
+    const d = dailyCache.get(base);
+    const avgDaily = d ? mean(d.qvols.slice(-20)) : 0;
+    if (!w || !(avgDaily > 0)) continue;
+    const hourly = hourlyCache.get(base) || null;
+    if (hourly) seasonal++;
+    if (hourly?.range6h != null && hourly.range6h < slowBelow) slow++;
+    const exp15 = hourly ? expectedQuoteVolume(hourly, 15.5) : avgDaily / 96;
+    out.set(base, {
+      avgDaily, hourly, seasonal: !!hourly, rvol15: exp15 > 0 ? Number(w.quoteVolume) / exp15 : 0,
+      ret15: Number(w.priceChangePercent), spreadBps: spreads.get(base) ?? null, range6h: hourly?.range6h ?? null,
+      monitoring: !ALLOW_MONITORING && isMonitoring(info),
+      qv24: n(tk?.quoteVolume) || 0, rvolD: avgDaily > 0 ? (n(tk?.quoteVolume) || 0) / avgDaily : null,
+    });
+  }
+  state.warmup.seasonal = seasonal;
+  state.universe.slow = slow;
+  // Market-wide check: if many tokens surge together, it is a market move, not a token-specific ignition.
+  const coreF = [...out].filter(([b]) => core.has(b)).map(([, f]) => f);
+  const hotShare = coreF.length ? coreF.filter((f) => f.rvol15 >= 2).length / coreF.length : 0;
+  const marketWide = hotShare >= MARKET_WIDE_SHARE;
+  state.breadth = { hotShare: round(hotShare, 3), marketWide };
+  const btc15 = out.get("BTC")?.ret15 ?? 0;
+  const regimeOff = REGIME_GATE && rotation?.riskOff() ? rotation.regimeLabel() : null;
+  for (const f of out.values()) { f.marketWide = marketWide; f.rs15 = f.ret15 - btc15; f.regimeOff = regimeOff; }
+
+  const heating = [...out.entries()].filter(([b, f]) => core.has(b) && f.rvol15 >= 2 && !(f.range6h != null && f.range6h < slowBelow))
+    .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, 60);
+  if (heating.length) {
+    const [w1h, w4h] = await Promise.all([windowTickers([...new Set([...heating.map(([b]) => b + "USDT"), "BTCUSDT"])], "1h"),
+      windowTickers(["BTCUSDT"], "4h")]);
+    const btc1h = n(w1h.map.get("BTCUSDT")?.priceChangePercent), btc4h = n(w4h.map.get("BTCUSDT")?.priceChangePercent);
+    state.regime.btc1hPct = round(btc1h, 2); state.regime.btc4hPct = round(btc4h, 2);
+    for (const [base, f] of heating) {
+      f.btc1h = btc1h; f.btc4h = btc4h;
+      const w = w1h.map.get(base + "USDT");
+      if (w) {
+        const exp1h = f.hourly ? expectedQuoteVolume(f.hourly, 60.5) : f.avgDaily / 24;
+        f.rvol1h = exp1h > 0 ? Number(w.quoteVolume) / exp1h : null; f.ret1h = Number(w.priceChangePercent);
+      }
+    }
+    // 5m candles for the hottest 20 that have not already run (two hot 5m candles lift the 15m figure to ~2x+)
+    const strong = heating.filter(([, f]) => f.ret15 <= MAX_RET15 && (f.ret1h ?? 0) <= MAX_RET1H && f.range6h != null &&
+      (f.spreadBps == null || f.spreadBps <= MAX_SPREAD_BPS)).slice(0, 20);
+    await mapLimit(strong, 4, async ([base, f]) => { await analyze5m(base, f); });
+  }
+  // Big-move tier: 5m check for coins in its volume band whose daily volume is expanding. The result goes into
+  // f.bigEarly (never f.early), so the quick tiers classify every coin exactly as before.
+  if (BIG_ON) {
+    const P = DEFAULT_BIGMOVE, done = new Set(heating.filter(([, f]) => f.early).map(([b]) => b));
+    const big = [...out.entries()].filter(([b, f]) => !done.has(b) && f.hourly && f.qv24 >= P.minVolume && f.qv24 <= P.maxVolume && f.rvolD >= P.minDailyRvol && f.rvol15 >= 1.5)
+      .sort((a, b) => b[1].rvol15 - a[1].rvol15).slice(0, BIG_5M_LIMIT);
+    await mapLimit(big, 4, async ([base, f]) => { const g: FastMetrics = { hourly: f.hourly, avgDaily: f.avgDaily }; await analyze5m(base, g); f.bigEarly = g.early || null; });
+  }
+  return out;
+}
+
+// ───────────────────────────── alerts + outcomes ─────────────────────────────
+async function sendTelegram(kind: string, text: string) {
+  const r = await tgSend(text, { kind });
+  if (r.sent) delete state.errors.Telegram; else if (r.error) state.errors.Telegram = `${r.error}${r.queued ? " (will keep retrying)" : ""}`;
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function persist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    writeFile(STATE_FILE, JSON.stringify({ lastAlertAt: Object.fromEntries(lastAlertAt), events: state.events })).catch(() => {});
+  }, 500);
+}
+// Alerts saved while the process was down get a best-effort outcome from their recorded high/low.
+const ruleOf = (e: AlertEvent): TrackRule => e.track?.rule || LEGACY_RULE;
+function resolveLegacy(e: AlertEvent) {
+  const t = e.track, rule = ruleOf(e);
+  if (!t || t.outcome || !t.entry || Date.now() - e.time < rule.hz) return;
+  const hi = t.hiW ?? t.high, lo = t.loW ?? t.low;
+  const up = (hi / t.entry - 1) * 100, dn = (lo / t.entry - 1) * 100, T = rule.targetPct, S = rule.stopPct;
+  t.outcome = up >= T && dn > -S ? "win" : dn <= -S && up < T ? "loss" : up >= T && dn <= -S ? "unclear" : "flat";
+  t.estimated = true;
+}
+async function loadPersisted() {
+  try {
+    const saved = JSON.parse(await readFile(STATE_FILE, "utf8"));
+    for (const [k, v] of Object.entries(saved.lastAlertAt || {})) lastAlertAt.set(k, Number(v) || 0);
+    if (Array.isArray(saved.events)) { state.events = saved.events.slice(0, MAX_EVENTS); state.events.forEach(resolveLegacy); }
+    for (const e of state.events) if (e.ai?.decision) noteAiVerdict(e.detail?.base || e.symbol, e.ai); // recent verdicts survive a restart
+  } catch { /* first run */ }
+}
+
+const sgn = (v: number | null | undefined) => (v == null ? "n/a" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%");
+// Why a quick-tier alert was not sent to Telegram, in plain words.
+const quietWhy = (q: EarlyQuality | null, gate: Gate | null) => (q && q.n < EARLY_TG_SIGNS ? `only ${q.n}/4 quality signs (Telegram needs ${EARLY_TG_SIGNS})` : gateWhy(gate) || "held back");
+// Why Ignition is quiet right now: how many coins are ignited / heating up and what blocks the heating ones most.
+function quietSummary() {
+  const cs = state.candidates || [], ign = cs.filter((c) => c.ignition === "ignited" && !c.moved).length, heat = cs.filter((c) => c.ignition === "heating");
+  const why: Record<string, number> = {};
+  for (const c of heat) for (const m of c.missing || []) { const k = m.split(" (")[0]; why[k] = (why[k] || 0) + 1; }
+  const top = Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return { ignited: ign, heating: heat.length, blockers: top.map(([k, n]) => ({ check: k, coins: n })), btc24h: state.regime.btcChange24hPct ?? null, paused: !state.regime.ok,
+    text: !state.regime.ok ? `Ignition is paused: BTC is down ${state.regime.btcChange24hPct}% in 24 hours.`
+      : `Ignition now: ${ign} coin(s) ignited, ${heat.length} heating up${top.length ? `; most are waiting for: ${top.map(([k, n]) => `${k} (${n})`).join(", ")}` : ""}.` };
+}
+setCheckinExtra(() => quietSummary().text);
+// Why an alert failed the quality gate, in plain words (shown on the page and in the status line).
+export const gateWhy = (g: Partial<Gate> | null | undefined): string | null => !g || g.pass ? null : [
+  g.smallTickets === false ? `big trades (${g.ticketSize}x the normal trade size)` : g.smallTickets == null ? "trade size unknown" : null,
+  g.calmRange === false ? `already swinging (${g.range24}% range in 24h)` : g.calmRange == null ? "24h range unknown" : null].filter(Boolean).join(", ");
+const rotationLine = (c: Candidate) => {
+  const r = c.rotation;
+  if (!r || !r.regimeLabel) return null;
+  const top = r.narratives.filter((x) => x.rank != null).slice(0, 2).map((x) => `${x.name} #${x.rank}`).join(", ");
+  return `${r.regimeLabel}${top ? `; rotation rank: ${top}` : "; not in a ranked narrative"}`;
+};
+const structureLine = (c: Candidate) => [c.breakout === true ? "broke its 12h high" : c.breakout === false ? "inside its 12h range" : null,
+  c.trendUp ? "4h trend rising" : null, c.range6h != null ? `typical 6h range ${c.range6h.toFixed(1)}%` : null].filter(Boolean).join(", ");
+// What the market looked like when an alert fired, saved with it so the performance panel can show which conditions
+// paid. flowContext comes from the Market Flow Radar (server.js): the share of its coins with buyers in control.
+let flowContext: () => { buyShare?: number } | null = () => null;
+export const setFlowContext = (fn: typeof flowContext) => { flowContext = fn; };
+function marketContext(now: number) {
+  const alt = rotation?.altSeason?.() || null, flow = (() => { try { return flowContext(); } catch { return null; } })();
+  return { hourUtc: new Date(now).getUTCHours(), lagSec: Math.round((now % 300_000) / 1000), btcRegime: rotation?.regimeKey?.() || null, riskOff: rotation?.riskOff?.() ?? null,
+    altSeason: alt?.state || null, btc1h: state.regime.btc1hPct ?? null, btc4h: state.regime.btc4hPct ?? null, btc24h: state.regime.btcChange24hPct ?? null,
+    hotShare: state.breadth?.hotShare ?? null, marketWide: !!state.breadth?.marketWide, radarBuyShare: flow?.buyShare ?? null };
+}
+function updateEvents(results: Candidate[]) {
+  if (!state.regime.ok) return;
+  const now = Date.now();
+  const fresh: AlertEvent[] = [];
+  const fire = (c: Candidate, tier: string, score: number, message: string, lines: string[]) => {
+    const rule: TrackRule = tier === "bigmove" ? { targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, hz: BIG_OUTCOME_MS } : { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS };
+    // early alerts: quality signs; with too few they are tracked and shown, but not sent to Telegram (nor AI-reviewed).
+    // Both quick tiers also need the quality gate (small tickets + calm 24h) for Telegram / AI review.
+    const q = tier === "early" ? earlyQuality({ buy10: c.buyRatio10m, rvolD: c.rvol, closePos5: c.closePos5, extPct: c.extPct }) : null;
+    const quick = tier === "early" || tier === "ignition", gate = quick ? (c.gate ?? ignitionGate(null)) : null;
+    const gateFail = quick && GATE_ON && !gate.pass;
+    const aplus = !!q && q.n >= 3, quiet = (!!q && q.n < EARLY_TG_SIGNS) || gateFail;
+    fresh.push({
+      id: `${tier}:${c.symbol}-${now}`, type: tier, tier, v: LOGIC_VERSION, symbol: c.symbol, score, ...(q ? { quality: q, aplus } : {}),
+      ...(quick ? { gate, quiet, quietWhy: quiet ? quietWhy(q, gate) : null } : {}),
+      label: tier === "ignition" ? "Confirmed ignition" : tier === "early" ? (aplus ? "Early ignition A+" : "Early ignition") : tier === "bigmove" ? "Big-move ignition" : c.label,
+      time: now, message, detail: { ...c, ctx: marketContext(now) },
+      track: { entry: c.price, high: c.price, low: c.price, last: c.price, hiW: c.price, loW: c.price, rule, exits: newExits(tier === "bigmove" ? EXIT_RULES.bigmove : EXIT_RULES.quick, c.price), after: {} },
+    });
+    lastAlertAt.set(`${tier}:${c.symbol}`, now);
+    if (!DEMO && quick && quiet) noteHeld("ignition", `${tier === "ignition" ? "CONFIRMED" : "EARLY"} IGNITION: ${c.base} (score ${score}/100)`, `not sent: ${gateFail && !(q && q.n < EARLY_TG_SIGNS) ? "quality gate failed, " : ""}${quietWhy(q, gate)}`);
+    if (!DEMO && tier !== "setup" && !quiet && telegramWants(tier === "bigmove" ? "bigmove" : "ignition")) { // queued and retried until delivered (telegram.js)
+      const head = tier === "ignition" ? `CONFIRMED IGNITION: ${c.base} (ignition score ${score}/100, daily ${c.score})`
+        : tier === "bigmove" ? `BIG-MOVE IGNITION: ${c.base} (small coin waking up; research target +${BIG_TARGET_PCT}%, stop -${BIG_STOP_PCT}%)`
+        : aplus ? `EARLY IGNITION A+: ${c.base} (${q.n}/4 quality signs: ${q.has.join(", ")}; ignition score ${score}/100)`
+        : `EARLY IGNITION: ${c.base} (first signal, lower hit rate; ${q.n}/4 quality signs; ignition score ${score}/100)`;
+      const hz = rule.hz / 3_600_000;
+      sendTelegram(tier === "bigmove" ? "bigmove" : "ignition", `${head}\n` +
+        `Moved so far: ${sgn(c.ret15m ?? c.big?.ret10m)} ${c.ret15m != null ? "15m" : "10m"} | ${sgn(c.change24h)} 24h\n` +
+        lines.map((w) => "- " + w).join("\n") + (gate?.pass ? `\nQuality gate passed: normal-sized trades (${gate.ticketSize}x the usual size), calm 24h before (${gate.range24}% range).` : "") + `\nTracked as: win +${rule.targetPct}% before -${rule.stopPct}% within ${hz >= 48 ? hz / 24 + " days" : hz + "h"}.` +
+        "\nSet entry, stop-loss and target first. Research signal only, not financial advice.");
+    }
+  };
+  // 1) Ignition tiers. "early": the v5 rule passed (first signal). "ignition" (confirmed): the same rule plus an ignition
+  // score >= IGNITE_MIN_SCORE. Separate cooldowns, so a confirmation still fires after an early alert.
+  // Held back briefly at startup until the time-of-day baselines have loaded, so early alerts are not noisy.
+  const exclusionsReady = DEMO || meta.loaded;
+  const seasonalReady = exclusionsReady && (DEMO || state.warmup.seasonal >= 0.8 * state.warmup.total || now - state.startedAt > 180_000);
+  const cd1 = DEMO ? 90_000 : IGNITE_COOLDOWN_MS;
+  const lines = (c: Candidate) => [
+    c.r5 != null ? `last two 5m candles ${c.prevR5}x and ${c.r5}x normal volume${c.seasonalBaseline ? " for this hour" : ""}, 1h ${c.rvol1h ?? "n/a"}x` : null,
+    `${c.buyRatio10m ?? c.buyRatio15m}% of the last 10 min was aggressive buying${c.tradesRatio != null ? `, trades ${c.tradesRatio}x normal` : ""}`,
+    `price only ${sgn(c.ret10m ?? c.ret15m)} in 10m, ${sgn(c.change24h)} in 24h${c.rsi != null ? `, daily RSI ${Math.round(c.rsi)}` : ""}`,
+    structureLine(c), rotationLine(c),
+    ...c.reasons.slice(0, 2)].filter(Boolean);
+  if (seasonalReady) {
+    results.filter((c) => c.ignition === "ignited" && !c.moved)
+      .sort((a, b) => (b.igScore ?? 0) - (a.igScore ?? 0))
+      .forEach((c) => {
+        if (fresh.length >= MAX_ALERTS_PER_SCAN) return;
+        if ((c.igScore ?? 0) >= IGNITE_MIN_SCORE && now - (lastAlertAt.get(`ignition:${c.symbol}`) || 0) >= cd1) {
+          lastAlertAt.set(`early:${c.symbol}`, now); // a confirmed alert also covers the early tier
+          fire(c, "ignition", c.igScore, `${c.base} confirmed ignition (score ${c.igScore}/100)`, lines(c));
+        } else if (EARLY_ALERTS && now - (lastAlertAt.get(`early:${c.symbol}`) || 0) >= cd1) {
+          fire(c, "early", c.igScore ?? 0, `${c.base} early ignition (score ${c.igScore ?? "n/a"}/100)`, lines(c));
+        }
+      });
+  }
+  // 2) Big-move tier: own exit rule and cooldown, independent of the quick tiers (a coin can be in both).
+  if (BIG_ON && exclusionsReady) {
+    const cdB = DEMO ? 90_000 : BIG_COOLDOWN_MS;
+    const bigLines = (c: Candidate) => [
+      `24h volume ${c.rvol}x its 20-day average (${Math.round(c.quoteVolume / 1e5) / 10}M USDT): a smaller coin waking up`,
+      `last two 5m candles ${c.big.prevR5}x and ${c.big.r5}x normal volume for this hour, ${c.big.buyRatio10m}% aggressive buying`,
+      c.marketCap ? `market cap ~$${Math.round(c.marketCap / 1e6)}M` : null, `entry ${c.price}, target ${round(c.price * (1 + BIG_TARGET_PCT / 100), 8)}, stop ${round(c.price * (1 - BIG_STOP_PCT / 100), 8)}`,
+    ].filter(Boolean);
+    results.filter((c) => c.bigmove === "ignited" && c.big).sort((a, b) => (b.rvol ?? 0) - (a.rvol ?? 0)).slice(0, 3).forEach((c) => {
+      if (now - (lastAlertAt.get(`bigmove:${c.symbol}`) || 0) < cdB) return;
+      fire(c, "bigmove", Math.round(c.score), `${c.base} big-move ignition (24h volume ${c.rvol}x normal)`, bigLines(c));
+    });
+  }
+  // 3) Setup tier (off unless SCREENER_SETUP_ALERTS=1): strong daily context that has NOT already moved.
+  if (SETUP_ALERTS) {
+    const cd2 = DEMO ? 90_000 : COOLDOWN_MS;
+    for (const c of results) { // sorted by score, high to low
+      if (c.score < MIN_SCORE_ALERT) break;
+      if (!c.core || c.moved || fresh.length >= MAX_ALERTS_PER_SCAN || fresh.some((f) => f.symbol === c.symbol)) continue;
+      if (now - (lastAlertAt.get(`setup:${c.symbol}`) || 0) < cd2) continue;
+      fire(c, "setup", c.score, `${c.base} early setup (score ${c.score}/100)`, c.reasons);
+    }
+  }
+  if (fresh.length) {
+    state.events = [...fresh, ...state.events].slice(0, MAX_EVENTS);
+    persist();
+    // AI review: the quick tiers, and big-move alerts when their Telegram alerts are on (the AI gets that tier's rule)
+    for (const ev of fresh) if (((ev.tier === "ignition" || ev.tier === "early") && !ev.quiet) || (ev.tier === "bigmove" && BIG_ALERTS())) for (const h of alertHooks) Promise.resolve().then(() => h(ev)).catch(() => {});
+  }
+}
+
+// Latest AI verdict per coin (alert reviews, AI desk analyses, Alpha checks), so every list can show an "AI: TAKE" tab.
+// Keys: the spot base ("SOL") or "A:" + the Alpha id. A verdict is about "right now", so it counts for 2 hours.
+const AI_VERDICT_MS = 2 * 3_600_000;
+interface AiVerdict { decision: string; at: number; headline: string | null; expectedValuePct: number | null; probTargetPct: number | null }
+const aiVerdicts = new Map<string, AiVerdict>();
+export function noteAiVerdict(key: string, v: AiReview) {
+  if (!key || !v || !v.decision) return;
+  const k = String(key).toUpperCase().replace(/USDT$/, ""), at = v.at || Date.now(), old = aiVerdicts.get(k);
+  if (old && old.at > at) return;
+  aiVerdicts.set(k, { decision: v.decision, at, headline: v.headline || null, expectedValuePct: v.expectedValuePct ?? null, probTargetPct: v.probTargetPct ?? null });
+  if (aiVerdicts.size > 400) aiVerdicts.delete(aiVerdicts.keys().next().value);
+}
+export function freshAiVerdicts(now = Date.now()) {
+  const out: Record<string, AiVerdict> = {};
+  for (const [k, v] of aiVerdicts) if (now - v.at < AI_VERDICT_MS) out[k] = v;
+  return out;
+}
+// Other modules can react to new ignition alerts (server.js runs the AI review) and attach results to them.
+const alertHooks: ((ev: AlertEvent) => unknown)[] = [];
+export const onIgnitionAlert = (fn: (ev: AlertEvent) => unknown) => { alertHooks.push(fn); };
+export function annotateEvent(id: string, patch: Partial<AlertEvent>): boolean {
+  const e = state.events.find((x) => x.id === id);
+  if (!e) return false;
+  Object.assign(e, patch);
+  if (e.detail && patch.ai) e.detail.aiDecision = patch.ai.decision; // lets the performance groups split by AI call
+  if (patch.ai?.decision) noteAiVerdict(e.detail?.base || e.symbol, patch.ai);
+  persist();
+  return true;
+}
+
+// Follows every alert (sampled at each scan). Outcome: win = +TARGET% reached first (exit at the target),
+// loss = -STOP% reached first (exit at the sampled price, so slippage past the stop counts), flat = neither within
+// OUTCOME_HOURS (exit at the price when the window ends). hiW/loW = best/worst price inside the window.
+function updateTracking(priceByBase: Map<string, number>) {
+  const now = Date.now();
+  let changed = false;
+  for (const e of state.events) {
+    const t = e.track;
+    if (!t || !e.detail || !t.entry) continue;
+    const rule = ruleOf(e), p = priceByBase.get(e.detail.base), age = now - e.time;
+    if (age <= Math.max(DAY_MS, rule.hz) && Number.isFinite(p)) {
+      t.last = p; t.high = Math.max(t.high, p); t.low = Math.min(t.low, p); changed = true;
+    }
+    if (t.outcome) continue;
+    // With 1-minute candles (trackWithCandles) the window's path decides. Otherwise, or if candles stop arriving for 10
+    // minutes past the window, fall back to the sampled price.
+    const candlesOk = t.candles && (t.lastCandleT ?? 0) + 60_000 >= Math.min(now, e.time + rule.hz) - 10 * 60_000;
+    const waitForCandles = !DEMO && !t.candles && age < 5 * 60_000; // the first candles arrive a minute or two after the alert
+    if (!candlesOk && !waitForCandles && Number.isFinite(p)) { // the scan that closes the window still counts, so a hit is never labelled "flat"
+      t.hiW = Math.max(t.hiW ?? t.entry, p); t.loW = Math.min(t.loW ?? t.entry, p);
+      const r = (p / t.entry - 1) * 100;
+      if (r >= rule.targetPct) { t.outcome = "win"; t.exitPct = rule.targetPct; }
+      else if (r <= -rule.stopPct) { t.outcome = "loss"; t.exitPct = round(r, 2); }
+    }
+    if (!t.outcome && age >= rule.hz) {
+      const covered = t.candles && (t.lastCandleT ?? 0) + 60_000 >= e.time + rule.hz - 60_000;
+      if (covered || !candlesOk) {
+        t.outcome = "flat";
+        const lp = covered && Number.isFinite(t.lastClose) ? t.lastClose : Number.isFinite(p) ? p : t.last;
+        t.exitPct = round((lp / t.entry - 1) * 100, 2);
+      }
+    }
+    if (t.outcome) { t.outcomeAt = t.outcomeAt || now; changed = true; }
+  }
+  if (changed) persist();
+}
+
+// Applies finished 1-minute candles {t, o, h, l, c} to an open alert in time order. Inside a candle the stop is checked
+// before the target (a candle touching both counts as a loss, as in the replay). Candles that started before the
+// alert's first full minute, or after its window, are ignored. Returns true when something changed.
+export function applyCandles(t: AlertTrack, rule: TrackRule, alertTime: number, candles: Candle[]): boolean {
+  const first = Math.ceil(alertTime / 60_000) * 60_000, end = alertTime + rule.hz;
+  const stopPx = t.entry * (1 - rule.stopPct / 100), targetPx = t.entry * (1 + rule.targetPct / 100);
+  let changed = false;
+  for (const c of candles) {
+    if (t.outcome || c.t >= end) break;
+    if (c.t < first || c.t <= (t.lastCandleT ?? -Infinity)) continue;
+    t.hiW = Math.max(t.hiW ?? t.entry, c.h); t.loW = Math.min(t.loW ?? t.entry, c.l);
+    t.lastCandleT = c.t; t.lastClose = c.c; t.candles = true; changed = true;
+    if (c.l <= stopPx) { t.outcome = "loss"; t.exitPct = round((Math.min(stopPx, c.o) / t.entry - 1) * 100, 2); t.outcomeAt = c.t + 60_000; }
+    else if (c.h >= targetPx) { t.outcome = "win"; t.exitPct = rule.targetPct; t.outcomeAt = c.t + 60_000; }
+  }
+  return changed;
+}
+
+// Fetches new 1-minute candles for open alerts (each at most once a minute, up to 25 per scan).
+// Also follows each alert's alternative exits (until the longest one ends) and its price 1, 2 and 5 minutes later.
+async function trackWithCandles() {
+  if (DEMO) return;
+  const now = Date.now();
+  const needsAfter = (t: AlertTrack) => t.after && AFTER_MARKS.some(([k]) => t.after[k] == null);
+  const horizon = (e: AlertEvent) => Math.max(ruleOf(e).hz, e.track.exits ? maxHours(exitRulesOf(e)) * 3_600_000 : 0) + 15 * 60_000;
+  const open = state.events.filter((e) => e.track?.entry && e.detail?.base && (!e.track.outcome || exitsOpen(e.track.exits) || needsAfter(e.track)) &&
+    now - e.time <= horizon(e) && now - (e.track.checkedAt || 0) >= 60_000).sort((a, b) => (a.track.checkedAt || 0) - (b.track.checkedAt || 0)).slice(0, 25);
+  let changed = false;
+  await mapLimit(open, 4, async (e) => {
+    const t = e.track, first = Math.ceil(e.time / 60_000) * 60_000;
+    const starts = [!t.outcome ? (t.lastCandleT != null ? t.lastCandleT + 60_000 : first) : Infinity, needsAfter(t) ? first : Infinity,
+      ...Object.values(t.exits || {}).filter((x) => x.x == null).map((x) => (x.to != null ? x.to + 60_000 : first))];
+    const start = Math.min(...starts);
+    t.checkedAt = now;
+    if (!Number.isFinite(start)) return;
+    const raw = await fetchJson(`${BN}/api/v3/klines?symbol=${encodeURIComponent(e.detail.base)}USDT&interval=1m&startTime=${start}&limit=1000`, { retries: 0 });
+    if (!Array.isArray(raw)) return;
+    const done = raw.map((k) => ({ t: Number(k[0]), o: Number(k[1]), h: Number(k[2]), l: Number(k[3]), c: Number(k[4]) })).filter((k) => k.t + 60_000 <= now);
+    if (applyCandles(t, ruleOf(e), e.time, done)) changed = true;
+    if (t.exits && applyExits(t.exits, exitRulesOf(e), t.entry, first, done, 60_000)) changed = true;
+    if (t.after && recordAfter(t.after, t.entry, e.time, done, 60_000, AFTER_MARKS)) changed = true;
+  });
+  if (changed) persist();
+}
+
+// Result of one resolved alert in %, before costs. Older alerts did not record flat exits, so those count as 0.
+const resultOf = (e: AlertEvent): number => { const t = e.track, r = ruleOf(e); return Number.isFinite(t.exitPct) ? t.exitPct : t.outcome === "win" ? r.targetPct : t.outcome === "loss" ? -r.stopPct : 0; };
+function summarize(evs: AlertEvent[]) {
+  const done = evs.filter((e) => ["win", "loss", "flat"].includes(e.track?.outcome));
+  const wins = done.filter((e) => e.track.outcome === "win").length, losses = done.filter((e) => e.track.outcome === "loss").length;
+  const tracked = evs.filter((e) => e.track && e.track.entry);
+  const gross = done.length ? mean(done.map(resultOf)) : null;
+  const inProfit = done.filter((e) => resultOf(e) - COST_PCT > 0).length, flats = done.filter((e) => e.track.outcome === "flat");
+  return {
+    total: evs.length, resolved: done.length, wins, losses, flat: done.length - wins - losses,
+    pending: evs.filter((e) => e.track && !e.track.outcome).length, unclear: evs.filter((e) => e.track?.outcome === "unclear").length,
+    winRatePct: done.length ? round((wins / done.length) * 100, 1) : null,   // hit the target
+    inProfit, profitablePct: done.length ? round((inProfit / done.length) * 100, 1) : null, // closed with a profit after costs
+    expectancyPct: round(gross, 2),                                    // gross, before costs
+    flatAvgPct: flats.length ? round(mean(flats.map(resultOf)), 2) : null, // average move of the alerts that hit neither (time-outs), before costs
+    netPct: gross == null ? null : round(gross - COST_PCT, 2),         // after fees and slippage
+    avgPeakPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.hiW ?? e.track.high) / e.track.entry - 1) * 100)), 2) : null,
+    avgLowPct: tracked.length ? round(mean(tracked.map((e) => ((e.track.loW ?? e.track.low) / e.track.entry - 1) * 100)), 2) : null,
+  };
+}
+const BUCKETS: Group<AlertDetail>[] = [
+  ["Ignition score 80+", (c) => c.igScore >= 80], ["Ignition score 65-79", (c) => c.igScore >= 65 && c.igScore < 80],
+  ["Ignition score under 65", (c) => c.igScore != null && c.igScore < 65],
+  ["AI said TAKE", (c) => c.aiDecision === "TAKE"], ["AI said WAIT", (c) => c.aiDecision === "WAIT"], ["AI said SKIP", (c) => c.aiDecision === "SKIP"],
+  ["Daily RSI under 55", (c) => c.rsi != null && c.rsi < 55], ["Daily RSI 55+", (c) => c.rsi != null && c.rsi >= 55],
+  ["Broke 12h high", (c) => c.breakout === true], ["Inside 12h range", (c) => c.breakout === false],
+  ["Early: 3-4 quality signs (A+)", (c) => c.earlySigns >= 3], ["Early: 0-2 quality signs", (c) => c.earlySigns != null && c.earlySigns < 3],
+  ["Quality gate passed (small trades, calm 24h)", (c) => c.gate?.pass === true], ["Quality gate failed", (c) => c.gate != null && c.gate.pass === false],
+  ["Less than 1% under its 12h high", (c) => c.distTo12hHigh != null && c.distTo12hHigh <= 0 && c.distTo12hHigh > -1],
+  ["Above its 20-day average", (c) => c.aboveSma === true], ["Below its 20-day average", (c) => c.aboveSma === false],
+  ["Typical 6h range 2x target+", (c) => c.range6h >= 2 * TARGET_PCT], ["Typical 6h range under 2x target", (c) => c.range6h != null && c.range6h < 2 * TARGET_PCT],
+  ["Buyers 65%+", (c) => c.buyRatio15m >= 65], ["Buyers under 65%", (c) => c.buyRatio15m < 65],
+  ["15m volume 6x+", (c) => c.rvol15 >= 6], ["15m volume under 6x", (c) => c.rvol15 < 6],
+  ["Volume held 3/3 candles", (c) => c.persist >= 3], ["Volume held 2/3 candles", (c) => c.persist === 2],
+  ["Hot narrative", (c) => !!c.narrative], ["No narrative", (c) => !c.narrative],
+  ["Daily setup 55+", (c) => c.score >= 55], ["Daily setup under 55", (c) => c.score < 55],
+  ["In a top-3 rotation narrative", (c) => !!c.rotation?.narratives?.some((x) => x.rank != null && x.rank <= 3)],
+  ["Not in a top-3 rotation narrative", (c) => !!c.rotation && !c.rotation.narratives.some((x) => x.rank != null && x.rank <= 3)],
+  ["BTC regime up or sideways", (c) => !!c.rotation?.regime && !c.rotation.riskOff], ["BTC regime downtrend", (c) => !!c.rotation?.riskOff],
+  // market context saved at alert time (alerts from before this was added have none)
+  ["Alt season meter: alts leading", (c) => c.ctx?.altSeason === "altsLead"], ["Alt season meter: mixed", (c) => c.ctx?.altSeason === "mixed"],
+  ["Alt season meter: BTC leading", (c) => c.ctx?.altSeason === "btcLeads"],
+  ["BTC up over the last hour", (c) => c.ctx?.btc1h > 0], ["BTC down over the last hour", (c) => c.ctx?.btc1h != null && c.ctx.btc1h <= 0],
+  ["Most Market Flow coins have buyers in control", (c) => c.ctx?.radarBuyShare >= 50], ["Few Market Flow coins have buyers in control", (c) => c.ctx?.radarBuyShare != null && c.ctx.radarBuyShare < 50],
+  ["Asia hours (00-08 UTC)", (c) => c.ctx?.hourUtc != null && c.ctx.hourUtc < 8], ["Europe hours (08-14 UTC)", (c) => c.ctx?.hourUtc >= 8 && c.ctx.hourUtc < 14],
+  ["US hours (14-22 UTC)", (c) => c.ctx?.hourUtc >= 14 && c.ctx.hourUtc < 22], ["Late US (22-24 UTC)", (c) => c.ctx?.hourUtc >= 22],
+  ["Alert within 30s of the candle close", (c) => c.ctx?.lagSec != null && c.ctx.lagSec <= 30], ["Alert 30s+ after the candle close", (c) => c.ctx?.lagSec > 30],
+];
+// Groups that match a coin's current conditions, with their live results (for the AI desk: "alerts like this did X").
+// tier = "ignition" / "early": only that tier's alerts (the AI desk uses its own tier only); null = both quick tiers.
+export function matchingGroups(c: AlertDetail, minResolved = 10, tier: string | null = null) {
+  const cur = state.stats?.current, groups = (tier ? cur?.bucketsByTier?.[tier] : cur?.buckets) || [], x = c.ctx ? c : { ...c, ctx: marketContext(Date.now()) }; // a coin checked now: today's conditions
+  return BUCKETS.filter(([, fn]) => { try { return fn(x); } catch { return false; } }).map(([name]) => groups.find((g) => g.name === name))
+    .filter((g) => g && g.resolved >= minResolved).map((g) => ({ group: g.name, resolved: g.resolved, hitTargetPct: g.winRatePct, avgNetPct: g.netPct, olderPct: g.olderPct, newerPct: g.newerPct }));
+}
+const resolvedOk = (e: AlertEvent) => ["win", "loss", "flat"].includes(e.track?.outcome);
+function statsBlock(evs: AlertEvent[]) {
+  const ig = evs.filter((e) => e.tier === "ignition" || e.tier === "early");
+  const igDone = ig.filter((e) => e.detail && resolvedOk(e)), overall = summarize(evs.filter((e) => e.tier !== "bigmove"));
+  const items = igDone.map((e) => ({ ...e.detail, t: e.time, tier: e.tier, netPct: resultOf(e) - COST_PCT, win: e.track.outcome === "win", ai: e.ai }));
+  const exitItems = (tier: string): ExitItem[] => evs.filter((e) => e.tier === tier && e.track?.exits).map((e) => ({ exits: e.track.exits, t: e.time, mainPct: resolvedOk(e) ? resultOf(e) : undefined }));
+  const quickLabel = `+${TARGET_PCT}% / -${STOP_PCT}% (${OUTCOME_MS / 3_600_000}h): the alert's rule`, bigLabel = `+${BIG_TARGET_PCT}% / -${BIG_STOP_PCT}% (${BIG_OUTCOME_MS / 86_400_000} days): the alert's rule`;
+  const speedItems = evs.filter((e) => e.track?.after && e.tier !== "setup").map((e) => ({ lagSec: e.detail?.ctx?.lagSec, after: e.track.after }));
+  return {
+    overall, // quick tiers; the big-move tier has its own rule and row
+    byTier: { ignition: summarize(evs.filter((e) => e.tier === "ignition")), early: summarize(evs.filter((e) => e.tier === "early")),
+      setup: summarize(evs.filter((e) => e.tier === "setup")), bigmove: summarize(evs.filter((e) => e.tier === "bigmove")) },
+    // older / newer = the first and second half of each group's alerts; "holds" = better (or worse) than average in both
+    buckets: groupSummary(items, BUCKETS.map(([name, fn]) => [name, (it) => fn(it)]), overall.netPct)
+      .map((g) => ({ ...g, profitablePct: g.inProfitPct, netPct: g.avgNetPct })),
+    // the same groups for one tier at a time
+    bucketsByTier: Object.fromEntries(["ignition", "early"].map((t) => [t, groupSummary(items.filter((it) => it.tier === t), BUCKETS.map(([name, fn]) => [name, (it) => fn(it)]),
+      summarize(evs.filter((e) => e.tier === t)).netPct).map((g) => ({ ...g, profitablePct: g.inProfitPct, netPct: g.avgNetPct }))])),
+    exits: { ignition: exitSummary(exitItems("ignition"), EXIT_RULES.quick, COST_PCT, quickLabel), early: exitSummary(exitItems("early"), EXIT_RULES.quick, COST_PCT, quickLabel),
+      bigmove: exitSummary(exitItems("bigmove"), EXIT_RULES.bigmove, COST_PCT, bigLabel) },
+    speed: speedSummary(speedItems, AFTER_MARKS, 1),
+    ai: aiCalibration(items),
+  };
+}
+function computeStats() {
+  const evs = state.events;
+  return {
+    targetPct: TARGET_PCT, stopPct: STOP_PCT, horizonHours: OUTCOME_MS / 3_600_000, feePct: FEE_PCT, slippagePct: SLIPPAGE_PCT, costPct: round(COST_PCT, 2), version: LOGIC_VERSION,
+    bigmove: { on: BIG_ON, targetPct: BIG_TARGET_PCT, stopPct: BIG_STOP_PCT, horizonHours: BIG_OUTCOME_MS / 3_600_000 },
+    olderCount: evs.filter((e) => e.v !== LOGIC_VERSION).length,
+    current: statsBlock(evs.filter((e) => e.v === LOGIC_VERSION)), all: statsBlock(evs),
+  };
+}
+
+// ───────────────────────────── scan ─────────────────────────────
+async function scan() {
+  const t0 = Date.now();
+  const tickers = await binanceTickers();
+  const btc = tickers.get("BTC");
+  const btcChg = btc ? Number(btc.priceChangePercent) : 0;
+  state.regime = { btcChange24hPct: round(btcChg, 2), btc1hPct: state.regime.btc1hPct ?? null, ok: btcChg > BTC_DROP_PAUSE };
+
+  await ensureMeta();
+  const funding = await fundingRates();
+  const universe = buildUniverse(tickers);
+  const narrativeByBase = hotNarratives(tickers);
+
+  const eligible: EligibleCoin[] = [];
+  let excluded = 0;
+  for (const [base, info] of universe) {
+    const tk = tickers.get(base);
+    if (!tk || BLOCKLIST.has(base)) continue;
+    if ((n(tk.quoteVolume) || 0) < (BIG_ON ? Math.min(MIN_QUOTE_VOLUME, DEFAULT_BIGMOVE.minVolume) : MIN_QUOTE_VOLUME)) continue;
+    if (STABLES.has(base) || info.tags.some((t) => /stable/i.test(t)) ||
+      (EXCLUDE_NONCRYPTO && !ALLOWLIST.has(base) && (NONCRYPTO.has(base) || isNonCryptoInfo(info)))) { excluded++; continue; }
+    eligible.push([base, info, tk]);
+  }
+  kickDaily(eligible);
+  kickHourly(eligible);
+  stream?.want(eligible.map(([b]) => b + "USDT"));
+  const ready: EligibleCoin[] = [];
+  for (const e of eligible) {
+    const d = dailyCache.get(e[0]);
+    if (!d) continue;
+    if (!ALLOWLIST.has(e[0]) && looksPegged(d, Number(e[2].lastPrice))) { excluded++; continue; }
+    ready.push(e);
+  }
+  state.warmup.loaded = ready.length; state.warmup.total = eligible.length;
+
+  const fast = await fastLayer(ready);
+
+  const pre: { base: string; info: CoinInfo; tk: Ticker; t: TechMetrics; nar: Narrative | null; f: FastMetrics | undefined; c: Candidate }[] = [];
+  for (const [base, info, tk] of ready) {
+    const t = techMetrics(dailyCache.get(base), Number(tk.lastPrice), Number(tk.quoteVolume));
+    if (!t) continue;
+    const nar = narrativeByBase.get(base) || null;
+    const f = fast.get(base);
+    pre.push({ base, info, tk, t, nar, f, c: buildCandidate(base, info, tk, t, nar, funding.get(base) ?? null, null, f) });
+  }
+  pre.sort((a, b) => b.c.score - a.c.score);
+
+  // Add open-interest change for the best candidates only.
+  const deep = pre.filter((p) => p.c.core).slice(0, DEEP_SCAN_LIMIT).filter((p) => funding.has(p.base));
+  await mapLimit(deep, 4, async (p) => {
+    const oi = await oiChange24h(p.base);
+    p.c = buildCandidate(p.base, p.info, p.tk, p.t, p.nar, funding.get(p.base), oi, p.f);
+  });
+
+  const results = pre.map((p) => p.c).sort((a, b) => b.score - a.score);
+  const top = results.filter((c) => c.core).slice(0, 150), inTop = new Set(top.map((c) => c.symbol));
+  state.candidates = [...top, ...results.filter((c) => (c.ignition || c.bigmove) && !inTop.has(c.symbol))];
+  const smallCoins = eligible.filter(([, , tk]) => (n(tk.quoteVolume) || 0) < MIN_QUOTE_VOLUME).length;
+  state.universe = { binance: tickers.size, eligible: eligible.length - smallCoins, smallCoins, excluded, slow: state.universe.slow,
+    rankedBy: meta.coins.size ? "market cap" : "24h volume", monitoring: ready.filter(([, info]) => isMonitoring(info)).length };
+  state.metaStatus = metaStatus();
+  state.status = ready.length === 0 && eligible.length ? "warming_up" : "connected";
+  delete state.errors["Binance Spot"];
+  updateEvents(results);
+  const priceByBase = new Map([...tickers].map(([b, tk]) => [b, Number(tk.lastPrice)]));
+  updateTracking(priceByBase);
+  await trackWithCandles().catch(() => {});
+  rotation?.updatePrices(priceByBase);
+  pump?.onTickers(tickers);
+  spot?.onTickers(tickers);
+  state.stats = computeStats();
+  state.lastScanMs = Date.now() - t0;
+  state.binancePausedUntil = binancePause();
+}
+
+// ───────────────────────────── demo mode (DEMO=1) ─────────────────────────────
+const DEMO_TOKENS = ["SOL", "SUI", "LINK", "AVAX", "INJ", "RENDER", "FET", "ARB", "OP", "TIA", "SEI", "NEAR", "APT", "DOGE", "PEPE", "ONDO", "JUP", "PYTH", "TAO", "ENA"];
+const DEMO_NARR = ["AI", "RWA", "DePIN", "Meme", "Layer 2"];
+const demoBook = new Map<string, ReturnType<typeof demoRoll>>();
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+function demoRoll(i: number, kind: string) { // kind: "ignite" | "ran" | "cold"
+  const hot = kind !== "cold";
+  const names = hot || Math.random() < 0.35 ? [DEMO_NARR[Math.floor(Math.random() * DEMO_NARR.length)]] : null;
+  const common = { spreadBps: rnd(1, 9), marketWide: false, seasonal: true, range6h: hot ? rnd(3, 8) : rnd(1.2, 6), btc1h: rnd(-0.3, 0.6), btc4h: rnd(0, 1.2) };
+  return {
+    kind, rank: i + 4,
+    rvol: hot ? rnd(2.4, 4) : rnd(0.7, 2.2), dist: kind === "ran" ? rnd(0.1, 0.3) : hot ? rnd(-0.025, 0.05) : rnd(-0.12, 0.06),
+    rsi: kind === "ignite" ? rnd(42, 64) : hot ? rnd(50, 68) : rnd(32, 80), compressed: kind === "ignite" ? Math.random() < 0.6 : Math.random() < 0.2,
+    ratio: hot ? rnd(0.6, 1) : rnd(0.15, 1), narrative: names ? { change: hot ? rnd(5, 11) : rnd(3, 7), names } : null,
+    funding: Math.random() < 0.85 ? rnd(-0.0002, hot ? 0.0003 : 0.0009) : null, oi: Math.random() < 0.7 ? rnd(-0.05, 0.13) : null,
+    vol: rnd(8e6, 2.2e8), price: rnd(0.4, 180),
+    chg: kind === "ran" ? rnd(16, 45) : kind === "ignite" ? rnd(0.5, 6) : rnd(-6, 6),
+    f: kind === "ignite" ? { ...common, rvol15: rnd(4.2, 9), ret15: rnd(0.4, 3), rvol1h: rnd(1.8, 4), ret1h: rnd(0.8, 5), buy15: rnd(60, 74),
+      persist: Math.random() < 0.6 ? 3 : 2, persistOf: 3, tradesRatio: rnd(1.5, 3.2), rangePos: rnd(0.65, 0.97), nearHigh: Math.random() < 0.5, rs15: rnd(0.1, 2),
+      trendUp: Math.random() < 0.8, extPct: rnd(0.4, 3), fadePct: rnd(0.1, 0.8), wickShare: rnd(0.05, 0.45), breakout: Math.random() < 0.6, distTo12hHigh: Math.random() < 0.6 ? rnd(0.1, 1.5) : rnd(-4, -1.1), distTo24hHigh: rnd(-6, 1),
+      early: { r5: rnd(3.2, 9), prevR5: rnd(3.1, 8), ret10: rnd(0.3, 2), buy10: rnd(59, 75), closePos5: rnd(0.5, 0.88), body5: rnd(0.2, 0.7) },
+      gate: { ticketSize: rnd(0.6, 2.2), range24: rnd(4, 18) } }
+      : kind === "ran" ? { ...common, rvol15: rnd(3, 6), ret15: rnd(3.5, 9), rvol1h: rnd(3, 6), ret1h: rnd(9, 20), buy15: rnd(55, 70),
+        persist: 3, persistOf: 3, tradesRatio: rnd(2, 4), rangePos: 0.97, nearHigh: true, rs15: rnd(3, 8),
+        trendUp: true, extPct: rnd(5, 12), fadePct: rnd(0, 2), wickShare: rnd(0.2, 0.6), breakout: true, distTo12hHigh: rnd(3, 9),
+        early: { r5: rnd(4, 9), prevR5: rnd(4, 9), ret10: rnd(2, 6), buy10: rnd(55, 70), closePos5: rnd(0.8, 1), body5: rnd(0.6, 0.9) } }
+        : { ...common, rvol15: rnd(2.1, 3.9), ret15: rnd(-1, 1), rvol1h: rnd(0.5, 1.6), ret1h: rnd(-2, 2), buy15: rnd(44, 56),
+          early: { r5: rnd(1, 4), prevR5: rnd(0.5, 3), ret10: rnd(-0.5, 0.5), buy10: rnd(44, 58), closePos5: rnd(0.2, 0.9), body5: rnd(-0.5, 0.5) } },
+  };
+}
+// Simulated past alerts so the performance panel can be previewed. Demo only; never written to the real state file.
+function seedDemoHistory() {
+  const now = Date.now(), outcomes = ["win", "win", "loss", "flat", "loss", "flat", "win", "flat", "loss", "win", "flat", "flat"];
+  const seed = outcomes.map((o, i) => {
+    const base = DEMO_TOKENS[(i * 3) % DEMO_TOKENS.length], d = demoRoll(i, "ignite");
+    const t = { rvol: d.rvol, distToHigh: d.dist, aboveSma: true, rsi: d.rsi, compressed: d.compressed };
+    const c = buildCandidate(base, { name: base, rank: d.rank, mc: 1e9, fdv: 1e9 / d.ratio }, { quoteVolume: d.vol, priceChangePercent: d.chg, lastPrice: d.price }, t, d.narrative, d.funding, d.oi, d.f);
+    const entry = d.price, up = o === "win" ? 1 + rnd(TARGET_PCT / 100, TARGET_PCT / 100 + 0.04) : 1 + rnd(0.004, 0.025),
+      dn = o === "loss" ? 1 - rnd(STOP_PCT / 100 + 0.001, STOP_PCT / 100 + 0.015) : 1 - rnd(0.003, 0.02);
+    const exitPct = o === "win" ? TARGET_PCT : o === "loss" ? -round(rnd(STOP_PCT, STOP_PCT + 0.4), 2) : round(rnd(-1.5, 1.5), 2);
+    return { id: `ignition:${base}USDT-seed${i}`, type: "ignition", tier: "ignition", v: LOGIC_VERSION, symbol: base + "USDT", score: c.igScore ?? 70, label: "Early ignition",
+      time: now - (7 + i * 1.1) * 3_600_000, message: "simulated", detail: c,
+      track: { entry, high: entry * up, low: entry * dn, hiW: entry * up, loW: entry * dn, last: entry * (o === "win" ? up * 0.99 : dn * 1.01), outcome: o, exitPct,
+        rule: { targetPct: TARGET_PCT, stopPct: STOP_PCT, hz: OUTCOME_MS } } };
+  });
+  state.events = seed;
+}
+function demoScan() {
+  DEMO_TOKENS.forEach((base, i) => {
+    if (!demoBook.has(base) || Math.random() < 0.1) {
+      const r = Math.random();
+      demoBook.set(base, demoRoll(i, r < 0.2 ? "ignite" : r < 0.3 ? "ran" : "cold"));
+    }
+  });
+  const results = DEMO_TOKENS.map((base) => {
+    const d = demoBook.get(base);
+    d.rvol *= rnd(0.97, 1.03); d.dist += rnd(-0.004, 0.004); d.price *= 1 + rnd(-0.002, 0.003);
+    const t = { rvol: d.rvol, distToHigh: d.dist, aboveSma: d.dist > -0.06, rsi: d.rsi, compressed: d.compressed };
+    const tk = { quoteVolume: d.vol, priceChangePercent: d.chg, lastPrice: d.price };
+    return buildCandidate(base, { name: base, rank: d.rank, mc: 1e9, fdv: 1e9 / d.ratio }, tk, t, d.narrative, d.funding, d.oi, d.f);
+  }).sort((a, b) => b.score - a.score);
+  state.regime = { btcChange24hPct: round(rnd(-1.5, 2.5), 2), btc1hPct: round(rnd(-0.3, 0.5), 2), ok: true };
+  state.status = "demo"; state.metaStatus = { source: "demo", coins: 380, sectors: 18 }; state.futuresStatus = "demo";
+  state.hotNarratives = DEMO_NARR.slice(0, 3).map((name) => ({ id: name, name, change24hPct: round(rnd(4, 11), 2) }));
+  state.universe = { binance: 380, eligible: results.length, excluded: 14, slow: results.filter((c) => c.slow).length, rankedBy: "market cap", monitoring: 2 };
+  state.warmup = { loaded: results.length, total: results.length, seasonal: results.length };
+  state.breadth = { hotShare: 0.12, marketWide: false };
+  state.candidates = results;
+  updateEvents(results);
+  updateTracking(new Map(results.map((c) => [c.base, c.price])));
+  state.stats = computeStats();
+}
+
+// ───────────────────────────── poll + server ─────────────────────────────
+async function poll() {
+  if (polling) { pollAgain = true; return; }
+  polling = true; pollAgain = false;
+  try {
+    if (DEMO) demoScan();
+    else {
+      try { await scan(); }
+      catch (e) { state.status = "error"; state.errors["Binance Spot"] = e.message; state.binancePausedUntil = binancePause(); }
+    }
+    state.lastUpdated = Date.now();
+    state.stream = streamStatus();
+  } finally { polling = false; if (pollAgain) setTimeout(poll, 0); }
+}
+
+
+// The parts this module runs, for the status bar (health.js, built in server.js). every = minutes between updates
+// when healthy (a part with no update for 3x that is broken). alert: false = shown, but no Telegram warning of its own.
+export function healthSources(): HealthSource[] {
+  const errs = () => Object.entries(state.errors || {}).map(([k, v]) => `${k}: ${v}`).join("; ");
+  return [
+    { key: "spot", name: "Spot scanner (Ignition)", every: 1, get: () => ({ status: state.status, updatedAt: state.lastUpdated,
+      error: state.status === "error" ? errs() || "scan failed" : null, warn: errs() || null, detail: state.universe ? `${state.universe.eligible} coins scanned${state.stream?.connected ? ", live candles" : state.stream?.on ? ", live candles reconnecting (polling)" : ""}` : "" }) },
+    { key: "perps", name: "Perps swing signals", every: 170, get: () => (perps ? (({ status, error, updatedAt, signals }) => ({ status, error, updatedAt,
+      detail: `${(signals || []).filter((x) => x.track?.status === "open").length} open signals` }))(perps.api()) : { off: true, detail: "off (PERPS=0)" }) },
+    { key: "scalp", name: "Scalp scanner", every: 5, get: () => (scalp ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
+      detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(scalp.api()) : { off: true, detail: "off (SCALP=0)" }) },
+    { key: "whalesig", name: "Whale signals", every: 5, get: () => (whaleSig ? (({ status, error, updatedAt, read, whales, coins }) => status === "off" ? { off: true, detail: error }
+      : { status, error, updatedAt, detail: `${read || 0}/${whales || 0} whales read, ${(coins || []).filter((c) => c.call !== "WATCH").length} calls now` })(whaleSig.api()) : { off: true, detail: "off (WHALESIG=0)" }) },
+    { key: "onchain", name: "On-chain scanner", every: 45, get: () => (onchain ? (({ status, error, updatedAt, coins, open }) => ({ status, error, updatedAt,
+      detail: `${(coins || []).length} coins, ${open || 0} open signals` }))(onchain.api()) : { off: true, detail: "off (ONCHAIN=0)" }) },
+    { key: "bot", name: "Paper bot", every: 5, alert: false, get: () => { if (!scalp) return { off: true, detail: "off with the Scalp scanner" }; const a = scalp.api();
+      return { updatedAt: a.updatedAt, error: a.status === "error" ? `stopped: the Scalp scanner is not working (${a.error})` : null,
+        detail: a.paper ? `balance $${a.paper.balance} (${a.paper.returnPct >= 0 ? "+" : ""}${a.paper.returnPct}%), ${a.paper.trades} trades, ${a.paper.open.length} open` : "" }; } },
+    { key: "spotplan", name: "Spot plan (BTC + ETH)", every: 600, get: () => (spot ? (({ status, error, updatedAt, plan, allError }) => ({ status, error, updatedAt,
+      warn: allError ? `all-coins check: ${allError}` : null, detail: plan || "" }))(spot.api()) : { off: true, detail: "off (SPOT=0)" }) },
+    { key: "pump", name: "Pump watch", every: 600, get: () => (pump ? (({ status, error, updatedAt, today, mood }) => status === "off" ? { off: true, detail: error }
+      : { status, error, updatedAt, detail: `${(today || []).length} picks on the last list${mood ? `, market mood ${mood.share}%` : ""}` })(pump.api()) : { off: true, detail: "off (PUMP=0)" }) },
+  ];
+}
+// Read-only view of the live screener (candidates, regime, breadth, stats, config), used by the AI trade desk.
+export const screenerSnapshot = (): ScreenerState => state;
+
+let lastTgTest = 0;
+// Answers the screener's API routes; returns false for anything else so the caller can carry on.
+export async function handleScreenerRequest(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  if (url.pathname === "/api/screener") { jsonResponse(res, 200, { ...state, events: state.events.slice(0, 60), telegram: { ...telegramStatus(), quiet: quietSummary() }, aiVerdicts: freshAiVerdicts() }); return true; }
+  if (url.pathname === "/api/telegram/test" && req.method === "POST") { // "Send test message" button (this site only, at most every 10s)
+    const sameSite = fromThisSite(req);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    if (Date.now() - lastTgTest < 10_000) { jsonResponse(res, 429, { error: "Wait a few seconds between tests", telegram: telegramStatus() }); return true; }
+    lastTgTest = Date.now();
+    const on = Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label);
+    const r = await tgSend(`Smart Money Tracker: test message. Telegram works. On: ${on.join(", ") || "nothing"}.`, { kind: "system", force: true });
+    jsonResponse(res, 200, { ...r, telegram: telegramStatus() }); return true;
+  }
+  if (url.pathname === "/api/telegram" && req.method === "GET") { jsonResponse(res, 200, telegramStatus()); return true; }
+  if (url.pathname === "/api/telegram/prefs" && req.method === "POST") { // switch one kind of Telegram message on or off (this site only)
+    const sameSite = fromThisSite(req);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    let body = "";
+    for await (const chunk of req) { body += chunk; if (body.length > 2000) break; }
+    let b: { kind?: string; on?: unknown } = {}; try { b = JSON.parse(body || "{}"); } catch { /* invalid */ }
+    if (!setTelegramPref(b.kind, b.on === true)) { jsonResponse(res, 400, { error: "Unknown kind" }); return true; }
+    jsonResponse(res, 200, telegramStatus()); return true;
+  }
+  if (await journal.handle(req, res, url)) return true;
+  if (url.pathname === "/api/perps") { jsonResponse(res, 200, perps ? perps.api() : { status: "off", error: "The Perps tab is off (PERPS=0 in .env)" }); return true; }
+  if (url.pathname === "/api/perps/check") {
+    if (!perps) { jsonResponse(res, 200, { error: "The Perps tab is off (PERPS=0 in .env)" }); return true; }
+    const q = url.searchParams;
+    try { jsonResponse(res, 200, await perps.check({ sym: q.get("sym"), side: q.get("side"), entry: Number(q.get("entry")) || null, stop: Number(q.get("stop")) || null })); }
+    catch (e) { jsonResponse(res, e.status || 502, { error: e.message }); }
+    return true;
+  }
+  if (url.pathname === "/api/spot") { jsonResponse(res, 200, spot ? spot.api() : { status: "off", error: "The Spot plan is off (SPOT=0 in .env)" }); return true; }
+  if (url.pathname === "/api/scalp/paper/reset" && req.method === "POST") { // start the paper bot again (this site only)
+    const sameSite = fromThisSite(req);
+    if (!sameSite) { jsonResponse(res, 403, { error: "Forbidden" }); return true; }
+    if (!scalp) { jsonResponse(res, 200, { error: "The Scalp scan is off (SCALP=0 in .env)" }); return true; }
+    let body = ""; for await (const chunk of req) { body += chunk; if (body.length > 2000) break; }
+    let b = {}; try { b = JSON.parse(body || "{}"); } catch { /* defaults */ }
+    jsonResponse(res, 200, { paper: await scalp.resetPaper(b) }); return true;
+  }
+  if (liquidity && await liquidity.handle(req, res, url)) return true;
+  if (url.pathname === "/api/whalesig") { jsonResponse(res, 200, whaleSig ? whaleSig.api() : { status: "off", error: "Whale signals are off (WHALESIG=0 in .env)" }); return true; }
+  if (url.pathname === "/api/onchain") { jsonResponse(res, 200, onchain ? onchain.api() : { status: "off", error: "The On-chain tab is off (ONCHAIN=0 in .env)" }); return true; }
+  if (url.pathname === "/api/scalp") { jsonResponse(res, 200, scalp ? scalp.api() : { status: "off", error: "The Scalp tab is off (SCALP=0 in .env)" }); return true; }
+  if (url.pathname === "/api/pump") { jsonResponse(res, 200, pump ? pump.api() : { status: "off", error: "Pump watch is off (PUMP=0 in .env)" }); return true; }
+  if (url.pathname === "/api/alpha") { jsonResponse(res, 200, alpha && !DEMO ? alpha.api() : { status: "off", error: DEMO ? "The Alpha tab uses live Binance data only (not in demo mode)" : "The Alpha scanner is off (ALPHA=0 in .env)" }); return true; }
+  if (url.pathname === "/api/rotation") { jsonResponse(res, 200, rotation ? { ...rotation.api(), binancePausedUntil: binancePause() } : { error: "not running" }); return true; }
+  if (await handleWhalesRequest(req, res, url)) return true;
+  if (await handleFlowsRequest(req, res, url)) return true;
+  if (await handleEarly2xRequest(req, res, url)) return true;
+  return false;
+}
+
+// One extra scan right after every 5-minute candle closes, so an ignition (which needs two finished 5m candles) is seen
+// within seconds instead of up to one refresh interval later. With the live stream (live-klines.js) it starts as soon
+// as 80% of the followed coins' candles have closed (usually well under a second after the close); 4 seconds after the
+// close it runs anyway (stream down, or Node without WebSocket).
+let closeScanFor = 0;
+function closeScan(boundary: number) {
+  if (closeScanFor >= boundary) return;
+  closeScanFor = boundary;
+  state.closeScanAfterMs = Date.now() - boundary;
+  poll();
+}
+function atCandleClose() {
+  const boundary = Math.floor(Date.now() / 300_000) * 300_000 + 300_000;
+  setTimeout(() => { closeScan(boundary); atCandleClose(); }, boundary + 4_000 - Date.now());
+}
+// Live 5m candles (SCREENER_STREAM=0 turns the stream off and polls as before).
+let streamHits = 0, streamMisses = 0;
+const stream = LIBRARY_ONLY || DEMO || env.SCREENER_STREAM === "0" ? null : createLiveKlines({
+  onClose: ({ boundary, closed, of }) => { if (of >= 5 && closed >= 0.8 * of) closeScan(boundary); },
+  log: (m) => console.log(`Live candles: ${m}`),
+});
+function streamStatus(): StreamStatus {
+  if (!stream) return { on: false, why: LIBRARY_ONLY || DEMO ? "demo" : env.SCREENER_STREAM === "0" ? "off (SCREENER_STREAM=0)" : "WebSocket not available (Node 22+ needed): polling" };
+  const s = stream.status();
+  return { on: s.on, connected: s.connected, subscribed: s.subscribed, cached: s.cached, lastMsgAt: s.lastMsgAt, reconnects: s.reconnects, error: s.error,
+    fromMemory: streamHits, downloaded: streamMisses, closeScanAfterMs: state.closeScanAfterMs ?? null,
+    why: s.on ? null : "WebSocket not available (Node 22+ needed): polling" };
+}
+// Starts scanning (and the BTC rotation, whale tracker and DEX rotations). Called by server.ts.
+let started = false;
+export function startScreener(baseUrl = "") {
+  if (started || LIBRARY_ONLY) return;
+  started = true;
+  console.log(`Early Setup Screener v${LOGIC_VERSION}: ${baseUrl || "/"} | refresh ${POLL_MS / 1000}s | ignition: two 5m candles >= ${EARLY_RVOL}x, daily RSI <= ${MAX_DAILY_RSI}, room ${ROOM_12H}% / ${ROOM_24H}% under the 12h / 24h high, above 20-day avg: ${DAILY_TREND ? "on" : "off"}, ` +
+    `early alerts: ${EARLY_ALERTS ? "on" : "off"}, confirmed: score >= ${IGNITE_MIN_SCORE}, quality gate for Telegram: ${GATE_ON ? `trades <= ${GATE_MAX_SIZE}x normal size, 24h range <= ${GATE_MAX_RANGE24}%` : "off"} | setup alerts: ${SETUP_ALERTS ? "on" : "off"} | demo: ${DEMO} | telegram: ${state.telegramConfigured}`);
+  console.log(`BTC rotation: ${baseUrl}#rotation (history loads in the background) | regime gate: ${REGIME_GATE ? "on" : "off"}`);
+  if (!DEMO) startTelegram({ demo: DEMO }).then((m) => console.log(`Telegram: ${m} | on: ${Object.values(telegramStatus().kinds).filter((k) => k.on).map((k) => k.label).join(", ")}`));
+  else console.log("Telegram: off in demo mode");
+  loadPersisted().finally(() => { if (DEMO && !state.events.length) seedDemoHistory(); poll(); setInterval(poll, POLL_MS); if (!DEMO) atCandleClose(); });
+  rotation.start();
+  if (env.SCREENER_WHALES !== "0") {
+    // Ethereum DEX swaps come from the blocks the whale tracker reads (every DEX); other networks from GeckoTerminal.
+    if (!DEMO) { useOnchain("eth"); onWhaleSwaps((list) => ingestOnchain("eth", list)); }
+    // A new Alpha alert: follow that token's DEX pools for a few hours, so its buyers and sellers show on the Whales tab.
+    alphaHooks.push((a) => { if (a.token?.contract) followToken({ chain: a.token.chain, address: a.token.contract, symbol: a.token.symbol, reason: `Alpha ${a.tier} alert` }); });
+    startWhales(); startFlows();
+  }
+  else console.log("Whale tracker and DEX rotations: off (SCREENER_WHALES=0)");
+  if (env.EARLY2X !== "0") startEarly2x();
+  else console.log("Early 2x Movers: off (EARLY2X=0)");
+  if (alpha && !DEMO) alpha.start();
+  else console.log(`Binance Alpha ignition: off (${DEMO ? "demo mode" : "ALPHA=0"})`);
+  if (perps) perps.start();
+  else console.log("Perps swing signals: off (PERPS=0)");
+  if (scalp && !DEMO) { scalp.start(); console.log("Perps scalp (flush bounce, 5m): on, scans a few seconds after each 5-minute close"); }
+  else console.log(`Perps scalp: off (${DEMO ? "demo mode" : "SCALP=0"})`);
+  if (onchain && !DEMO) { onchain.start(); console.log("On-chain (crowd vs smart money, 4h): on, scans after each 4h close and every 30 minutes"); }
+  else console.log(`On-chain: off (${DEMO ? "demo mode" : "ONCHAIN=0"})`);
+  if (liquidity && !DEMO) { liquidity.start(); console.log("Liquidity (order-book heatmap + 5-exchange screener): on, no API key"); }
+  if (whaleSig && !DEMO) { whaleSig.start(); console.log("Whale signals (Whales tab): on, Hyperliquid whales' positions every 2 minutes + Ethereum and DEX flows, no API key"); }
+}
+

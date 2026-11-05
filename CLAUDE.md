@@ -1,8 +1,10 @@
 # Smart Money Tracker
 
-A crypto research dashboard: the engine (scanners and every `/api` route) is plain Node.js in the repo root
-(`server.js`, `screener.js` and one module per part); the pages are Next.js + TypeScript in `src/`
-(`next-server.ts` runs both on one port). The README explains every part, its tests and settings.
+A crypto research dashboard, all TypeScript. The engine (scanners and every `/api` route) is in the repo root
+(`server.ts`, `screener.ts` and one module per part, shared helpers in `util.ts`) and runs directly with Node's type
+stripping, so it uses only erasable TypeScript (no enums or namespaces; `import type` for types). The pages are
+Next.js in `src/`; `next-server.ts` runs both on one port. Checks: `npm test`, `npm run typecheck` (pages: tsconfig.json,
+engine: tsconfig.engine.json), `npm run build`. The README explains every part, its tests and settings.
 
 ## graphify
 

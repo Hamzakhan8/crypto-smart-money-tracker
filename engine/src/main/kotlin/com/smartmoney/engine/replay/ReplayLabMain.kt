@@ -98,7 +98,8 @@ class Report(private val p: Prepared, private val a: Analysis, private val r: Re
         val symbols = p.universe.values.flatten().distinct().size
         appendLine("# Phase 3 Replay Lab: baseline results")
         appendLine()
-        appendLine("Generated ${Instant.now()} by the Replay Lab. Pre-registered in docs/experiments.md (shared definitions v1, E001-E004).")
+        appendLine("Generated ${Instant.now()} by the Replay Lab. Pre-registered in docs/experiments.md: shared definitions v1 with the E005 corrections (v1.1), E001-E004.")
+        appendLine("The four trials below were run twice (run 1 had errors, see E005), so the trial counter is ${r.trials} and adjusted intervals use it.")
         appendLine("Returns are per trade as a % of the trade size. Lift = net return of the signal minus the mean net return of 5 random")
         appendLine("entries on the same coin and day (same direction, delay, costs). Statistics are per independent event.")
         appendLine()

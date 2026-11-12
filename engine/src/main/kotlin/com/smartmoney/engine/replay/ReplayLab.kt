@@ -90,6 +90,7 @@ class ReplayLab(
         fun monthOf(t: Long): YearMonth = YearMonth.from(Instant.ofEpochMilli(t).atZone(ZoneOffset.UTC))
         fun months(from: YearMonth, to: YearMonth): List<YearMonth> = generateSequence(from) { it.plusMonths(1) }.takeWhile { it <= to }.toList()
         fun key(symbol: String, t: Long) = "$symbol@$t"
+        val SIG_ORDER: Comparator<Sig> = compareBy({ it.t }, { it.symbol }, { it.moveDir })
         val devStartMs: Long get() = start(DEV_START)
         val devEndMs: Long get() = start(DEV_END.plusMonths(1))
     }
@@ -345,8 +346,10 @@ class ReplayLab(
             costs = costs,
             regime = regime,
             results = results,
-            real = RULES.associateWith { TradeSet("real", first.getValue(it).sortedBy { s -> s.t }, randoms.getValue(it)) },
-            allSignals = RULES.associateWith { signals.getValue(it).sortedBy { s -> s.t } },
+            // Parallel passes add signals in any order: sort by time AND symbol so sums and the seeded shuffle placebo
+            // are identical on every run (pre-registration S1/P1 promise reproducible results).
+            real = RULES.associateWith { TradeSet("real", first.getValue(it).sortedWith(SIG_ORDER), randoms.getValue(it)) },
+            allSignals = RULES.associateWith { signals.getValue(it).sortedWith(SIG_ORDER) },
             shift = RULES.associateWith { TradeSet("time shift", Events.firstSignals(shiftFirst.getValue(it)), shiftRandoms.getValue(it)) },
             symbolSwap = RULES.associateWith { TradeSet("random symbol", Events.firstSignals(swapFirst.getValue(it)), swapRandoms.getValue(it)) },
             minutesLoaded = minutesLoaded,

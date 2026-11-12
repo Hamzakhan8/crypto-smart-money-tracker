@@ -50,6 +50,9 @@ data class HitRecord(
     val oiChange: Double?,
     val fundingRate: Double?,
     val invalidation: Double?,
+    /** Plan target and stop (1 ATR) when the row had an action. */
+    val target: Double?,
+    val stop: Double?,
     val failedGates: List<String>,
     val flags: List<String>,
     val confirmations: Int,
@@ -237,6 +240,7 @@ class ScreenerEngine(
             canonical = instrument.canonical, nativeSymbol = instrument.nativeSymbol, timeframe = timeframe, tier = tier,
             label = label, direction = direction, price = f.price, move = f.move, zMove = f.zMove, relVolume = f.relVolume,
             residual = f.residual, oiChange = perp?.oiChange, fundingRate = perp?.fundingRate, invalidation = invalidation,
+            target = plan?.target, stop = plan?.stop,
             failedGates = gates.filter { it.passed != true }.map { "${it.name}: ${it.detail}" },
             flags = flags.map { it.text }, confirmations = cross.confirmations, reason = reason,
             engineVersion = ENGINE_VERSION, configHash = cfg.hash,

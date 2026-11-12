@@ -122,8 +122,8 @@ fun SettingsScreen() {
                 if (v in 10.0..10_000_000.0) update { it.copy(tradeSizeUsd = v) }
             }
             ToggleRow(
-                "I can short",
-                "Off: down moves show as \"Warning / avoid\", never as trade ideas.",
+                "Show SHORT signals on perps",
+                "Perps: LONG after up moves and SHORT after down moves. Off: perps show LONG only. Spot always shows BUY only.",
                 s.canShort,
             ) { on -> update { it.copy(canShort = on) } }
 

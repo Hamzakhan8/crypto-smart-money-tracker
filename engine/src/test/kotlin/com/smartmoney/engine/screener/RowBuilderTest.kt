@@ -49,9 +49,14 @@ class RowBuilderTest {
     fun closedBigMoveWithAllGatesIsConfirmed() {
         val row = RowBuilder.build(inst(), series(0.03), null, ticker(103.0), null, deepBook(103.0), cfg, now)
         assertEquals(Tier.CONFIRMED, row.tier, row.gates.toString())
-        assertEquals(SignalLabel.PUMP, row.label)
+        assertEquals(SignalLabel.BUY, row.label, "spot up move = BUY")
         assertEquals(Direction.UP, row.direction)
         assertEquals(100.0 * 0.999, row.invalidation!!, 1e-9, "invalidation = low of the signal candle")
+        val plan = row.plan!!
+        assertEquals(103.0, plan.entry)
+        assertEquals(103.0 + 0.01 * 103.0, plan.target, 1e-9, "target 1 ATR above the entry")
+        assertEquals(103.0 - 0.01 * 103.0, plan.stop, 1e-9, "stop 1 ATR below")
+        assertEquals(30, plan.horizonMinutes)
         assertTrue(row.gates.all { it.passed == true })
         assertTrue(row.reason.startsWith("5m candle closed +3.00%"), row.reason)
         assertTrue(row.unproven)
@@ -66,12 +71,22 @@ class RowBuilderTest {
     }
 
     @Test
-    fun downMovesAreWarningsUnlessYouCanShort() {
-        val longOnly = RowBuilder.build(inst(), series(-0.03), null, ticker(97.0), null, deepBook(97.0), cfg, now)
-        assertEquals(SignalLabel.AVOID, longOnly.label)
-        assertEquals(97.0 * 0 + 100.0 * 1.001, longOnly.invalidation!!, 1e-9, "invalidation = high of the signal candle")
-        val canShort = RowBuilder.build(inst(), series(-0.03), null, ticker(97.0), null, deepBook(97.0), cfg.copy(canShort = true), now)
-        assertEquals(SignalLabel.DUMP, canShort.label)
+    fun perpsGoLongOrShortSpotOnlyBuys() {
+        val perp = inst(market = Market.PERP)
+        val up = RowBuilder.build(perp, series(0.03), null, ticker(103.0), null, deepBook(103.0), cfg, now)
+        assertEquals(SignalLabel.LONG, up.label)
+        val down = RowBuilder.build(perp, series(-0.03), null, ticker(97.0), null, deepBook(97.0), cfg, now)
+        assertEquals(Tier.CONFIRMED, down.tier)
+        assertEquals(SignalLabel.SHORT, down.label)
+        assertEquals(100.0 * 1.001, down.invalidation!!, 1e-9, "invalidation = high of the signal candle")
+        assertTrue(down.plan!!.target < down.plan!!.entry && down.plan!!.stop > down.plan!!.entry, "a short's target is below")
+        val noShorts = RowBuilder.build(perp, series(-0.03), null, ticker(97.0), null, deepBook(97.0), cfg.copy(canShort = false), now)
+        assertNull(noShorts.label)
+        assertNull(noShorts.plan)
+        val spotDown = RowBuilder.build(inst(), series(-0.03), null, ticker(97.0), null, deepBook(97.0), cfg, now)
+        assertEquals(Tier.CONFIRMED, spotDown.tier, "still a confirmed move, shown without an action")
+        assertNull(spotDown.label, "spot never shorts")
+        assertNull(spotDown.plan)
     }
 
     @Test

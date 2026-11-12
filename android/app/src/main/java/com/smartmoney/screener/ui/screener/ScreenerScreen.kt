@@ -99,9 +99,14 @@ fun ScreenerScreen(onOpen: (InstrumentKey) -> Unit) {
             }
             Spacer(Modifier.width(4.dp))
             FilterChip(
-                selected = f.tier != TierFilter.ALL,
-                onClick = { vm.setFilter(f.copy(tier = if (f.tier == TierFilter.ALL) TierFilter.MOVING else TierFilter.ALL)) },
-                label = { Text(if (f.tier == TierFilter.ALL) "Moving only" else f.tier.label) },
+                selected = f.tier == TierFilter.SIGNALS,
+                onClick = { vm.setFilter(f.copy(tier = if (f.tier == TierFilter.SIGNALS) TierFilter.ALL else TierFilter.SIGNALS)) },
+                label = { Text("Signals only") },
+            )
+            FilterChip(
+                selected = f.tier == TierFilter.MOVING,
+                onClick = { vm.setFilter(f.copy(tier = if (f.tier == TierFilter.MOVING) TierFilter.ALL else TierFilter.MOVING)) },
+                label = { Text("Moving only") },
             )
             OutlinedButton(onClick = { showFilters = true }) { Text(if (f.isDefault) "Filters" else "Filters *") }
         }

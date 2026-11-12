@@ -36,7 +36,8 @@ data class AppSettings(
     val tradeSizeUsd: Double = 1_000.0,
     val maxSlippage: Double = 0.003,
     val costMultiple: Double = 2.0,
-    val canShort: Boolean = false,
+    /** Show SHORT signals on perps (spot is always BUY only). */
+    val canShort: Boolean = true,
     val backgroundScan: Boolean = false,
     /** Taker fee per "EXCHANGE_MARKET", fraction. */
     val takerFees: Map<String, Double> = defaultFees(),
@@ -69,7 +70,8 @@ class SettingsRepository(private val context: Context) {
         val size = doublePreferencesKey("trade_size")
         val slip = doublePreferencesKey("max_slippage")
         val cost = doublePreferencesKey("cost_multiple")
-        val short = booleanPreferencesKey("can_short")
+        // v0.2: new key. v0.1 saved "can_short = false" by default, which would hide the perp SHORT signals.
+        val short = booleanPreferencesKey("show_perp_shorts")
         val background = booleanPreferencesKey("background_scan")
         val alive = longPreferencesKey("last_alive")
         fun fee(key: String) = doublePreferencesKey("fee_$key")

@@ -142,17 +142,37 @@ fun Badge(text: String, color: Color, filled: Boolean = false) {
 @Composable
 fun UnprovenBadge() = Badge("UNPROVEN", Palette.Amber)
 
+fun actionColor(label: SignalLabel?): Color = when (label) {
+    SignalLabel.LONG, SignalLabel.BUY -> Palette.Up
+    SignalLabel.SHORT -> Palette.Down
+    null -> Palette.Muted
+}
+
+fun actionColor(text: String?): Color = actionColor(SignalLabel.entries.firstOrNull { it.text == text })
+
+/** Tier and action: a solid LONG / SHORT / BUY chip when confirmed, "Watch: LONG?" while the candle is open. */
 @Composable
 fun TierBadge(tier: Tier, label: SignalLabel?) {
-    if (tier == Tier.NONE) return
-    val color = when {
-        tier == Tier.REJECTED -> Palette.Off
-        label == SignalLabel.PUMP -> Palette.Up
-        label == SignalLabel.DUMP -> Palette.Down
-        label == SignalLabel.AVOID -> Palette.Amber
-        else -> Palette.Muted
+    when {
+        tier == Tier.NONE -> return
+        tier == Tier.CONFIRMED && label != null -> ActionChip(label.text, actionColor(label))
+        tier == Tier.WATCH && label != null -> Badge("Watch: ${label.text}?", actionColor(label))
+        tier == Tier.REJECTED -> Badge("Rejected", Palette.Off)
+        else -> Badge(tier.label + if (tier == Tier.CONFIRMED) " · falling" else "", Palette.Muted)
     }
-    Badge(listOfNotNull(tier.label, label?.text).joinToString(" · "), color, filled = tier == Tier.CONFIRMED)
+}
+
+/** A clear, solid action chip: LONG / SHORT / BUY. */
+@Composable
+fun ActionChip(text: String, color: Color, large: Boolean = false) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color)
+            .padding(horizontal = if (large) 14.dp else 8.dp, vertical = if (large) 6.dp else 2.dp),
+    ) {
+        Text(text, color = Palette.Bg, fontSize = if (large) 18.sp else 12.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable
@@ -192,3 +212,5 @@ fun KeyValue(key: String, value: String, valueColor: Color = MaterialTheme.color
 }
 
 const val DISCLAIMER = "Signals are price moves, not trading advice. Nothing in this app has been validated: every signal is unproven, and no accuracy is claimed."
+
+const val SIGNAL_RULE = "Perps: LONG after an unusual up move, SHORT after an unusual down move. Spot: BUY after an unusual up move only (falling spot coins get no signal). A signal appears when a candle closes with a move of at least 2x its usual range and passes every check."

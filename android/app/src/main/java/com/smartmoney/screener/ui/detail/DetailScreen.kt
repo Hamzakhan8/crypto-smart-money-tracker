@@ -48,7 +48,9 @@ import com.smartmoney.engine.screener.Direction
 import com.smartmoney.engine.screener.ScreenerRow
 import com.smartmoney.engine.screener.Tier
 import com.smartmoney.screener.container
+import com.smartmoney.screener.ui.ActionChip
 import com.smartmoney.screener.ui.DISCLAIMER
+import com.smartmoney.screener.ui.actionColor
 import com.smartmoney.screener.ui.EmptyState
 import com.smartmoney.screener.ui.Fmt
 import com.smartmoney.screener.ui.KeyValue
@@ -142,6 +144,31 @@ fun DetailScreen(market: Market, canonical: String, initial: Exchange, onBack: (
 private fun SignalCard(row: ScreenerRow) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
+            val label = row.label
+            val plan = row.plan
+            if (label != null && (row.tier == Tier.CONFIRMED || row.tier == Tier.WATCH)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionChip(if (row.tier == Tier.WATCH) "${label.text}?" else label.text, actionColor(label), large = true)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (row.tier == Tier.WATCH) "Possible ${label.text}: the candle has not closed yet" else "${label.text} signal on ${row.instrument.exchange.label} ${row.instrument.market.label.lowercase()}",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (plan != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        PlanValue("Entry now", plan.entry, MaterialTheme.colorScheme.onSurface)
+                        PlanValue("Target (+1 ATR)", plan.target, Palette.Up)
+                        PlanValue("Stop (-1 ATR)", plan.stop, Palette.Down)
+                    }
+                    Text(
+                        "Plan being tested: close at the target, the stop, or after ${plan.horizonMinutes} minutes, whichever comes first. Unproven: not yet tested on past data.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
             Text(
                 when (row.tier) {
                     Tier.CONFIRMED -> "Confirmed: the candle closed with an unusual move and every gate passed"
@@ -171,6 +198,14 @@ private fun SignalCard(row: ScreenerRow) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PlanValue(label: String, value: Double, color: Color) {
+    Column {
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(Fmt.price(value), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
 

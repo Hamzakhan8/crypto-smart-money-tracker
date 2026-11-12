@@ -7,7 +7,7 @@ import com.smartmoney.engine.model.Timeframe
 import java.security.MessageDigest
 
 /** Logged with every screener hit, so every record says which code and settings produced it. */
-const val ENGINE_VERSION = "0.1.0-trackA"
+const val ENGINE_VERSION = "0.2.0-trackA"
 
 data class EngineConfig(
     val timeframe: Timeframe = Timeframe.M5,
@@ -27,8 +27,8 @@ data class EngineConfig(
     val maxSlippage: Double = 0.003,
     /** Gate: the typical candle range (ATR) must be at least this multiple of the round-trip cost. */
     val costMultiple: Double = 2.0,
-    /** When false, down moves are shown as "Warning / avoid", not as trade ideas. */
-    val canShort: Boolean = false,
+    /** Show SHORT signals on perps after down moves. Spot never shows shorts (BUY only). */
+    val canShort: Boolean = true,
     /** Taker fee overrides, keyed "BINANCE_SPOT" etc. Missing keys use [DefaultFees]. */
     val takerFees: Map<String, Double> = emptyMap(),
 ) {

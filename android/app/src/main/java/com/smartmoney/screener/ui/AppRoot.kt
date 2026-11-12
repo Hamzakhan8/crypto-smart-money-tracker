@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,11 +38,13 @@ import com.smartmoney.screener.ui.history.HistoryScreen
 import com.smartmoney.screener.ui.onboarding.OnboardingScreen
 import com.smartmoney.screener.ui.screener.ScreenerScreen
 import com.smartmoney.screener.ui.settings.SettingsScreen
+import com.smartmoney.screener.ui.signals.SignalsScreen
 import kotlinx.coroutines.launch
 
 private data class Tab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 private val tabs = listOf(
+    Tab("signals", "Signals", Icons.Default.Notifications),
     Tab("screener", "Screener", Icons.Default.Search),
     Tab("history", "History", Icons.AutoMirrored.Filled.List),
     Tab("settings", "Settings", Icons.Default.Settings),
@@ -70,10 +73,10 @@ fun AppRoot() {
             NavigationBar {
                 for (t in tabs) {
                     NavigationBarItem(
-                        selected = route == t.route || (t.route == "screener" && route?.startsWith("detail") == true),
+                        selected = route == t.route,
                         onClick = {
                             nav.navigate(t.route) {
-                                popUpTo("screener") { saveState = true }
+                                popUpTo("signals") { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
@@ -85,7 +88,10 @@ fun AppRoot() {
             }
         },
     ) { padding ->
-        NavHost(nav, startDestination = "screener", modifier = Modifier.padding(padding)) {
+        NavHost(nav, startDestination = "signals", modifier = Modifier.padding(padding)) {
+            composable("signals") {
+                SignalsScreen(onOpen = { key -> nav.navigate(detailRoute(key)) })
+            }
             composable("screener") {
                 ScreenerScreen(onOpen = { key -> nav.navigate(detailRoute(key)) })
             }

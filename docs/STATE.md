@@ -22,6 +22,16 @@ Read this file and docs/SPEC.md at the start of every session.
   - `.github/workflows/android.yml`: runs all unit tests and builds the debug APK (artifact) on push/PR.
   - docs/DATA_INVENTORY.md (metrics per exchange, history depth, live-only list) and docs/dataset-manifest.json.
 
+- 2026-11-12: **App v0.2.0-trackA** (user request: "clear signal: perp long or short, spot buy only"). Perps show LONG
+  after an unusual up move and SHORT after an unusual down move (SHORT can be switched off in Settings); spot shows BUY
+  after an up move only, falling spot coins get no action. New first tab "Signals" (live now + last 24 hours, with entry,
+  target +1 ATR, stop -1 ATR, 30-minute window, current price and move since the signal). Screener "Signals only"
+  filter; coin detail shows the action and plan. Every signal still labeled UNPROVEN. Installs as an update over v0.1
+  (same debug key, versionCode 2); history database upgraded in place (v1 -> v2 adds target/stop; checked in SQLite).
+  Engine 94/94 and app 5/5 tests pass. Not yet opened on a phone.
+- 2026-11-12: Phase 3 started: pre-registration committed (e1785c7), Replay Lab code committed (b731dd8). The first
+  run was stopped while downloading daily candles: **no Phase 3 results exist yet.**
+
 ### Build and test results (2026-11-12, this PC: Windows 10, JDK 17.0.21, Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21)
 
 | Command (run in `android/`) | Result |

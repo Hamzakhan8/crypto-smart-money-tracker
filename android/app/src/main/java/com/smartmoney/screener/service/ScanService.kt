@@ -15,6 +15,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.smartmoney.engine.screener.EngineSnapshot
 import com.smartmoney.engine.screener.FeedPhase
+import com.smartmoney.engine.screener.SignalLabel
 import com.smartmoney.engine.screener.Tier
 import com.smartmoney.screener.MainActivity
 import com.smartmoney.screener.R
@@ -102,9 +103,9 @@ class ScanService : LifecycleService() {
                 val live = fs.count { it.phase == FeedPhase.LIVE }
                 "${ex.label} ${if (live == fs.size) "live" else if (live > 0) "partly live" else fs.first().phase.label}"
             }
-            val confirmed = s.rows.count { it.tier == Tier.CONFIRMED }
-            val watch = s.rows.count { it.tier == Tier.WATCH }
-            return "$feeds\n$confirmed confirmed, $watch watch on ${s.config.timeframe.label} candles"
+            val signals = s.rows.filter { it.tier == Tier.CONFIRMED && it.label != null }
+            val counts = SignalLabel.entries.mapNotNull { l -> signals.count { it.label == l }.takeIf { it > 0 }?.let { "$it ${l.text}" } }
+            return "$feeds\n${if (counts.isEmpty()) "No signals right now" else counts.joinToString(", ")} on ${s.config.timeframe.label} candles (unproven)"
         }
     }
 }

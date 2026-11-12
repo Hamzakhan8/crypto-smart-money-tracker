@@ -24,7 +24,17 @@ enum class Tier(val label: String) { NONE("-"), WATCH("Watch"), CONFIRMED("Confi
 
 enum class Direction { UP, DOWN }
 
-enum class SignalLabel(val text: String) { PUMP("Pump"), DUMP("Dump"), AVOID("Warning / avoid") }
+/**
+ * The action a signal points to. Perps: LONG after an up move, SHORT after a down move (shorts can be switched off).
+ * Spot: BUY after an up move only; a spot coin that is falling gets no action. None of these is validated yet.
+ */
+enum class SignalLabel(val text: String) { LONG("LONG"), SHORT("SHORT"), BUY("BUY") }
+
+/**
+ * The plan the Replay Lab measures (pre-registration L1): target and stop 1 ATR from the entry, close after
+ * [horizonMinutes]. Shown with every signal so the user sees exactly what is being tested.
+ */
+data class TradePlan(val entry: Double, val target: Double, val stop: Double, val horizonMinutes: Int = 30)
 
 /** Display labels from price and open interest direction. Not validated. */
 enum class Cause(val text: String) {
@@ -80,6 +90,8 @@ data class ScreenerRow(
     val flags: List<RiskFlag>,
     /** Where the move's thesis fails: the signal candle's low (up moves) or high (down moves). */
     val invalidation: Double?,
+    /** Entry, target and stop for rows with an action (LONG, SHORT, BUY). */
+    val plan: TradePlan?,
     val cross: CrossInfo,
     val reason: String,
     val mainRisk: String,
@@ -136,20 +148,25 @@ object RowBuilder {
             watch != null -> Tier.WATCH
             else -> Tier.NONE
         }
-        val label = if (tier == Tier.NONE || direction == null) null else when (direction) {
-            Direction.UP -> SignalLabel.PUMP
-            Direction.DOWN -> if (config.canShort) SignalLabel.DUMP else SignalLabel.AVOID
+        val label = if (tier == Tier.NONE || direction == null) null else when (inst.market) {
+            Market.PERP -> if (direction == Direction.UP) SignalLabel.LONG else if (config.canShort) SignalLabel.SHORT else null
+            Market.SPOT -> if (direction == Direction.UP) SignalLabel.BUY else null
         }
         val invalidation = if (tier == Tier.NONE) null else when (direction) {
             Direction.UP -> focus?.low
             Direction.DOWN -> focus?.high
             null -> null
         }
+        val plan = if (label == null || price == null) null else focus?.atrPct?.let { atr ->
+            val width = atr * price
+            val sign = if (label == SignalLabel.SHORT) -1 else 1
+            TradePlan(entry = price, target = price + sign * width, stop = price - sign * width)
+        }
         val flags = flags(ticker, focus, perp, freshDepth, config, tier != Tier.NONE)
         return ScreenerRow(
             instrument = inst, timeframe = tf, price = price, ticker = ticker, closed = closed, live = live, perp = perp,
             depth = freshDepth, tier = tier, direction = direction, label = label, gates = gates, flags = flags,
-            invalidation = invalidation, cross = CrossInfo(), reason = reason(focus, tier, perp, tf), mainRisk = mainRisk(tier, gates, flags),
+            invalidation = invalidation, plan = plan, cross = CrossInfo(), reason = reason(focus, tier, perp, tf), mainRisk = mainRisk(tier, gates, flags),
         )
     }
 

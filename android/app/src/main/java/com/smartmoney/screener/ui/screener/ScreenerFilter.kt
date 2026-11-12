@@ -7,7 +7,7 @@ import com.smartmoney.engine.screener.ScreenerRow
 import com.smartmoney.engine.screener.Tier
 import kotlin.math.abs
 
-enum class TierFilter(val label: String) { ALL("All coins"), MOVING("Moving"), CONFIRMED("Confirmed"), WATCH("Watch"), REJECTED("Rejected") }
+enum class TierFilter(val label: String) { ALL("All coins"), SIGNALS("Signals (LONG / SHORT / BUY)"), MOVING("Moving"), CONFIRMED("Confirmed"), WATCH("Watch"), REJECTED("Rejected") }
 
 enum class TypeFilter(val label: String) { ANY("Up and down"), PUMP("Up only"), DUMP("Down only") }
 
@@ -34,6 +34,7 @@ data class ScreenerFilter(
             .filter {
                 when (tier) {
                     TierFilter.ALL -> true
+                    TierFilter.SIGNALS -> it.tier == Tier.CONFIRMED && it.label != null
                     TierFilter.MOVING -> it.tier != Tier.NONE
                     TierFilter.CONFIRMED -> it.tier == Tier.CONFIRMED
                     TierFilter.WATCH -> it.tier == Tier.WATCH

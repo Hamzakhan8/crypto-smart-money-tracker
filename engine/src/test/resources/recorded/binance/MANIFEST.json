@@ -1,0 +1,470 @@
+[
+  {
+    "file": "spot_exchangeInfo.json",
+    "source": "https://api.binance.com/api/v3/exchangeInfo?symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%2C%22SOLUSDT%22%2C%22BNBUSDT%22%5D",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:39.337Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "BNBUSDT"
+    ],
+    "rows_or_messages": 4,
+    "trimmed": false,
+    "sha256": "0393adbeb105e186732987f013d901d027f3a4f8736dbad7e23220b5246fa30a",
+    "bytes": 20122
+  },
+  {
+    "file": "spot_exchangeInfo_break.json",
+    "source": "https://api.binance.com/api/v3/exchangeInfo",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:39.897Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "EOSUSDT",
+      "WAVESUSDT",
+      "OMGUSDT"
+    ],
+    "rows_or_messages": 5,
+    "trimmed": true,
+    "trim_how": "From the full GET /api/v3/exchangeInfo symbols array kept 2 TRADING (BTCUSDT, ETHUSDT) + 3 BREAK (EOSUSDT, WAVESUSDT, OMGUSDT). timezone/serverTime/rateLimits/exchangeFilters untouched. Kept 5 of 3742 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "note": "Full list had 3742 symbols: 1372 TRADING, 2370 BREAK, no other status values.",
+    "sha256": "d641d64074bd7eb6666953f69a032003705c78fc5f9b61c643599101d39ba924",
+    "bytes": 24784
+  },
+  {
+    "file": "spot_ticker24hr.json",
+    "source": "https://api.binance.com/api/v3/ticker/24hr",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:41.169Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "BNBUSDT",
+      "LTCUSDT",
+      "ADAUSDT",
+      "XRPUSDT",
+      "EOSUSDT",
+      "LINKUSDT",
+      "DOGEUSDT",
+      "SOLUSDT",
+      "AVAXUSDT"
+    ],
+    "rows_or_messages": 11,
+    "trimmed": true,
+    "trim_how": "Bulk 24hr ticker (no symbol param, weight 80) trimmed to 10 TRADING USDT pairs + EOSUSDT (status BREAK, shows stale openTime/closeTime and zero bid/ask). Kept 11 of 3745 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "sha256": "31a6ed25d24b1810d54dc0a309503364e57445879f2ce31f5c6cfedd5ff86b5a",
+    "bytes": 5912
+  },
+  {
+    "file": "spot_bookTicker.json",
+    "source": "https://api.binance.com/api/v3/ticker/bookTicker",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:42.094Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "BNBUSDT",
+      "LTCUSDT",
+      "ADAUSDT",
+      "XRPUSDT",
+      "EOSUSDT",
+      "LINKUSDT",
+      "DOGEUSDT",
+      "SOLUSDT",
+      "AVAXUSDT"
+    ],
+    "rows_or_messages": 11,
+    "trimmed": true,
+    "trim_how": "Bulk bookTicker (no symbol param) trimmed to the same 11 symbols as spot_ticker24hr.json. Kept 11 of 3745 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "sha256": "1da60af5cac81bcfc36e4a713816adac57cf2b4e16b0c4f0f793bb2a543d5e0c",
+    "bytes": 1313
+  },
+  {
+    "file": "spot_klines_BTCUSDT_5m.json",
+    "source": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:42.853Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Last row is the still-open candle (closeTime > captured_at).",
+    "sha256": "1f378672134157c3d10a5722222e809e5b2a835fe0d72facf3ab58ce1c934755",
+    "bytes": 17240
+  },
+  {
+    "file": "spot_klines_ETHUSDT_5m.json",
+    "source": "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:43.288Z",
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Last row is the still-open candle (closeTime > captured_at).",
+    "sha256": "99566f49b295901071adcc3b987d28c0941ec6e6f120f84ea1225fb0b4c11b9a",
+    "bytes": 16939
+  },
+  {
+    "file": "spot_depth_BTCUSDT.json",
+    "source": "https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:43.721Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": "100 bids / 100 asks",
+    "trimmed": false,
+    "sha256": "cfe85e083f86f7831043f9ef14aad0a815fe7436952f579d3b6c559032124851",
+    "bytes": 6448
+  },
+  {
+    "file": "spot_error_invalid_symbol.json",
+    "source": "https://api.binance.com/api/v3/klines?symbol=NOTAREALSYMBOL&interval=5m&limit=10",
+    "http_status": 400,
+    "captured_at_utc": "2026-11-12T06:22:44.159Z",
+    "symbols": [
+      "NOTAREALSYMBOL"
+    ],
+    "rows_or_messages": 1,
+    "trimmed": false,
+    "note": "HTTP 400 body.",
+    "sha256": "882fbec4a8b18dbba2b41cf9b2c93512b35d0a28c3a4961892d2419946857b9b",
+    "bytes": 38
+  },
+  {
+    "file": "futures_exchangeInfo.json",
+    "source": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:44.605Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "MKRUSDT",
+      "SOLUSDT",
+      "GAIBUSDT",
+      "XAUUSDT",
+      "BTCUSDT_261225",
+      "ETHUSDT_270326",
+      "NUUSDT"
+    ],
+    "rows_or_messages": 9,
+    "trimmed": true,
+    "trim_how": "From full GET /fapi/v1/exchangeInfo symbols array kept BTCUSDT/ETHUSDT/SOLUSDT (TRADING PERPETUAL), BTCUSDT_261225 (CURRENT_QUARTER), ETHUSDT_270326 (NEXT_QUARTER), MKRUSDT (SETTLING = delisted perpetual), GAIBUSDT (PENDING_TRADING PERPETUAL), XAUUSDT (TRADIFI_PERPETUAL, COMMODITY), NUUSDT (PENDING_TRADING TRADIFI_PERPETUAL). timezone/serverTime/futuresType/rateLimits/exchangeFilters/assets untouched. Kept 9 of 946 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "note": "Full list had 946 symbols: TRADING/PERPETUAL 565, TRADING/TRADIFI_PERPETUAL 235, SETTLING/PERPETUAL 137, PENDING_TRADING/PERPETUAL 3, PENDING_TRADING/TRADIFI_PERPETUAL 2, TRADING/CURRENT_QUARTER 2, TRADING/NEXT_QUARTER 2.",
+    "sha256": "208688f0fb6cbb06a0c9e55a43c1a29f06589bab21f8c02fdd94353cefc48403",
+    "bytes": 12238
+  },
+  {
+    "file": "futures_ticker24hr.json",
+    "source": "https://fapi.binance.com/fapi/v1/ticker/24hr",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:45.140Z",
+    "symbols": [
+      "BTCUSDT_261225",
+      "XRPUSDT",
+      "SOLUSDT",
+      "XAUUSDT",
+      "BNBUSDT",
+      "LTCUSDT",
+      "BTCUSDT",
+      "ETHUSDT",
+      "ADAUSDT",
+      "DOGEUSDT",
+      "LINKUSDT",
+      "AVAXUSDT"
+    ],
+    "rows_or_messages": 12,
+    "trimmed": true,
+    "trim_how": "Bulk 24hr ticker (weight 40; 804 entries, TRADING symbols only) trimmed to 10 USDT perps + BTCUSDT_261225 (quarterly) + XAUUSDT (TRADIFI_PERPETUAL). Kept 12 of 804 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "sha256": "9c7dfd88fa4513c16ec12e6897693933f03ee1c1ef6721e8d44c03b6424d43b9",
+    "bytes": 4388
+  },
+  {
+    "file": "futures_bookTicker.json",
+    "source": "https://fapi.binance.com/fapi/v1/ticker/bookTicker",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:45.594Z",
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "XRPUSDT",
+      "LTCUSDT",
+      "LINKUSDT",
+      "ADAUSDT",
+      "BNBUSDT",
+      "DOGEUSDT",
+      "SOLUSDT",
+      "AVAXUSDT",
+      "XAUUSDT",
+      "BTCUSDT_261225"
+    ],
+    "rows_or_messages": 12,
+    "trimmed": true,
+    "trim_how": "Bulk bookTicker (804 entries) trimmed to the same 12 symbols as futures_ticker24hr.json. Kept 12 of 804 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "sha256": "3abb7e903295c7158ed29572e6813bddecb644fcfb232ff95471ecdd3ba86848",
+    "bytes": 1799
+  },
+  {
+    "file": "futures_premiumIndex.json",
+    "source": "https://fapi.binance.com/fapi/v1/premiumIndex",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:46.048Z",
+    "symbols": [
+      "AVAXUSDT",
+      "ADAUSDT",
+      "BNBUSDT",
+      "MKRUSDT",
+      "BTCUSDT",
+      "BTCUSDT_261225",
+      "XAUUSDT",
+      "XRPUSDT",
+      "SOLUSDT",
+      "ETHUSDT",
+      "EOSUSDT",
+      "DOGEUSDT",
+      "LINKUSDT",
+      "GAIBUSDT",
+      "LTCUSDT"
+    ],
+    "rows_or_messages": 15,
+    "trimmed": true,
+    "trim_how": "Bulk premiumIndex (949 entries incl. SETTLING, PENDING_TRADING and 3 symbols absent from exchangeInfo) trimmed to the 12 ticker symbols + MKRUSDT (SETTLING) + GAIBUSDT (PENDING_TRADING) + EOSUSDT (absent from exchangeInfo). Kept 15 of 949 original entries as raw byte-identical substrings in original order; nothing else changed.",
+    "sha256": "417dedc92c799699762961372384c2628ecd5eb423ccf6bde77f44585717ddd8",
+    "bytes": 3354
+  },
+  {
+    "file": "futures_klines_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:46.491Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Last row is the still-open candle.",
+    "sha256": "a0945467dcfa08041b68c327fb34b5278f3590e9d25af36c7a2de12fbb5f2cea",
+    "bytes": 13605
+  },
+  {
+    "file": "futures_klines_ETHUSDT_5m.json",
+    "source": "https://fapi.binance.com/fapi/v1/klines?symbol=ETHUSDT&interval=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:46.933Z",
+    "symbols": [
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Last row is the still-open candle.",
+    "sha256": "903d9ada76d035d2a8301eb3a53af39b1107b1e918a578ca401b19619b2d121d",
+    "bytes": 13467
+  },
+  {
+    "file": "futures_openInterest_BTCUSDT.json",
+    "source": "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:47.360Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 1,
+    "trimmed": false,
+    "sha256": "8012651984e290d53ba2a711b3654a41c539f981f8e1706ba45f78b274c6f549",
+    "bytes": 68
+  },
+  {
+    "file": "futures_openInterestHist_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:47.793Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "sha256": "9bf5fb63c58985111698367032fe74fef09ffcf4f412123373d80b8fd4b8507c",
+    "bytes": 17001
+  },
+  {
+    "file": "futures_fundingRate_BTCUSDT.json",
+    "source": "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=50",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:48.226Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 50,
+    "trimmed": false,
+    "sha256": "166f3f67eff5697ab3c4b8dbb0bd0197aa7dc168ec03d9007544dcae9c188957",
+    "bytes": 6301
+  },
+  {
+    "file": "futures_depth_BTCUSDT.json",
+    "source": "https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:48.661Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": "100 bids / 100 asks",
+    "trimmed": false,
+    "sha256": "dcca7920e6d1f1472eeb1449c45e6fe67ab0a1a5dc862977e35b5ba92ec0e7d3",
+    "bytes": 4285
+  },
+  {
+    "file": "futures_globalLongShortAccountRatio_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=BTCUSDT&period=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:49.090Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Extra (not in original request list).",
+    "sha256": "d797a184c2e952ea26e5009b786f57035b713875a99fa6025aa71b6ac087baaa",
+    "bytes": 12001
+  },
+  {
+    "file": "futures_topLongShortPositionRatio_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=BTCUSDT&period=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:49.538Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Extra. Fetched WITHOUT X-MBX-APIKEY although the docs list the header as required.",
+    "sha256": "4fe81fd85d667f46c1aaafd5195c4836b383a61edc58b526d4871a5b7c01d674",
+    "bytes": 12001
+  },
+  {
+    "file": "futures_topLongShortAccountRatio_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/futures/data/topLongShortAccountRatio?symbol=BTCUSDT&period=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:49.985Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Extra. Fetched WITHOUT X-MBX-APIKEY although the docs list the header as required.",
+    "sha256": "958d825de8863c0335ec731909ef16a5dfbe5e1d6cfeda67392db5d3ae1c49c4",
+    "bytes": 12001
+  },
+  {
+    "file": "futures_takerlongshortRatio_BTCUSDT_5m.json",
+    "source": "https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:50.428Z",
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "rows_or_messages": 100,
+    "trimmed": false,
+    "note": "Extra (taker buy/sell volume endpoint).",
+    "sha256": "e459d1c760273d2699f4a4f030c5c9915a4f7f68bf7cae40b510aba14cd500e3",
+    "bytes": 9226
+  },
+  {
+    "file": "futures_error_invalid_symbol.json",
+    "source": "https://fapi.binance.com/fapi/v1/klines?symbol=NOTAREALSYMBOL&interval=5m&limit=10",
+    "http_status": 400,
+    "captured_at_utc": "2026-11-12T06:22:50.875Z",
+    "symbols": [
+      "NOTAREALSYMBOL"
+    ],
+    "rows_or_messages": 1,
+    "trimmed": false,
+    "note": "Extra. HTTP 400 body.",
+    "sha256": "882fbec4a8b18dbba2b41cf9b2c93512b35d0a28c3a4961892d2419946857b9b",
+    "bytes": 38
+  },
+  {
+    "file": "spot_ws_kline_1m.jsonl",
+    "source": "wss://stream.binance.com:9443/stream?streams=btcusdt@kline_1m/ethusdt@kline_1m",
+    "captured_at_utc": "2026-11-12T06:24:52.336Z",
+    "capture_ended_at_utc": "2026-11-12T06:26:12.076Z",
+    "duration_s": 79.7,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 63,
+    "trimmed": false,
+    "note": "One raw text frame per line, verbatim, in arrival order. Connection closed by recorder. Closed-candle (\"x\":true) messages per symbol: {'BTCUSDT': 2, 'ETHUSDT': 2}.",
+    "sha256": "6a7047b2db89fd1dd533c697a45792a0d5efa70eac699bc82f35574fb8ee3e71",
+    "bytes": 22786
+  },
+  {
+    "file": "futures_ws_kline_1m.jsonl",
+    "source": "wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m/ethusdt@kline_1m",
+    "captured_at_utc": "2026-11-12T06:24:52.335Z",
+    "capture_ended_at_utc": "2026-11-12T06:26:12.076Z",
+    "duration_s": 79.7,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 273,
+    "trimmed": false,
+    "note": "One raw text frame per line, verbatim, in arrival order. Connection closed by recorder. Closed-candle (\"x\":true) messages per symbol: {'ETHUSDT': 2, 'BTCUSDT': 2}.",
+    "sha256": "0be6308786e7c991a5a6a89314364efbb8a4bbe9ea447e002c32dedc0217ed68",
+    "bytes": 93481
+  },
+  {
+    "file": "futures_ws_forceOrder.jsonl",
+    "source": "wss://fstream.binance.com/market/stream?streams=!forceOrder@arr",
+    "captured_at_utc": "2026-11-12T06:24:52.345Z",
+    "capture_ended_at_utc": "2026-11-12T06:25:56.791Z",
+    "duration_s": 64.4,
+    "symbols": [
+      "ALL (!forceOrder@arr)"
+    ],
+    "rows_or_messages": 3,
+    "trimmed": false,
+    "note": "One raw text frame per line, verbatim, in arrival order. Connection closed by recorder. Only 3 liquidation snapshots arrived in ~64 s (stream is sparse; payload includes \"ps\" and \"st\" fields).",
+    "sha256": "79353b99410a49ec60c144f989d8cfbb81c24e59febe97cd59091919a237751f",
+    "bytes": 747
+  },
+  {
+    "file": "spot_ws_subscribe_response.jsonl",
+    "source": "wss://stream.binance.com:9443/stream ; sent after open: {\"method\":\"SUBSCRIBE\",\"params\":[\"btcusdt@kline_1m\",\"ethusdt@kline_1m\"],\"id\":1} then {\"method\":\"LIST_SUBSCRIPTIONS\",\"id\":2}",
+    "captured_at_utc": "2026-11-12T06:24:52.339Z",
+    "capture_ended_at_utc": "2026-11-12T06:24:57.882Z",
+    "duration_s": 5.5,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 6,
+    "trimmed": false,
+    "note": "One raw text frame per line, verbatim, in arrival order. Connection closed by recorder. First lines are the SUBSCRIBE ack {\"result\":null,\"id\":1} and LIST_SUBSCRIPTIONS reply (id 2), followed by stream events.",
+    "sha256": "e0acc5e6c9ae0d44d7ffe1ec6cc9d9d0539a278318bf78b6e69dc88b1c555bf1",
+    "bytes": 1537
+  },
+  {
+    "file": "futures_ws_subscribe_response.jsonl",
+    "source": "wss://fstream.binance.com/market/stream ; sent after open: {\"method\":\"SUBSCRIBE\",\"params\":[\"btcusdt@kline_1m\",\"ethusdt@kline_1m\"],\"id\":1} then {\"method\":\"LIST_SUBSCRIPTIONS\",\"id\":2}",
+    "captured_at_utc": "2026-11-12T06:24:52.404Z",
+    "capture_ended_at_utc": "2026-11-12T06:24:57.882Z",
+    "duration_s": 5.5,
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT"
+    ],
+    "rows_or_messages": 27,
+    "trimmed": false,
+    "note": "One raw text frame per line, verbatim, in arrival order. Connection closed by recorder. First lines are the SUBSCRIBE ack {\"result\":null,\"id\":1} and LIST_SUBSCRIPTIONS reply (id 2), followed by stream events.",
+    "sha256": "322d62adbbeab397de4f5f0a1b13cfff86c7af5213b2ba00afaf3d2f623698ab",
+    "bytes": 8756
+  }
+]

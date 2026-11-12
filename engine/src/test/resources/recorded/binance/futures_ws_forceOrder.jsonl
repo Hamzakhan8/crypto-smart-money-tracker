@@ -1,0 +1,3 @@
+{"stream":"!forceOrder@arr","data":{"e":"forceOrder","E":1794464714290,"o":{"s":"JCTUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"12496","p":"0.0039025","ap":"0.0040560","X":"FILLED","l":"12496","z":"12496","T":1794464713282,"ps":"JCTUSDT","st":1}}}
+{"stream":"!forceOrder@arr","data":{"e":"forceOrder","E":1794464716278,"o":{"s":"KGENUSDT","S":"BUY","o":"LIMIT","f":"IOC","q":"2267","p":"0.0885000","ap":"0.0872870","X":"FILLED","l":"1587","z":"2267","T":1794464715268,"ps":"KGENUSDT","st":1}}}
+{"stream":"!forceOrder@arr","data":{"e":"forceOrder","E":1794464739131,"o":{"s":"HOTUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"1161555","p":"0.0003903","ap":"0.0003957","X":"FILLED","l":"331345","z":"1161555","T":1794464738126,"ps":"HOTUSDT","st":1}}}

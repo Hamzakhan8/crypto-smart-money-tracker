@@ -1,0 +1,4 @@
+{"id":"liq1","event":"subscribe","arg":{"channel":"liquidation-orders","instType":"SWAP"},"connId":"21a7cf20"}
+pong
+pong
+pong

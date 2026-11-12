@@ -1,0 +1,15 @@
+{"success":true,"ret_msg":"","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"sub-allliq-top60","op":"subscribe"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"topic":"allLiquidation.XPLUSDT","type":"snapshot","ts":1794464622361,"data":[{"T":1794464621867,"s":"XPLUSDT","S":"Sell","v":"16495","p":"0.05159"}]}
+{"topic":"allLiquidation.ERAUSDT","type":"snapshot","ts":1794464631742,"data":[{"T":1794464631466,"s":"ERAUSDT","S":"Buy","v":"688","p":"0.09120"}]}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"topic":"allLiquidation.ETHUSDT","type":"snapshot","ts":1794464690432,"data":[{"T":1794464689951,"s":"ETHUSDT","S":"Sell","v":"0.01","p":"2059.27"}]}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}
+{"success":true,"ret_msg":"pong","conn_id":"db294p9abbveig58ile0-brdwi","req_id":"","op":"ping"}

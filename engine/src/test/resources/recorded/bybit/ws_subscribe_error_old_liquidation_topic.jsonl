@@ -1,0 +1,2 @@
+{"success":false,"ret_msg":"error:handler not found,topic:liquidation.BTCUSDT","conn_id":"datlpbil53i9p8cv4ar0-eagbm","req_id":"sub-oldliq","op":"subscribe"}
+{"success":true,"ret_msg":"pong","conn_id":"datlpbil53i9p8cv4ar0-eagbm","req_id":"","op":"ping"}

@@ -1,0 +1,3 @@
+{"event":"error","msg":"Subscribe failed, wrong URL or channel:candle1m,instId:BTC-USDT doesn't exist. Please use the correct URL, channel and parameters referring to API document.","code":"60018","connId":"1fbaecec","id":"err1"}
+{"event":"error","msg":"Subscribe failed, wrong URL or channel:notachannel,instId:BTC-USDT doesn't exist. Please use the correct URL, channel and parameters referring to API document.","code":"60018","connId":"1fbaecec","id":"err2"}
+{"event":"error","msg":"Subscribe failed, wrong URL or channel:tickers,instId:NOTACOIN-USDT doesn't exist. Please use the correct URL, channel and parameters referring to API document.","code":"60018","connId":"1fbaecec","id":"err3"}

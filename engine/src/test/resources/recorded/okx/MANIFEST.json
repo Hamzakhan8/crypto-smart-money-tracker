@@ -1,0 +1,488 @@
+[
+  {
+    "file": "spot_instruments.json",
+    "source": "GET https://www.okx.com/api/v5/public/instruments?instType=SPOT",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:03.096451Z",
+    "symbols": [
+      "XCVNA-USDT",
+      "BTC-USDT",
+      "ETH-USDT",
+      "SOL-USDT"
+    ],
+    "rows_or_messages": 4,
+    "sha256": "ca55dddfda48152aadfb94d91995bda92ca9a259b61df5e867e1eebecf605d9f",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC-USDT, ETH-USDT, SOL-USDT + first non-live entry (state=preopen); no other non-live states existed; kept 4 of 1232 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "swap_instruments.json",
+    "source": "GET https://www.okx.com/api/v5/public/instruments?instType=SWAP",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:03.955709Z",
+    "symbols": [
+      "BTC-USD-SWAP",
+      "ANTHROPIC-USDT-SWAP",
+      "BTC-USDT-SWAP",
+      "ETH-USDT-SWAP",
+      "SOL-USDT-SWAP",
+      "AAOI-USDT-SWAP"
+    ],
+    "rows_or_messages": 6,
+    "sha256": "eb38565a5d95c8e959637e8c0029473d319ba69c911fdd15781897f4c316946c",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC-USDT-SWAP, ETH-USDT-SWAP, SOL-USDT-SWAP, BTC-USD-SWAP (coin-margined) + first ruleType=pre_market entry + first instCategory=3 (stock) entry; no non-live SWAP existed at capture; kept 6 of 543 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "spot_tickers.json",
+    "source": "GET https://www.okx.com/api/v5/market/tickers?instType=SPOT",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:04.622921Z",
+    "symbols": [
+      "PEOPLE-EUR",
+      "XASTS-USDT",
+      "BOME-USDC",
+      "VVV-TRY",
+      "KNC-USDT",
+      "VELO-EUR",
+      "AUDM-AUD",
+      "BTC-USDT",
+      "ETH-USDT",
+      "TEST002-USDT",
+      "SOL-USDT",
+      "XCEG-USDT"
+    ],
+    "rows_or_messages": 12,
+    "sha256": "a90b9a4d6069e6e83210cc334a50155feb4139b951794e6f9f6d76a22a327bc1",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC/ETH/SOL-USDT, first entry with an empty price field, TEST002-USDT (test pair absent from instruments), XCEG-USDT (empty last/open24h), + first 6 others in response order; kept 12 of 1229 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "swap_tickers.json",
+    "source": "GET https://www.okx.com/api/v5/market/tickers?instType=SWAP",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:05.237296Z",
+    "symbols": [
+      "MP-USDT-SWAP",
+      "PI-USDT-SWAP",
+      "EDGE-USDT-SWAP",
+      "HPE-USDT-SWAP",
+      "XLM-USDT-SWAP",
+      "ETH-USDT-SWAP",
+      "BTC-USD-SWAP",
+      "SOL-USDT-SWAP",
+      "TEST002-USDT-SWAP",
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 10,
+    "sha256": "240c3ee13749c47c22f14131cc794d25a6dffb5ab170e4ec8c6b125fe39b4e72",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC/ETH/SOL-USDT-SWAP, BTC-USD-SWAP, TEST002-USDT-SWAP (empty bid/ask, absent from instruments) + first 5 others in response order; kept 10 of 546 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "spot_candles_BTC-USDT_5m.json",
+    "source": "GET https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:05.853018Z",
+    "symbols": [
+      "BTC-USDT"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "7cd04fd9204bcd744921c207e54c8661d082c5e582a056b54fd46726a970e697",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "spot_candles_ETH-USDT_5m.json",
+    "source": "GET https://www.okx.com/api/v5/market/candles?instId=ETH-USDT&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:06.472867Z",
+    "symbols": [
+      "ETH-USDT"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "618a1cabd34fd34ec64ce4fe02f091a276f74d686a979c1c2bc47496da753334",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_candles_BTC-USDT-SWAP_5m.json",
+    "source": "GET https://www.okx.com/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:07.047868Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "59d670c12083f6b9b97f7cdc1e054b85907d7545b5bae0f724806a7b2bee489b",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_candles_ETH-USDT-SWAP_5m.json",
+    "source": "GET https://www.okx.com/api/v5/market/candles?instId=ETH-USDT-SWAP&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:07.659975Z",
+    "symbols": [
+      "ETH-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "968beada5fd5d0a3af846d8a2b61ae257bdcde282e8b8acc11b23d5b1e409e14",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_mark_price_candles_BTC-USDT-SWAP_5m.json",
+    "source": "GET https://www.okx.com/api/v5/market/mark-price-candles?instId=BTC-USDT-SWAP&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:08.258547Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "80e569153b7f5d0aa3c378cfa40938a9d8a4a8b4c5063556e8318af3bb80d892",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_mark_price.json",
+    "source": "GET https://www.okx.com/api/v5/public/mark-price?instType=SWAP",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:08.833748Z",
+    "symbols": [
+      "EDEN-USDT-SWAP",
+      "ORDER-USDT-SWAP",
+      "BB-USDT-SWAP",
+      "SNXX-USDT-SWAP",
+      "SQQQ-USDT-SWAP",
+      "RDW-USDT-SWAP",
+      "BTC-USD-SWAP",
+      "BTC-USDT-SWAP",
+      "ETH-USDT-SWAP",
+      "SOL-USDT-SWAP"
+    ],
+    "rows_or_messages": 10,
+    "sha256": "40b30a8e845dfbdb2c5e5c1c6e0621c6a98093c4402c51f2248d20211ab2a5d8",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC/ETH/SOL-USDT-SWAP, BTC-USD-SWAP + first 6 others in response order; kept 10 of 543 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "swap_funding_rate_BTC-USDT-SWAP.json",
+    "source": "GET https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:09.719947Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 1,
+    "sha256": "fbc534630669d1b3b5703fc01249b132ebff3d64cfe5fe0491b9afb2a1225f8b",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_funding_rate_ANY.json",
+    "source": "GET https://www.okx.com/api/v5/public/funding-rate?instId=ANY",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:10.301469Z",
+    "symbols": [
+      "CHIP-USDT-SWAP",
+      "OPG-USDT-SWAP",
+      "LLY-USDT-SWAP",
+      "HIMS-USDT-SWAP",
+      "USAR-USDT-SWAP",
+      "COST-USDT-SWAP",
+      "BTC-USD-SWAP",
+      "BTC-USDT-SWAP",
+      "ETH-USDT-SWAP",
+      "SOL-USDT-SWAP"
+    ],
+    "rows_or_messages": 10,
+    "sha256": "64d19420cae6c477069704217b405004cd2c130b864347cf1e4da7146d541ded",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC/ETH/SOL-USDT-SWAP, BTC-USD-SWAP + first 6 others in response order (full response also had 263 FUTURES X-Perps entries); kept 10 of 806 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "swap_funding_rate_history_BTC-USDT-SWAP.json",
+    "source": "GET https://www.okx.com/api/v5/public/funding-rate-history?instId=BTC-USDT-SWAP&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:11.167516Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "7c71fae822499d9a729563d3d4eb47569afd86037bc848673f4d4e1d4519f9ff",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_open_interest.json",
+    "source": "GET https://www.okx.com/api/v5/public/open-interest?instType=SWAP",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:11.736548Z",
+    "symbols": [
+      "BTC-USD-SWAP",
+      "ETH-USD-SWAP",
+      "SOL-USD-SWAP",
+      "DOGE-USD-SWAP",
+      "XRP-USD-SWAP",
+      "BCH-USD-SWAP",
+      "ADA-USD-SWAP",
+      "BTC-USDT-SWAP",
+      "ETH-USDT-SWAP",
+      "SOL-USDT-SWAP"
+    ],
+    "rows_or_messages": 10,
+    "sha256": "3d7640c3dca8214a1c213029390c8257785ebd8cd03e715b790d0033555bb6b5",
+    "trimmed": {
+      "trimmed": true,
+      "how": "kept BTC/ETH/SOL-USDT-SWAP, BTC-USD-SWAP + first 6 others in response order; kept 10 of 543 data entries, each entry byte-identical to the live response, original order preserved"
+    }
+  },
+  {
+    "file": "rubik_open_interest_history_BTC-USDT-SWAP_5m.json",
+    "source": "GET https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-history?instId=BTC-USDT-SWAP&period=5m",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:12.322053Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "9204d1a55c918a50792046108eaf09e0b05e048da070581bb4993da81d6dab71",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "rubik_long_short_account_ratio_BTC-USDT-SWAP_5m.json",
+    "source": "GET https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio-contract?instId=BTC-USDT-SWAP&period=5m",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:12.919228Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": 100,
+    "sha256": "5270508bc7158f70b6bbf8021a941e9d75df828bd8cadef09d730f98ac97432d",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "spot_books_BTC-USDT.json",
+    "source": "GET https://www.okx.com/api/v5/market/books?instId=BTC-USDT&sz=400",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:13.618170Z",
+    "symbols": [
+      "BTC-USDT"
+    ],
+    "rows_or_messages": "1 snapshot (400 asks + 400 bids)",
+    "sha256": "36e70885ee95632cffd01225f28caf00cf80cd5bf4b200fc9be0998c1d5bb489",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "swap_books_BTC-USDT-SWAP.json",
+    "source": "GET https://www.okx.com/api/v5/market/books?instId=BTC-USDT-SWAP&sz=400",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:14.224646Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": "1 snapshot (400 asks + 400 bids)",
+    "sha256": "2eacea0c4a41e324ea6e317a831778f7b2f7772a8bee488c6dcabd97dff3077f",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    }
+  },
+  {
+    "file": "error_invalid_inst.json",
+    "source": "GET https://www.okx.com/api/v5/market/candles?instId=NOTACOIN-USDT&bar=5m&limit=100",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:19:14.824813Z",
+    "symbols": [
+      "NOTACOIN-USDT"
+    ],
+    "rows_or_messages": 0,
+    "sha256": "230e2c076484f09587d279fd86ac17dce541f4acec83ffd9d40e60daf729f491",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    },
+    "note": "HTTP 200 with code 51001"
+  },
+  {
+    "file": "swap_liquidation_orders_BTC-USDT.json",
+    "source": "GET https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&instFamily=BTC-USDT&state=filled",
+    "http_status": 200,
+    "captured_at_utc": "2026-11-12T06:22:53.035315Z",
+    "symbols": [
+      "BTC-USDT-SWAP"
+    ],
+    "rows_or_messages": "1 object(s), 100 details",
+    "sha256": "277fa586c8b4b62923faed305ef5e25fe11ea7872256edcc5524e8a25398b744",
+    "trimmed": {
+      "trimmed": false,
+      "how": "verbatim response body bytes"
+    },
+    "note": "endpoint delisted from docs on 2023-04-03 (changelog) but still answers; undocumented, do not rely on it"
+  },
+  {
+    "file": "ws_candle1m_spot.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com/ws/v5/business",
+      "sent": [
+        "{\"id\":\"spot1\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"candle1m\",\"instId\":\"BTC-USDT\"},{\"channel\":\"candle1m\",\"instId\":\"ETH-USDT\"}]}",
+        "text \"ping\" every 20 s"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:18:38.625Z",
+    "symbols": [
+      "BTC-USDT",
+      "ETH-USDT"
+    ],
+    "rows_or_messages": "59 messages (54 data pushes, 2 events/notices, 3 pong); 2 confirm=\"1\" candle rows",
+    "sha256": "235a4643ddb8fbb03771b077420948a31addaa736d6585a41776c05adb555216",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "ran 75 s; stopped once >=75 s elapsed and a confirm=\"1\" candle was seen for each instId"
+  },
+  {
+    "file": "ws_candle1m_swap.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com/ws/v5/business",
+      "sent": [
+        "{\"id\":\"swap1\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"candle1m\",\"instId\":\"BTC-USDT-SWAP\"},{\"channel\":\"candle1m\",\"instId\":\"ETH-USDT-SWAP\"}]}",
+        "text \"ping\" every 20 s"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:18:40.265Z",
+    "symbols": [
+      "BTC-USDT-SWAP",
+      "ETH-USDT-SWAP"
+    ],
+    "rows_or_messages": "181 messages (176 data pushes, 2 events/notices, 3 pong); 2 confirm=\"1\" candle rows",
+    "sha256": "57a7a1382fbbd6f19018f1a44c2bc1396e0d14e52c82e790caa843f23a175039",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "ran 75 s; stopped once >=75 s elapsed and a confirm=\"1\" candle was seen for each instId"
+  },
+  {
+    "file": "ws_liquidation_orders.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com/ws/v5/public",
+      "sent": [
+        "{\"id\":\"liq1\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"liquidation-orders\",\"instType\":\"SWAP\"}]}",
+        "text \"ping\" every 20 s"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:18:42.498Z",
+    "symbols": [
+      "instType=SWAP"
+    ],
+    "rows_or_messages": "4 messages (0 data pushes, 1 events/notices, 3 pong)",
+    "sha256": "007ae02e1bebe91d122900b221c6aadd102b831e40e1b0b6f65c67355f857fc6",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "ran 62 s; NO liquidation pushes arrived in this window (only subscribe ack + pongs)"
+  },
+  {
+    "file": "ws_liquidation_orders_300s.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com/ws/v5/public",
+      "sent": [
+        "{\"id\":\"liq2\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"liquidation-orders\",\"instType\":\"SWAP\"}]}",
+        "text \"ping\" every 20 s"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:20:58.578Z",
+    "symbols": [
+      "instType=SWAP"
+    ],
+    "rows_or_messages": "28 messages (13 data pushes, 1 events/notices, 14 pong)",
+    "sha256": "a9a3baaa4d538844723da69ff3aa672021bf17ca67fb8a71bf2c5636180c4802",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "extra 300 s recording made because the 62 s one was empty"
+  },
+  {
+    "file": "ws_subscribe_error.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com/ws/v5/public",
+      "sent": [
+        "{\"id\":\"err1\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"candle1m\",\"instId\":\"BTC-USDT\"}]}  (candle channel on the wrong /public endpoint)",
+        "{\"id\":\"err2\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"notachannel\",\"instId\":\"BTC-USDT\"}]}  (bad channel)",
+        "{\"id\":\"err3\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"tickers\",\"instId\":\"NOTACOIN-USDT\"}]}  (bad instId)"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:20:32.016Z",
+    "symbols": [
+      "BTC-USDT",
+      "NOTACOIN-USDT"
+    ],
+    "rows_or_messages": "3 messages (0 data pushes, 3 events/notices, 0 pong)",
+    "sha256": "280f236860e2fac6e0805445f63a4897d6c57103d95ed9b451096b68eefd0674",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "ran 8 s; connection stayed open after each error (closed by client, code 1000)"
+  },
+  {
+    "file": "ws_port8443_notice.jsonl",
+    "source": {
+      "ws_url": "wss://ws.okx.com:8443/ws/v5/business",
+      "sent": [
+        "{\"id\":\"p8443\",\"op\":\"subscribe\",\"args\":[{\"channel\":\"candle1m\",\"instId\":\"BTC-USDT\"}]}"
+      ]
+    },
+    "captured_at_utc": "2026-11-12T06:20:46.309Z",
+    "symbols": [
+      "BTC-USDT"
+    ],
+    "rows_or_messages": "6 messages (4 data pushes, 2 events/notices, 0 pong)",
+    "sha256": "7c058a949abb9a7e26d3bfb1f4af7b8a0f70d7a754294b17f63a5c9360b19310",
+    "trimmed": {
+      "trimmed": false,
+      "how": "every received text frame written verbatim, one per line, in arrival order; client-sent frames are not in the file"
+    },
+    "note": "ran 4 s on the legacy :8443 port; first message is event=notice code 64010"
+  }
+]

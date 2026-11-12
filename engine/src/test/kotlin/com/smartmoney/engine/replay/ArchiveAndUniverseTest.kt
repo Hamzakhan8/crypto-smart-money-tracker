@@ -101,8 +101,14 @@ class ArchiveAndUniverseTest {
                 if (dow >= 6) 1e9 else 7e11 // weekend volume collapses: a tokenized stock
             },
             "THINUSDT" to days(jan - 15 * DAY, 15) { 6e11 }, // fewer than 20 days
+            // E005 change 3: a listed PERPETUAL with quiet weekends (like ETHUSDT in early 2026) stays in.
+            "QUIETUSDT" to days(jan - 30 * DAY, 30) { d ->
+                val dow = java.time.Instant.ofEpochMilli(d).atZone(java.time.ZoneOffset.UTC).dayOfWeek.value
+                if (dow >= 6) 1e9 else 6e9
+            },
         )
-        val u = lab.universe(daily, mapOf("STOCKUSDT" to "TRADIFI_PERPETUAL")).getValue(YearMonth.of(2025, 1))
-        assertEquals(listOf("BIGUSDT", "BTCUSDT"), u)
+        val u = lab.universe(daily, mapOf("STOCKUSDT" to "TRADIFI_PERPETUAL", "QUIETUSDT" to "PERPETUAL")).getValue(YearMonth.of(2025, 1))
+        // BIG 30 x $5B = $150B; QUIET 22 weekdays x $6B + 8 weekend days x $1B = $140B.
+        assertEquals(listOf("BIGUSDT", "QUIETUSDT", "BTCUSDT"), u)
     }
 }

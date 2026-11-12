@@ -4,7 +4,7 @@ Rules (docs/SPEC.md, evidence rule 3): every test is written here and **committe
 commit. This file is append-only: old entries are never edited; corrections are new entries. Every variant tried
 increments the trial counter, and confidence intervals are corrected for the number of trials (Bonferroni).
 
-**Trial counter: 4** (after E001 and E002 below)
+**Trial counter: 8** (E001 and E002 run twice: version 1 with errors, then version 1.1; see E005)
 
 ---
 
@@ -134,3 +134,31 @@ As P1. Not trials. Pass criterion as P1.
 ## E004. Precision at an alert budget (descriptive, not a trial)
 Among traded signals of rules A and C (CONTINUE), per UTC day ranked by |move| (plain % move), top K = 5, 10, 20:
 win rate (favorable barrier first) and mean net return, 2-min delay, $1,000. (Ranking by a score comes with H1-H3.)
+
+---
+
+## E005. Corrections after the first run (shared definitions version 1.1), 2026-11-12
+
+Written and committed after run 1 and before run 2. Run 1: command `./gradlew :engine:replayLab`, code `94ff12d`,
+pre-registration `e1785c7`, dataset manifest sha256 `8b8bdb1dfdd04c0d9fa01309a1163f446a6cd3b817f650a71e2ddb3de5b7d599`.
+Its headline, now superseded: all four trials NO LIFT (2 min, $1,000, mean lift per event: A-CONTINUE -0.033%,
+A-REVERT +0.023%, C-CONTINUE -0.004%, C-REVERT +0.000%; 8,014 / 8,014 / 20,481 / 20,481 events); all six placebos passed.
+Its report is kept as docs/results/phase3-baselines-run1-superseded.md.
+
+The red-team checks of run 1 (independent recount of rule A from the raw zips; audit of every bookDepth file) found:
+
+1. **Bug (implementation, K1):** 295 of 896 bookDepth files write the level as `-1.00` / `1.00`, not `-1` / `1`; the
+   parser only accepted the latter. Those days had no depth sample: 4,459 rule A signals had no cost estimate and were
+   dropped, and rule C's depth gate failed on those days. **Fix:** read the level as a number.
+2. **Data quality (K1, method change):** some bookDepth days are one-sided, e.g. LINKUSDT 2025-10-15: median bids within
+   1% = $295, asks = $7.3M. The linear-book model turns them into multi-percent costs (run 1's mean net at $10,000 was
+   -2.2% for rule A). **Change:** a day is skipped as corrupt when either side's median notional within 1% is below
+   $1,000 or below 1% of the other side; the previous valid sample (still strictly before the signal day) is used.
+3. **Universe false positive (U1, method change):** the weekend-volume rule (meant for tokenized stocks) excluded
+   ETHUSDT in 2026-01 and 2026-02 (weekend / weekday median 0.33 < 0.35); this explains the recount gap for ETHUSDT (78
+   independent vs 68 engine signals). BTCUSDT (19 = 19) and SOLUSDT (123 = 123) matched exactly. **Change:** the weekend
+   rule applies only to symbols with no contract type in the saved exchangeInfo (gone from the exchange); symbols that
+   Binance lists as PERPETUAL are crypto by Binance's own label, and TRADIFI_PERPETUAL is still excluded.
+
+Nothing else changes: same rules A and C, same labeler, statistics, placebos, seeds, period and holdout. The trial
+counter goes from 4 to 8, so the adjusted intervals of run 2 use 1 - 0.05/8 (stricter than run 1).

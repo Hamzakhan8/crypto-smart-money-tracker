@@ -67,8 +67,32 @@ class CostModelTest {
             z.write(rows.toByteArray())
             z.closeEntry()
         }
-        val d = CostModel.depthFromFile(f, day15)!!
-        assertEquals(200.0, d.bidNotional1)
-        assertEquals(400.0, d.askNotional1)
+        assertNull(CostModel.depthFromFile(f, day15), "$200 / $400 within 1% is below $1,000: corrupt")
+    }
+
+    private fun depthZip(rows: String): File {
+        val f = File.createTempFile("bookDepth", ".zip").apply { deleteOnExit() }
+        ZipOutputStream(f.outputStream()).use { z -> z.putNextEntry(ZipEntry("x.csv")); z.write(rows.toByteArray()); z.closeEntry() }
+        return f
+    }
+
+    @Test
+    fun levelsAreReadAsNumbersInBothArchiveFormats() {
+        // E005 fix 1: real files use both "-1" and "-1.00".
+        val plain = depthZip("timestamp,percentage,depth,notional\n2026-09-15 00:00:00,-1,1,500000\n2026-09-15 00:00:00,1,1,700000\n")
+        val decimal = depthZip("timestamp,percentage,depth,notional\n2026-09-15 00:00:00,-1.00,1,500000.00\n2026-09-15 00:00:00,1.00,1,700000.00\n2026-09-15 00:00:00,-5.00,1,9\n")
+        for (f in listOf(plain, decimal)) {
+            val d = CostModel.depthFromFile(f, day15)!!
+            assertEquals(500_000.0, d.bidNotional1)
+            assertEquals(700_000.0, d.askNotional1)
+        }
+    }
+
+    @Test
+    fun oneSidedDaysAreCorrupt() {
+        // E005 change 2: like LINKUSDT 2025-10-15 (bids $295, asks $7.3M within 1%).
+        assertEquals(false, CostModel.plausible(DepthSample(day15, 295.0, 7_300_000.0)))
+        assertEquals(false, CostModel.plausible(DepthSample(day15, 50_000.0, 6_000_000.0)), "below 1% of the other side")
+        assertEquals(true, CostModel.plausible(DepthSample(day15, 80_000.0, 6_000_000.0)))
     }
 }

@@ -168,7 +168,10 @@ class ReplayLab(
                     val dow = Instant.ofEpochMilli(d).atZone(ZoneOffset.UTC).dayOfWeek
                     if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) we += v else wd += v
                 }
-                if (we.size >= 6 && wd.size >= 15 && CostModel.median(wd) > 0 && CostModel.median(we) / CostModel.median(wd) < 0.35) return@mapNotNull null
+                // E005 change 3: the weekend rule only for symbols Binance no longer lists (a PERPETUAL is crypto by its label).
+                if (contractType[sym] == null && we.size >= 6 && wd.size >= 15 && CostModel.median(wd) > 0 &&
+                    CostModel.median(we) / CostModel.median(wd) < 0.35
+                ) return@mapNotNull null
                 sym to win.values.sum()
             }.sortedByDescending { it.second }.map { it.first }
             val top = ranked.take(TOP).toMutableList()

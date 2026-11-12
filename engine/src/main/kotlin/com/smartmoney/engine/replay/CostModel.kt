@@ -56,19 +56,30 @@ class CostModel(
     }
 
     companion object {
-        /** Median notional within 1% per side from a bookDepth zip (columns: timestamp, percentage, depth, notional). */
+        /**
+         * Median notional within 1% per side from a bookDepth zip (columns: timestamp, percentage, depth, notional).
+         * The level is read as a number: the archive writes both "-1" and "-1.00" (E005 fix 1).
+         * Returns null for a corrupt, one-sided day (E005 change 2, see [plausible]).
+         */
         fun depthFromFile(file: java.io.File, dayStart: Long): DepthSample? {
             val bids = ArrayList<Double>()
             val asks = ArrayList<Double>()
             Archive.forEachRow(file) { r ->
                 if (r.size < 4) return@forEachRow
-                when (r[1].trim()) {
-                    "-1" -> r[3].toDoubleOrNull()?.let { bids += it }
-                    "1" -> r[3].toDoubleOrNull()?.let { asks += it }
+                when (r[1].trim().toDoubleOrNull()) {
+                    -1.0 -> r[3].toDoubleOrNull()?.let { bids += it }
+                    1.0 -> r[3].toDoubleOrNull()?.let { asks += it }
                 }
             }
             if (bids.isEmpty() || asks.isEmpty()) return null
-            return DepthSample(dayStart, median(bids), median(asks))
+            return DepthSample(dayStart, median(bids), median(asks)).takeIf { plausible(it) }
+        }
+
+        /** E005 change 2: a side below $1,000 or below 1% of the other side within 1% is a recording error. */
+        fun plausible(d: DepthSample): Boolean {
+            val lo = minOf(d.bidNotional1, d.askNotional1)
+            val hi = maxOf(d.bidNotional1, d.askNotional1)
+            return lo >= 1_000.0 && lo >= 0.01 * hi
         }
 
         fun median(x: List<Double>): Double {

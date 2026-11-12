@@ -1,0 +1,2 @@
+# Recorded exchange responses must stay byte-exact: their sha256 values are in MANIFEST.json files.
+src/test/resources/recorded/** -text

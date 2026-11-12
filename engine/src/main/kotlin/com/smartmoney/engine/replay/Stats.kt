@@ -157,7 +157,7 @@ object Events {
     fun firstSignals(signals: List<Sig>): List<Sig> {
         val out = ArrayList<Sig>()
         val anchor = HashMap<Pair<String, Int>, Long>()
-        for (s in signals.sortedWith(compareBy({ it.t }, { it.symbol }, { it.moveDir }))) {
+        for (s in signals.sortedWith(compareBy({ it.t }, { it.symbol }, { it.moveDir }, { it.move }))) {
             val k = s.symbol to s.moveDir
             val a = anchor[k]
             if (a == null || s.t - a > SAME_EVENT_MS) {

@@ -90,7 +90,7 @@ class ReplayLab(
         fun monthOf(t: Long): YearMonth = YearMonth.from(Instant.ofEpochMilli(t).atZone(ZoneOffset.UTC))
         fun months(from: YearMonth, to: YearMonth): List<YearMonth> = generateSequence(from) { it.plusMonths(1) }.takeWhile { it <= to }.toList()
         fun key(symbol: String, t: Long) = "$symbol@$t"
-        val SIG_ORDER: Comparator<Sig> = compareBy({ it.t }, { it.symbol }, { it.moveDir })
+        val SIG_ORDER: Comparator<Sig> = compareBy({ it.t }, { it.symbol }, { it.moveDir }, { it.move })
         val devStartMs: Long get() = start(DEV_START)
         val devEndMs: Long get() = start(DEV_END.plusMonths(1))
     }

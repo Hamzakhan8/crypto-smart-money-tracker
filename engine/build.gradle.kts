@@ -27,6 +27,23 @@ tasks.register<JavaExec>("liveSmoke") {
     args = listOf((project.findProperty("minutes") ?: "3").toString(), (project.findProperty("tf") ?: "1m").toString())
 }
 
+// Phase 3 Replay Lab: one command reproduces the pre-registered baseline results with receipts
+// (downloads and verifies the Binance archive into engine/replay-cache on the first run):
+//   ./gradlew :engine:replayLab
+tasks.register<JavaExec>("replayLab") {
+    group = "verification"
+    description = "Replays the pre-registered baselines and placebos of docs/experiments.md on real Binance archive data."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.smartmoney.engine.replay.ReplayLabMainKt")
+    maxHeapSize = "4g"
+    val repo = project.projectDir.parentFile
+    args = listOf(
+        "--repo", repo.absolutePath,
+        "--cache", File(project.projectDir, "replay-cache").absolutePath,
+        "--command", "./gradlew :engine:replayLab",
+    )
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {

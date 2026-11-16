@@ -13,8 +13,8 @@ android {
         applicationId = "com.smartmoney.screener"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0-experimental"
+        versionCode = 4
+        versionName = "0.3.1-experimental"
     }
 
     buildTypes {

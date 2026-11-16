@@ -40,6 +40,16 @@ data class AppSettings(
     val canShort: Boolean = true,
     /** v0.3: minimum score (share of checks passing) for a confirmed move to be shown as a signal. */
     val minScore: Int = 75,
+    /** v0.3.1 notifications per action. */
+    val notifyLong: Boolean = true,
+    val notifyShort: Boolean = true,
+    val notifyBuy: Boolean = false,
+    /** Most signal notifications per day (local day). */
+    val notifyDailyCap: Int = 10,
+    /** Quiet hours "off", "22-7" or "0-8" (local time): no notifications in that window. */
+    val quietHours: String = "off",
+    /** Set once v0.3.1 has switched background scanning on for notifications. */
+    val notifySetupDone: Boolean = false,
     val backgroundScan: Boolean = false,
     /** Taker fee per "EXCHANGE_MARKET", fraction. */
     val takerFees: Map<String, Double> = defaultFees(),
@@ -76,6 +86,12 @@ class SettingsRepository(private val context: Context) {
         val short = booleanPreferencesKey("show_perp_shorts")
         val background = booleanPreferencesKey("background_scan")
         val minScore = intPreferencesKey("min_score")
+        val notifyLong = booleanPreferencesKey("notify_long")
+        val notifyShort = booleanPreferencesKey("notify_short")
+        val notifyBuy = booleanPreferencesKey("notify_buy")
+        val notifyCap = intPreferencesKey("notify_daily_cap")
+        val quiet = stringPreferencesKey("quiet_hours")
+        val notifySetup = booleanPreferencesKey("notify_setup_done")
         val alive = longPreferencesKey("last_alive")
         fun fee(key: String) = doublePreferencesKey("fee_$key")
     }
@@ -109,6 +125,12 @@ class SettingsRepository(private val context: Context) {
             canShort = p[K.short] ?: d.canShort,
             backgroundScan = p[K.background] ?: d.backgroundScan,
             minScore = p[K.minScore] ?: d.minScore,
+            notifyLong = p[K.notifyLong] ?: d.notifyLong,
+            notifyShort = p[K.notifyShort] ?: d.notifyShort,
+            notifyBuy = p[K.notifyBuy] ?: d.notifyBuy,
+            notifyDailyCap = p[K.notifyCap] ?: d.notifyDailyCap,
+            quietHours = p[K.quiet] ?: d.quietHours,
+            notifySetupDone = p[K.notifySetup] ?: d.notifySetupDone,
             takerFees = d.takerFees.mapValues { (k, v) -> p[K.fee(k)] ?: v },
             lastAliveAt = p[K.alive],
         )
@@ -129,6 +151,12 @@ class SettingsRepository(private val context: Context) {
         p[K.short] = s.canShort
         p[K.background] = s.backgroundScan
         p[K.minScore] = s.minScore
+        p[K.notifyLong] = s.notifyLong
+        p[K.notifyShort] = s.notifyShort
+        p[K.notifyBuy] = s.notifyBuy
+        p[K.notifyCap] = s.notifyDailyCap
+        p[K.quiet] = s.quietHours
+        p[K.notifySetup] = s.notifySetupDone
         for ((k, v) in s.takerFees) p[K.fee(k)] = v
     }
 }

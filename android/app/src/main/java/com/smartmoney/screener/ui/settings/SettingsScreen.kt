@@ -101,6 +101,31 @@ fun SettingsScreen() {
             Caption("Most-traded coins followed per exchange and market (more = more data use)")
             Chips(listOf(20, 40, 80), s.universeSize, { it.toString() }) { n -> update { it.copy(universeSize = n) } }
 
+            SectionTitle("Notifications")
+            ToggleRow("Notify LONG signals", "Perps: a new LONG signal (entry, stop, target, score).", s.notifyLong) { on -> update { it.copy(notifyLong = on) }; if (on) ensureNotifications(context, s, notifyPermission::launch) }
+            ToggleRow("Notify SHORT signals", "Perps: a new SHORT signal.", s.notifyShort) { on -> update { it.copy(notifyShort = on) }; if (on) ensureNotifications(context, s, notifyPermission::launch) }
+            ToggleRow("Notify BUY signals", "Spot: a new BUY signal.", s.notifyBuy) { on -> update { it.copy(notifyBuy = on) }; if (on) ensureNotifications(context, s, notifyPermission::launch) }
+            Caption("At most this many signal notifications per day (one per coin per hour)")
+            Chips(listOf(5, 10, 20, 50), s.notifyDailyCap, { "$it" }) { v -> update { it.copy(notifyDailyCap = v) } }
+            Caption("Quiet hours (no notifications, local time)")
+            Chips(listOf("off", "22-7", "0-8"), s.quietHours, { if (it == "off") "Off" else it.replace("-", ":00 to ") + ":00" }) { v -> update { it.copy(quietHours = v) } }
+            val allowed = context.container.notifier.canPost()
+            Text(
+                when {
+                    !allowed -> "Notifications are blocked for this app. Allow them in Android settings (or switch a toggle above to be asked)."
+                    !s.backgroundScan -> "Background scanning is off: you only get notifications while the app is open."
+                    else -> "Notifications on. They also arrive while the app is closed (background scanning is on)."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (!allowed || !s.backgroundScan) Palette.Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            var testResult by remember { mutableStateOf<String?>(null) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { testResult = if (context.container.notifier.test()) "Sent: check your notifications" else "Blocked: allow notifications first" }) { Text("Send a test notification") }
+                testResult?.let { Spacer(Modifier.width(10.dp)); Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+
             SectionTitle("Signals (v0.3, EXPERIMENTAL)")
             Caption("Minimum score: share of the 8 checks that must pass (75 = at least 6 of 8). Higher = fewer signals.")
             Chips(listOf(50, 63, 75, 88, 100), s.minScore, { "$it" }) { v -> update { it.copy(minScore = v) } }
@@ -239,6 +264,17 @@ private fun BatteryRow(context: Context) {
                 context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
         }) { Text("Open") }
+    }
+}
+
+/** Turning a notification on: ask for the Android 13+ permission and make sure scanning runs in the background. */
+private fun ensureNotifications(context: Context, s: AppSettings, ask: (String) -> Unit) {
+    if (Build.VERSION.SDK_INT >= 33 &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) ask(Manifest.permission.POST_NOTIFICATIONS)
+    if (!s.backgroundScan) {
+        kotlinx.coroutines.MainScope().launch { context.container.settings.update { it.copy(backgroundScan = true) } }
+        ScanService.start(context)
     }
 }
 

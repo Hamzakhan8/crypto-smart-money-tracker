@@ -42,6 +42,12 @@ Read this file and docs/SPEC.md at the start of every session.
 - 2026-11-16: v0.3 research (E006) pre-registered (67dbc8e) and coded (123552a), then paused before any result.
   **Open issue:** after that refactor a Phase 3 rerun did not reproduce the committed Phase 3 numbers; cause not found.
 
+- 2026-11-16: **App v0.3.1-experimental: signal notifications** (user request). Heads-up notifications for new LONG and
+  SHORT signals (BUY optional, off by default) with entry, stop, target, score and EXPERIMENTAL; at most 10 per day
+  (5-50), one per coin per hour, optional quiet hours, grouped when several arrive together, test button in Settings.
+  Android 13+ permission requested; the first v0.3.1 start switches background scanning on so notifications arrive with
+  the app closed. Engine 107/107, app 13/13 tests pass. Installs over v0.3 (same key, versionCode 4).
+
 ### Build and test results (2026-11-12, this PC: Windows 10, JDK 17.0.21, Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21)
 
 | Command (run in `android/`) | Result |

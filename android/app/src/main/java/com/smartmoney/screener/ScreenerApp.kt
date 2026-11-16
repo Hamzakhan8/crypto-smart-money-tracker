@@ -7,6 +7,7 @@ import com.smartmoney.screener.data.EngineController
 import com.smartmoney.screener.data.HistoryDb
 import com.smartmoney.screener.data.HistoryRecorder
 import com.smartmoney.screener.data.SettingsRepository
+import com.smartmoney.screener.data.SignalNotifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +27,8 @@ class AppContainer(context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val settings = SettingsRepository(context)
     val db = HistoryDb.open(context)
-    val recorder = HistoryRecorder(db.dao(), scope)
+    val notifier = SignalNotifier(context, settings)
+    val recorder = HistoryRecorder(db.dao(), scope, notifier)
     val engine = Engines.create(scope, recorder)
     val controller = EngineController(engine, settings, recorder, db.dao(), scope)
 }

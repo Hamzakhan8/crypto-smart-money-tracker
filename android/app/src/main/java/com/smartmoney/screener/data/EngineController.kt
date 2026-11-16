@@ -18,9 +18,14 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** Writes every logged hit and data gap to the history database (and drops entries older than 30 days). */
-class HistoryRecorder(private val dao: HistoryDao, private val scope: CoroutineScope) : EngineListener {
+class HistoryRecorder(
+    private val dao: HistoryDao,
+    private val scope: CoroutineScope,
+    private val notifier: SignalNotifier? = null,
+) : EngineListener {
     override fun onHit(hit: HitRecord) {
         scope.launch(Dispatchers.IO) { dao.insertHit(HitEntity.from(hit)) }
+        if (hit.isSignal && notifier != null) scope.launch { notifier.onSignal(hit) }
     }
 
     override fun onGap(gap: GapRecord) {

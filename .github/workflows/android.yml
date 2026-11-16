@@ -1,17 +1,15 @@
 name: Android debug APK
 
-# Builds the Smart Money Screener debug APK and runs the engine and app unit tests.
+# Builds the Smart Money Screener debug APK (android-app/) and runs the engine and app unit tests.
 # The APK is attached to each run as the artifact "smart-money-screener-debug".
 on:
   push:
     paths:
-      - "android/**"
-      - "engine/**"
+      - "android-app/**"
       - ".github/workflows/android.yml"
   pull_request:
     paths:
-      - "android/**"
-      - "engine/**"
+      - "android-app/**"
   workflow_dispatch:
 
 jobs:
@@ -19,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: android
+        working-directory: android-app/android
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +37,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: smart-money-screener-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -47,6 +45,6 @@ jobs:
         with:
           name: test-reports
           path: |
-            engine/build/reports/tests/
-            android/app/build/reports/tests/
+            android-app/engine/build/reports/tests/
+            android-app/android/app/build/reports/tests/
           if-no-files-found: ignore

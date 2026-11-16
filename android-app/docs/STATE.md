@@ -48,6 +48,11 @@ Read this file and docs/SPEC.md at the start of every session.
   Android 13+ permission requested; the first v0.3.1 start switches background scanning on so notifications arrive with
   the app closed. Engine 107/107, app 13/13 tests pass. Installs over v0.3 (same key, versionCode 4).
 
+- 2026-11-16: **Moved into `android-app/`** (user request): `android/`, `engine/` and `docs/` now live under
+  `android-app/` (the TypeScript dashboard files are untouched). Build from `android-app/android`; the GitHub workflow
+  (repo root `.github/workflows/android.yml`, which GitHub requires at the root) points at the new paths. All paths in
+  these docs are relative to `android-app/`. Engine 107/107, app 13/13 tests pass from the new location.
+
 ### Build and test results (2026-11-12, this PC: Windows 10, JDK 17.0.21, Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21)
 
 | Command (run in `android/`) | Result |

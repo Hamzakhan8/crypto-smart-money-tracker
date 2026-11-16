@@ -286,3 +286,29 @@ equal-weight share of 8 live checks, every signal is labeled EXPERIMENTAL, and t
 Open issue found on the way: after the v0.3 refactor (code 123552a) a Phase 3 rerun did not reproduce the committed
 Phase 3 numbers (same dataset manifest); the cause is not yet found, so the refactored replay code must not be used for
 results until it is.
+
+
+---
+
+## Commit IDs changed on 2026-11-16 (receipts still valid)
+
+At the user's request the 14 commits of this work were rewritten to remove a "Co-Authored-By" line from their messages
+and force-pushed. Code and file trees are unchanged (verified: identical tree at the head), but every commit ID changed.
+Receipts above cite the old IDs; use this table to find the same code under its new ID.
+
+| Old ID (cited above) | New ID | Commit |
+|---|---|---|
+| `eb04648` | `b228c09` | Smart Money Screener: Kotlin engine and Android app (Phase 1 data layer, Phase 2 Track A APK) |
+| `e1785c7` | `c5e6c88` | Pre-register Phase 3 replay: shared definitions v1, E001-E004 (trial counter 4) |
+| `b731dd8` | `b28298d` | Replay Lab (Phase 3): archive loader, triple-barrier labeler, cost model, events, bootstrap, placebos |
+| `94ff12d` | `0c6247e` | App v0.2.0-trackA: clear LONG/SHORT signals on perps, BUY only on spot |
+| `05ad63d` | `2cad948` | Pre-register E005 corrections (v1.1) and fix the replay before run 2; trial counter 8 |
+| `cccb63e` | `9e5a339` | Replay report header: name the E005 corrections and the trial counter |
+| `faee8fa` | `3e65169` | Replay: deterministic signal order so every rerun gives identical numbers |
+| `d5f8c5a` | `40bbfe3` | Replay: break signal-order ties by move size too |
+| `d112b5b` | `d553875` | Phase 3 results (run 2, v1.1): no lift for baselines A and C; placebos clean |
+| `67dbc8e` | `13cb058` | Pre-register E006: v0.3 signal redesign (confirmations, score, exits), trial counter 48 |
+| `123552a` | `9d54b54` | v0.3 research code (E006): 19 confirmations, 11 exits x 4 entries, logistic score, staged selection |
+| `02bafb5` | `f7d290f` | App v0.3.0-experimental: scored signals (8 live checks), live paper tracking, decay flag |
+| `5c81101` | `8143737` | App v0.3.1-experimental: LONG / SHORT signal notifications |
+| `794a802` | `f0597ad` | Move the Android app into android-app/ (android, engine, docs) |

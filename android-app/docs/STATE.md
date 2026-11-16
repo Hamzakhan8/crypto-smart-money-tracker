@@ -53,6 +53,9 @@ Read this file and docs/SPEC.md at the start of every session.
   (repo root `.github/workflows/android.yml`, which GitHub requires at the root) points at the new paths. All paths in
   these docs are relative to `android-app/`. Engine 107/107, app 13/13 tests pass from the new location.
 
+- 2026-11-16: Merged to `main` on GitHub, then (user request) the 14 commits were rewritten without the "Co-Authored-By"
+  line and force-pushed; code unchanged, commit IDs changed. Old-to-new ID table: end of docs/experiments.md.
+
 ### Build and test results (2026-11-12, this PC: Windows 10, JDK 17.0.21, Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21)
 
 | Command (run in `android/`) | Result |

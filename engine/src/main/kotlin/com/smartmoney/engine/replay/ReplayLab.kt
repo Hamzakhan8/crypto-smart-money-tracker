@@ -113,9 +113,25 @@ class ReplayLab(
     // ------------------------------------------------------------------------------------------------------------
     // Data
 
-    private class Info(val contractType: Map<String, String>, val status: Map<String, String>, val tick: Map<String, Double>)
+    class Info(val contractType: Map<String, String>, val status: Map<String, String>, val tick: Map<String, Double>)
 
-    private fun exchangeInfo(): Info {
+    /** Verified archive inputs for the months [from]..[to] (universe, 1m files, costs, funding, regime, BTC). */
+    class DataSet(
+        val from: YearMonth,
+        val to: YearMonth,
+        val info: Info,
+        val universe: Map<YearMonth, List<String>>,
+        val needed: Map<String, java.util.SortedSet<YearMonth>>,
+        val oneMinute: Map<String, List<File>>,
+        val funding: Map<String, List<FundingEvent>>,
+        val costs: CostModel,
+        val regime: Regime,
+        val btc: Minutes,
+        val btcBars: List<Candle>,
+        val btcClose: Map<Long, Double>,
+    )
+
+    fun exchangeInfo(): Info {
         val f = File(cacheDir, "exchangeInfo-um.json")
         if (!f.exists()) {
             val bytes = fetcher.fetch(EXCHANGE_INFO_URL) ?: error("exchangeInfo unavailable")
@@ -136,8 +152,8 @@ class ReplayLab(
         return Info(type, status, tick)
     }
 
-    private fun daily(symbols: List<String>): Map<String, java.util.TreeMap<Long, Double>> {
-        val wanted = months(WARMUP, DEV_END.minusMonths(1))
+    private fun daily(symbols: List<String>, first: YearMonth = WARMUP, last: YearMonth = DEV_END.minusMonths(1)): Map<String, java.util.TreeMap<Long, Double>> {
+        val wanted = months(first, last)
         val out = ConcurrentHashMap<String, java.util.TreeMap<Long, Double>>()
         parallel(symbols) { sym ->
             val keys = archive.list("$UM/monthly/klines/$sym/1d/").keys.toSet()
@@ -153,9 +169,14 @@ class ReplayLab(
     }
 
     /** U1: top 30 by quote volume in the 30 days before each month start, after exclusions; BTCUSDT always in. */
-    fun universe(daily: Map<String, java.util.TreeMap<Long, Double>>, contractType: Map<String, String>): Map<YearMonth, List<String>> {
+    fun universe(
+        daily: Map<String, java.util.TreeMap<Long, Double>>,
+        contractType: Map<String, String>,
+        from: YearMonth = DEV_START,
+        to: YearMonth = DEV_END,
+    ): Map<YearMonth, List<String>> {
         val out = LinkedHashMap<YearMonth, List<String>>()
-        for (ym in months(DEV_START, DEV_END)) {
+        for (ym in months(from, to)) {
             val to = start(ym)
             val from = to - 30 * DAY
             val ranked = daily.mapNotNull { (sym, days) ->
@@ -182,32 +203,32 @@ class ReplayLab(
         return out
     }
 
-    private fun neededMonths(universe: Map<YearMonth, List<String>>): Map<String, java.util.SortedSet<YearMonth>> {
+    private fun neededMonths(universe: Map<YearMonth, List<String>>, warmup: YearMonth = WARMUP, end: YearMonth = DEV_END): Map<String, java.util.SortedSet<YearMonth>> {
         val out = HashMap<String, java.util.SortedSet<YearMonth>>()
         for ((ym, syms) in universe) for (s in syms) {
             val set = out.getOrPut(s) { java.util.TreeSet() }
-            set += ym.minusMonths(1).coerceAtLeast(WARMUP)
+            set += ym.minusMonths(1).coerceAtLeast(warmup)
             set += ym
-            if (ym < DEV_END) set += ym.plusMonths(1)
+            if (ym < end) set += ym.plusMonths(1)
         }
-        out.getOrPut("BTCUSDT") { java.util.TreeSet() }.addAll(months(WARMUP, DEV_END))
+        out.getOrPut("BTCUSDT") { java.util.TreeSet() }.addAll(months(warmup, end))
         return out
     }
 
-    private fun klinePath(sym: String, interval: String, ym: YearMonth) = "$UM/monthly/klines/$sym/$interval/$sym-$interval-$ym.zip"
-
-    // ------------------------------------------------------------------------------------------------------------
-    // Run
-
-    fun prepare(): Prepared {
+    /**
+     * Downloads (or reuses) and verifies everything for the months [from]..[to]: the as-of universe, 1m candles (plus one
+     * warm-up month), funding, depth samples, BTC hourly candles for the regime. Phase 3 uses the default development
+     * period; v0.3's holdout B uses 2026-07..2026-10.
+     */
+    fun dataSet(from: YearMonth = DEV_START, to: YearMonth = DEV_END): DataSet {
         log("listing USD-M perpetuals in the archive")
         val symbols = archive.list("$UM/monthly/klines/").folders.filter { it.endsWith("USDT") && !it.contains('_') }.sorted()
         log("  ${symbols.size} USDT perpetual symbols (delisted included)")
         val info = exchangeInfo()
         log("downloading daily candles for the universe")
-        val daily = daily(symbols)
-        val universe = universe(daily, info.contractType)
-        val needed = neededMonths(universe)
+        val daily = daily(symbols, from.minusMonths(1), to.minusMonths(1))
+        val universe = universe(daily, info.contractType, from, to)
+        val needed = neededMonths(universe, from.minusMonths(1), to)
         log("  universe: ${needed.size} distinct symbols over ${universe.size} months")
 
         log("downloading 1m candles, funding and order-book depth")
@@ -234,13 +255,31 @@ class ReplayLab(
         val costs = CostModel(info.tick, depth, funding)
 
         log("BTC hourly candles for the regime")
-        val hourFiles = months(REGIME_FROM, DEV_END).mapNotNull { archive.get(klinePath("BTCUSDT", "1h", it)) }
+        val hourFiles = months(REGIME_FROM, to).mapNotNull { archive.get(klinePath("BTCUSDT", "1h", it)) }
         val hours = Minutes.load("BTCUSDT-1h", hourFiles)
         val regime = Regime(hours.t, hours.c, start(REGIME_FROM) + 7 * DAY)
 
         val btc = Minutes.load("BTCUSDT", oneMinute.getValue("BTCUSDT"))
         val btcBars = btc.bars5m()
-        val btcClose = btcBars.associate { it.openTime to it.close }
+        return DataSet(from, to, info, universe, needed, oneMinute, funding, costs, regime, btc, btcBars, btcBars.associate { it.openTime to it.close })
+    }
+
+    private fun klinePath(sym: String, interval: String, ym: YearMonth) = "$UM/monthly/klines/$sym/$interval/$sym-$interval-$ym.zip"
+
+    // ------------------------------------------------------------------------------------------------------------
+    // Run
+
+    fun prepare(): Prepared {
+        val ds = dataSet()
+        val info = ds.info
+        val universe = ds.universe
+        val needed = ds.needed
+        val oneMinute = ds.oneMinute
+        val costs = ds.costs
+        val regime = ds.regime
+        val btc = ds.btc
+        val btcBars = ds.btcBars
+        val btcClose = ds.btcClose
 
         val results = ConcurrentHashMap<String, KeyResult>()
         val signals = ConcurrentHashMap<String, MutableList<Sig>>().also { m -> RULES.forEach { m[it] = java.util.Collections.synchronizedList(ArrayList()) } }
@@ -261,28 +300,7 @@ class ReplayLab(
             synchronized(this) { minutesLoaded += m.size; barsBuilt += bars.size }
             val ctx = SymbolCtx(sym, m, bars, costs, btc, btcClose)
             val member = memberMonths[sym].orEmpty()
-            val found = RULES.associateWith { ArrayList<Sig>() }
-            for (i in 1 until bars.size) {
-                val b = bars[i]
-                if (b.openTime < devStartMs || b.openTime >= devEndMs) continue
-                val ym = monthOf(b.openTime)
-                if (ym !in member) continue
-                val prev = bars[i - 1]
-                if (prev.openTime != b.openTime - FIVE_MIN || prev.close <= 0) continue
-                val move = b.close / prev.close - 1
-                val dir = if (move > 0) 1 else if (move < 0) -1 else continue
-                val t = b.openTime + FIVE_MIN
-                val rank = rankOf[sym to ym] ?: TOP + 1
-                if (abs(move) >= A_MIN_MOVE) found.getValue(RULE_A) += Sig(RULE_A, sym, t, dir, move, null, rank)
-                val atr = Features.atrPct(bars, i) ?: continue
-                if (atr > 0 && abs(move / atr) >= C_MIN_Z) {
-                    val f = Features.compute(bars, i, Timeframe.M5, null) ?: continue
-                    val z = f.zMove ?: continue
-                    if (abs(z) >= C_MIN_Z && f.dataIssues.isEmpty() && f.history > Features.ATR_LEN && ctx.passesAppGates(t, b.close, dir, atr)) {
-                        found.getValue(RULE_C) += Sig(RULE_C, sym, t, dir, move, z, rank)
-                    }
-                }
-            }
+            val found = detect(ctx, member, rankOf, devStartMs, devEndMs)
             for (rule in RULES) {
                 val all = found.getValue(rule)
                 signals.getValue(rule).addAll(all)
@@ -357,16 +375,50 @@ class ReplayLab(
         )
     }
 
-    /** Everything that needs one symbol's data loaded. */
-    private class SymbolCtx(
+    /**
+     * Rules A and C on one symbol's 5m bars, for bars opening in [fromMs, untilMs) of months where the symbol is in the
+     * universe (pre-registration B1, E001, E002). Shared by Phase 3 and v0.3.
+     */
+    fun detect(ctx: SymbolCtx, member: Set<YearMonth>, rankOf: Map<Pair<String, YearMonth>, Int>, fromMs: Long, untilMs: Long): Map<String, List<Sig>> {
+        val bars = ctx.bars
+        val sym = ctx.sym
+        val found = RULES.associateWith { ArrayList<Sig>() }
+        for (i in 1 until bars.size) {
+            val b = bars[i]
+            if (b.openTime < fromMs || b.openTime >= untilMs) continue
+            val ym = monthOf(b.openTime)
+            if (ym !in member) continue
+            val prev = bars[i - 1]
+            if (prev.openTime != b.openTime - FIVE_MIN || prev.close <= 0) continue
+            val move = b.close / prev.close - 1
+            val dir = if (move > 0) 1 else if (move < 0) -1 else continue
+            val t = b.openTime + FIVE_MIN
+            val rank = rankOf[sym to ym] ?: TOP + 1
+            if (abs(move) >= A_MIN_MOVE) found.getValue(RULE_A) += Sig(RULE_A, sym, t, dir, move, null, rank)
+            val atr = Features.atrPct(bars, i) ?: continue
+            if (atr > 0 && abs(move / atr) >= C_MIN_Z) {
+                val f = Features.compute(bars, i, Timeframe.M5, null) ?: continue
+                val z = f.zMove ?: continue
+                if (abs(z) >= C_MIN_Z && f.dataIssues.isEmpty() && f.history > Features.ATR_LEN && ctx.passesAppGates(t, b.close, dir, atr)) {
+                    found.getValue(RULE_C) += Sig(RULE_C, sym, t, dir, move, z, rank)
+                }
+            }
+        }
+        return found
+    }
+
+    /** Everything that needs one symbol's data loaded. [periodStart]/[periodEnd] bound the random baseline times. */
+    class SymbolCtx(
         val sym: String,
         val m: Minutes,
         val bars: List<Candle>,
         val costs: CostModel,
         val btc: Minutes,
         val btcClose: Map<Long, Double>,
+        private val periodStart: Long = devStartMs,
+        private val periodEnd: Long = devEndMs,
     ) {
-        private val barIndex = HashMap<Long, Int>(bars.size * 2).also { map -> bars.forEachIndexed { i, b -> map[b.openTime] = i } }
+        val barIndex = HashMap<Long, Int>(bars.size * 2).also { map -> bars.forEachIndexed { i, b -> map[b.openTime] = i } }
 
         /** True when the bar closing at [t] exists and has ATR history. */
         fun hasBar(t: Long): Boolean = barIndex[t - FIVE_MIN]?.let { it > Features.ATR_LEN } == true
@@ -387,7 +439,7 @@ class ReplayLab(
             val eligible = ArrayList<Long>()
             var c = day + FIVE_MIN
             while (c <= day + DAY) {
-                if (c - FIVE_MIN >= devStartMs && c <= devEndMs && hasBar(c) && !near(busySorted, c)) eligible += c
+                if (c - FIVE_MIN >= periodStart && c <= periodEnd && hasBar(c) && !near(busySorted, c)) eligible += c
                 c += FIVE_MIN
             }
             eligible.shuffle(rng)

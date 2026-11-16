@@ -21,6 +21,8 @@ class Minutes(
     val c: DoubleArray,
     val v: DoubleArray,
     val qv: DoubleArray,
+    /** Taker-buy quote volume per minute (archive column 10); NaN when absent. */
+    val tbq: DoubleArray = DoubleArray(t.size) { Double.NaN },
 ) {
     val size: Int get() = t.size
     private val cumQv = DoubleArray(t.size + 1).also { for (i in t.indices) it[i + 1] = it[i] + qv[i] }
@@ -78,7 +80,10 @@ class Minutes(
             for (f in files) {
                 Archive.forEachRow(f) { r ->
                     val time = archiveMillis(r[0].toLong())
-                    rows[time] = doubleArrayOf(r[1].toDouble(), r[2].toDouble(), r[3].toDouble(), r[4].toDouble(), r[5].toDouble(), r[7].toDouble())
+                    rows[time] = doubleArrayOf(
+                        r[1].toDouble(), r[2].toDouble(), r[3].toDouble(), r[4].toDouble(), r[5].toDouble(), r[7].toDouble(),
+                        r.getOrNull(10)?.toDoubleOrNull() ?: Double.NaN,
+                    )
                 }
             }
             return fromRows(symbol, rows)
@@ -93,12 +98,14 @@ class Minutes(
             val c = DoubleArray(n)
             val v = DoubleArray(n)
             val q = DoubleArray(n)
+            val tb = DoubleArray(n)
             var i = 0
             for ((time, x) in rows) {
                 t[i] = time; o[i] = x[0]; h[i] = x[1]; l[i] = x[2]; c[i] = x[3]; v[i] = x[4]; q[i] = x[5]
+                tb[i] = x.getOrElse(6) { Double.NaN }
                 i++
             }
-            return Minutes(symbol, t, o, h, l, c, v, q)
+            return Minutes(symbol, t, o, h, l, c, v, q, tb)
         }
     }
 }

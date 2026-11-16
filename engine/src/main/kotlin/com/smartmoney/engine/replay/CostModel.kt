@@ -40,6 +40,24 @@ class CostModel(
         return 0.005 * sizeUsd / notional
     }
 
+    /** The last settled funding rate at or before [t], or null. */
+    fun lastFunding(symbol: String, t: Long): Double? = funding[symbol]?.lastOrNull { it.time <= t }?.rate
+
+    /**
+     * Round-trip costs where the entry may be a limit (maker) order: maker fee [makerFee], no spread or slippage on
+     * entry; the exit is always a taker order. Null without a depth sample (as [roundTrip]).
+     */
+    fun trade(symbol: String, dir: Int, sizeUsd: Double, signalTime: Long, entryPrice: Double, exitPrice: Double, entryTime: Long, exitTime: Long, makerEntry: Boolean, makerFee: Double = 0.0002): Costs? {
+        if (!makerEntry) return roundTrip(symbol, dir, sizeUsd, signalTime, entryPrice, exitPrice, entryTime, exitTime)
+        val exitSlip = slippage(symbol, sizeUsd, buy = dir == -1, signalTime) ?: return null
+        return Costs(
+            fee = makerFee + takerFee,
+            spread = halfSpread(symbol, exitPrice),
+            slippage = exitSlip,
+            funding = fundingCost(symbol, dir, entryTime, exitTime),
+        )
+    }
+
     fun fundingCost(symbol: String, dir: Int, entryTime: Long, exitTime: Long): Double =
         funding[symbol].orEmpty().filter { it.time > entryTime && it.time <= exitTime }.sumOf { dir * it.rate }
 

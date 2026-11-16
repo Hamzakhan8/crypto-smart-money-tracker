@@ -44,6 +44,21 @@ tasks.register<JavaExec>("replayLab") {
     )
 }
 
+// v0.3 signal research (docs/experiments.md E006), development stage: ./gradlew :engine:replayV03
+tasks.register<JavaExec>("replayV03") {
+    group = "verification"
+    description = "Runs the pre-registered v0.3 research (train 2025, validation 2026Q1) on the Binance archive."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.smartmoney.engine.replay.v03.V03MainKt")
+    maxHeapSize = "6g"
+    val repo = project.projectDir.parentFile
+    args = listOf(
+        "--repo", repo.absolutePath,
+        "--cache", File(project.projectDir, "replay-cache").absolutePath,
+        "--command", "./gradlew :engine:replayV03",
+    )
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {

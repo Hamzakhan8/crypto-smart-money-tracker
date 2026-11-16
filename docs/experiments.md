@@ -162,3 +162,25 @@ The red-team checks of run 1 (independent recount of rule A from the raw zips; a
 
 Nothing else changes: same rules A and C, same labeler, statistics, placebos, seeds, period and holdout. The trial
 counter goes from 4 to 8, so the adjusted intervals of run 2 use 1 - 0.05/8 (stricter than run 1).
+
+---
+
+## Results of E001-E004 (run 2, definitions v1.1)
+
+Receipts: command `./gradlew :engine:replayLab` (from android/), code `d5f8c5abd7b6e19b3239996aeb0f31a7af66240f` (clean),
+pre-registration `05ad63d02a9bf3acaf5992ec2a89110d46e86af9`, dataset manifest sha256
+`20721e1f2f4c758251e162f262a0d70b3fdd5495cc290d0521203178f40cc1e0` (12,352 files), trial counter 8. Two consecutive runs gave
+byte-identical results. Full tables: docs/results/phase3-baselines.md.
+
+| Trial | Rule | Trade | Independent events | Mean net (2 min, $1,000) | Mean lift vs random | Adjusted CI (1-0.05/8) | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1 | A | CONTINUE | 11,278 | -0.156% | -0.035% | [-0.091%, +0.018%] | NO LIFT |
+| 2 | A | REVERT | 11,278 | -0.103% | +0.025% | [-0.027%, +0.081%] | NO LIFT |
+| 3 | C | CONTINUE | 23,564 | -0.116% | -0.001% | [-0.015%, +0.014%] | NO LIFT |
+| 4 | C | REVERT | 23,564 | -0.120% | -0.004% | [-0.019%, +0.010%] | NO LIFT |
+
+Placebos (E003): all six pass (95% CI contains 0). Red-team: independent recount of rule A from the raw zips matches
+the engine for BTCUSDT 19/19, ETHUSDT 78/78, SOLUSDT 123/123; bookDepth audit after the E005 fixes: 896 files read, 859
+plausible, 37 one-sided days skipped. Not checked: fills through the barrier in fast markets (exits assumed at the
+barrier price), time-of-day matching of the random baseline. Conclusion: neither baseline has an edge; the app's v0.2
+rule (C) performs like random entries minus costs.

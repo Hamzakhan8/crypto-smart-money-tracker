@@ -53,6 +53,7 @@ class EngineController(
     private val engine: ScreenerEngine,
     private val settings: SettingsRepository,
     private val recorder: HistoryRecorder,
+    private val dao: HistoryDao,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -107,6 +108,15 @@ class EngineController(
             try {
                 while (scope.isActive) {
                     settings.setLastAlive(now())
+                    try {
+                        val s = settings.settings.first()
+                        val cfg = s.toEngineConfig()
+                        Paper.update(dao, { engine.candles(it) }, cfg.timeframe, { e, m -> cfg.takerFee(e, m) }, now())
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Paper scoring must never stop the scanner; it retries next minute.
+                    }
                     delay(60_000)
                 }
             } finally {

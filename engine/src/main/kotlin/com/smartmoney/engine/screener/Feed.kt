@@ -64,6 +64,8 @@ data class FeedData(
     val tickers: Map<String, Ticker>,
     val openInterest: Map<String, List<OpenInterestPoint>>,
     val depth: Map<String, DepthInfo>,
+    /** EMA50 of closed 1h candles and of closed 4h candles (built from 1h), per native symbol. */
+    val htf: Map<String, Pair<Double?, Double?>> = emptyMap(),
 )
 
 /**
@@ -89,6 +91,7 @@ class Feed(
     private var tickers: Map<String, Ticker> = emptyMap()
     private val oi = HashMap<String, List<OpenInterestPoint>>()
     private val depth = HashMap<String, DepthInfo>()
+    private val htf = HashMap<String, Pair<Double?, Double?>>()
     private val managers = ArrayList<ConnectionManager>()
     private val restPermits = Semaphore(3)
 
@@ -111,7 +114,7 @@ class Feed(
     }
 
     suspend fun data(): FeedData = mutex.withLock {
-        FeedData(id, universe, HashMap(series), tickers, HashMap(oi), HashMap(depth))
+        FeedData(id, universe, HashMap(series), tickers, HashMap(oi), HashMap(depth), HashMap(htf))
     }
 
     /** Fetches the order book now (detail screen and candidate checks). Null if it fails. */
@@ -151,6 +154,7 @@ class Feed(
         startStreams()
         scope.launch { tickerLoop() }
         if (id.market == Market.PERP) scope.launch { openInterestLoop() }
+        scope.launch { trendLoop() }
     }
 
     private suspend fun bootstrap() {
@@ -265,6 +269,25 @@ class Feed(
         }
     }
 
+    /** v0.3 trend check: every 30 minutes, 210 closed 1h candles per coin -> EMA50 on 1h and on 4h (UTC 4h groups). */
+    private suspend fun trendLoop() {
+        while (scope.isActive) {
+            val insts = mutex.withLock { universe.toList() }
+            coroutineScopeAll(insts) { inst ->
+                try {
+                    val hours = rest { adapter.candles(inst, com.smartmoney.engine.model.Timeframe.H1, 210) }.filter { it.closed }
+                    val e = trendEmas(hours)
+                    mutex.withLock { htf[inst.nativeSymbol] = e }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e is RateLimitedException) delay(e.retryAfterMs)
+                }
+            }
+            delay(TREND_INTERVAL_MS)
+        }
+    }
+
     private suspend fun openInterestLoop() {
         var first = true
         while (scope.isActive) {
@@ -328,6 +351,18 @@ class Feed(
         const val TICKER_INTERVAL_MS = 30_000L
         const val OI_INTERVAL_MS = 5 * 60_000L
         const val REST_TIMEOUT_MS = 20_000L
+        const val TREND_INTERVAL_MS = 30 * 60_000L
+
+        /** EMA50 of closed 1h closes, and EMA50 of 4h closes made from complete UTC groups of four 1h candles. */
+        fun trendEmas(hours: List<com.smartmoney.engine.model.Candle>): Pair<Double?, Double?> {
+            val closes = hours.sortedBy { it.openTime }
+            val e1 = com.smartmoney.engine.replay.v03.Indicators.ema(closes.map { it.close }.toDoubleArray(), 50).lastOrNull()?.takeIf { !it.isNaN() }
+            val fourH = 4 * 3_600_000L
+            val groups = closes.groupBy { it.openTime - Math.floorMod(it.openTime, fourH) }.toSortedMap()
+                .filterValues { it.size == 4 }.values.map { g -> g.maxBy { it.openTime }.close }
+            val e4 = com.smartmoney.engine.replay.v03.Indicators.ema(groups.toDoubleArray(), 50).lastOrNull()?.takeIf { !it.isNaN() }
+            return e1 to e4
+        }
 
         fun describe(e: Exception): String = when (e) {
             is RateLimitedException -> "rate limited, pausing ${e.retryAfterMs / 1000} s"

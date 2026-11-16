@@ -275,3 +275,14 @@ Supertrend/Ichimoku, retests. Confirmation on Bybit, OKX and spot needs their hi
 
 Also reported: max drawdown (cumulative net per $1,000 trade in time order), results by coin, month, regime, long vs
 short. If no confirmation survives Stage 2, the answer is "no edge found" and v0.2's rule stays EXPERIMENTAL.
+
+---
+
+## E006 status (2026-11-16): paused before any result, at the user's request
+
+The development stage was stopped while downloading the metrics archive; no Stage 1-3 number was computed or seen.
+The 40 reserved trials stay counted (trial counter 48). App v0.3 was built without research results: its score is an
+equal-weight share of 8 live checks, every signal is labeled EXPERIMENTAL, and the holdouts remain unopened.
+Open issue found on the way: after the v0.3 refactor (code 123552a) a Phase 3 rerun did not reproduce the committed
+Phase 3 numbers (same dataset manifest); the cause is not yet found, so the refactored replay code must not be used for
+results until it is.

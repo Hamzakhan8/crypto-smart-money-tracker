@@ -28,7 +28,7 @@ class AppContainer(context: Context) {
     val db = HistoryDb.open(context)
     val recorder = HistoryRecorder(db.dao(), scope)
     val engine = Engines.create(scope, recorder)
-    val controller = EngineController(engine, settings, recorder, scope)
+    val controller = EngineController(engine, settings, recorder, db.dao(), scope)
 }
 
 val Context.container: AppContainer get() = (applicationContext as ScreenerApp).container

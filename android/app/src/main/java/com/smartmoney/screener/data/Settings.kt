@@ -38,6 +38,8 @@ data class AppSettings(
     val costMultiple: Double = 2.0,
     /** Show SHORT signals on perps (spot is always BUY only). */
     val canShort: Boolean = true,
+    /** v0.3: minimum score (share of checks passing) for a confirmed move to be shown as a signal. */
+    val minScore: Int = 75,
     val backgroundScan: Boolean = false,
     /** Taker fee per "EXCHANGE_MARKET", fraction. */
     val takerFees: Map<String, Double> = defaultFees(),
@@ -47,7 +49,7 @@ data class AppSettings(
         timeframe = timeframe, exchanges = exchanges, markets = markets, universeSize = universeSize,
         minQuoteVolume24h = minQuoteVolume24h, maxSpread = maxSpread, moveThresholdZ = moveThresholdZ,
         tradeSizeUsd = tradeSizeUsd, maxSlippage = maxSlippage, costMultiple = costMultiple, canShort = canShort,
-        takerFees = takerFees,
+        takerFees = takerFees, minScore = minScore,
     )
 
     companion object {
@@ -73,6 +75,7 @@ class SettingsRepository(private val context: Context) {
         // v0.2: new key. v0.1 saved "can_short = false" by default, which would hide the perp SHORT signals.
         val short = booleanPreferencesKey("show_perp_shorts")
         val background = booleanPreferencesKey("background_scan")
+        val minScore = intPreferencesKey("min_score")
         val alive = longPreferencesKey("last_alive")
         fun fee(key: String) = doublePreferencesKey("fee_$key")
     }
@@ -105,6 +108,7 @@ class SettingsRepository(private val context: Context) {
             costMultiple = p[K.cost] ?: d.costMultiple,
             canShort = p[K.short] ?: d.canShort,
             backgroundScan = p[K.background] ?: d.backgroundScan,
+            minScore = p[K.minScore] ?: d.minScore,
             takerFees = d.takerFees.mapValues { (k, v) -> p[K.fee(k)] ?: v },
             lastAliveAt = p[K.alive],
         )
@@ -124,6 +128,7 @@ class SettingsRepository(private val context: Context) {
         p[K.cost] = s.costMultiple
         p[K.short] = s.canShort
         p[K.background] = s.backgroundScan
+        p[K.minScore] = s.minScore
         for ((k, v) in s.takerFees) p[K.fee(k)] = v
     }
 }

@@ -1,6 +1,7 @@
 package com.smartmoney.screener.data
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -51,9 +52,17 @@ data class HitEntity(
     val reason: String,
     val engineVersion: String,
     val configHash: String,
+    /** v0.3 score (0-100) and whether the row was shown as a signal (v0.1/v0.2 rows: null / false). */
+    val score: Int? = null,
+    @ColumnInfo(defaultValue = "0") val isSignal: Boolean = false,
+    /** Live paper result of a v0.3 signal: WIN, LOSS, TIMEOUT or UNTRACKED; net after estimated costs; exit price. */
+    val paperStatus: String? = null,
+    val paperNet: Double? = null,
+    val paperExit: Double? = null,
 ) {
     companion object {
         fun from(h: HitRecord) = HitEntity(
+            score = h.score, isSignal = h.isSignal,
             candleOpenTime = h.candleOpenTime, loggedAt = h.loggedAt, exchange = h.exchange.name, market = h.market.name,
             canonical = h.canonical, nativeSymbol = h.nativeSymbol, timeframe = h.timeframe.label, tier = h.tier.name,
             label = h.label?.text, direction = h.direction?.name, price = h.price, move = h.move, zMove = h.zMove,
@@ -91,8 +100,19 @@ interface HistoryDao {
     fun hits(limit: Int): Flow<List<HitEntity>>
 
     /** Confirmed signals with an action (LONG, SHORT, BUY) since [since], newest first. */
-    @Query("SELECT * FROM hits WHERE tier = 'CONFIRMED' AND label IN ('LONG', 'SHORT', 'BUY') AND candleOpenTime >= :since ORDER BY candleOpenTime DESC, id DESC")
+    @Query("SELECT * FROM hits WHERE isSignal = 1 AND candleOpenTime >= :since ORDER BY candleOpenTime DESC, id DESC")
     fun signalsSince(since: Long): Flow<List<HitEntity>>
+
+    /** v0.3 signals whose paper result is still open. */
+    @Query("SELECT * FROM hits WHERE isSignal = 1 AND paperStatus IS NULL AND target IS NOT NULL AND stop IS NOT NULL AND candleOpenTime >= :since")
+    suspend fun openPaper(since: Long): List<HitEntity>
+
+    @Query("UPDATE hits SET paperStatus = :status, paperNet = :net, paperExit = :exit WHERE id = :id")
+    suspend fun setPaper(id: Long, status: String, net: Double?, exit: Double?)
+
+    /** Finished paper results of v0.3 signals since [since]. */
+    @Query("SELECT * FROM hits WHERE isSignal = 1 AND paperStatus IN ('WIN', 'LOSS', 'TIMEOUT') AND candleOpenTime >= :since")
+    fun paperResults(since: Long): Flow<List<HitEntity>>
 
     @Query("SELECT * FROM gaps ORDER BY toTime DESC LIMIT :limit")
     fun gaps(limit: Int): Flow<List<GapEntity>>
@@ -110,7 +130,7 @@ interface HistoryDao {
     suspend fun clearGaps()
 }
 
-@Database(entities = [HitEntity::class, GapEntity::class], version = 2, exportSchema = false)
+@Database(entities = [HitEntity::class, GapEntity::class], version = 3, exportSchema = false)
 abstract class HistoryDb : RoomDatabase() {
     abstract fun dao(): HistoryDao
 
@@ -123,7 +143,18 @@ abstract class HistoryDb : RoomDatabase() {
             }
         }
 
+        /** v0.2 -> v0.3: score, signal flag and live paper result. Existing history is kept. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE hits ADD COLUMN score INTEGER")
+                db.execSQL("ALTER TABLE hits ADD COLUMN isSignal INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE hits ADD COLUMN paperStatus TEXT")
+                db.execSQL("ALTER TABLE hits ADD COLUMN paperNet REAL")
+                db.execSQL("ALTER TABLE hits ADD COLUMN paperExit REAL")
+            }
+        }
+
         fun open(context: Context): HistoryDb =
-            Room.databaseBuilder(context, HistoryDb::class.java, "history.db").addMigrations(MIGRATION_1_2).build()
+            Room.databaseBuilder(context, HistoryDb::class.java, "history.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
     }
 }

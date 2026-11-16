@@ -137,6 +137,25 @@ class RowBuilderTest {
     }
 
     @Test
+    fun v03ChecksAndScoreDecideWhatIsASignal() {
+        val p = inst(market = Market.PERP)
+        val oi = (0..12).map { OpenInterestPoint(period - 60 * 60_000L + it * 5 * 60_000L, 1_000.0 + if (it == 12) 30.0 else 0.0) }
+        val t = ticker(103.0).copy(markPrice = 103.0, fundingRate = 0.0001)
+        val withTrend = RowBuilder.build(p, series(0.03), null, t, oi, deepBook(103.0), cfg, now, htf = 100.0 to 99.0, btcMove15 = 0.002)
+        // trend, BTC, volume (4x), OI, funding, breakout, strong close pass; taker flow is n/a (no taker data here).
+        assertEquals(7, withTrend.checks.count { it.passed != null })
+        assertEquals(100, withTrend.score)
+        assertTrue(withTrend.isSignal)
+        val againstTrend = RowBuilder.build(p, series(0.03), null, t, oi, deepBook(103.0), cfg, now, htf = 110.0 to 99.0, btcMove15 = -0.002)
+        assertEquals(71, againstTrend.score, "5 of 7")
+        assertTrue(!againstTrend.isSignal, "below the default minimum score of 75")
+        val noTrendData = RowBuilder.build(p, series(0.03), null, t, oi, deepBook(103.0), cfg, now)
+        assertNull(noTrendData.checks.first().passed, "not loaded = left out of the score")
+        val rejected = RowBuilder.build(p, series(0.03), null, t, oi, null, cfg, now, htf = 100.0 to 99.0, btcMove15 = 0.002)
+        assertTrue(!rejected.isSignal, "a high score never turns a gate-rejected move into a signal")
+    }
+
+    @Test
     fun configHashChangesWithSettings() {
         assertEquals(EngineConfig().hash, EngineConfig().hash)
         assertTrue(EngineConfig().hash != EngineConfig(moveThresholdZ = 2.5).hash)

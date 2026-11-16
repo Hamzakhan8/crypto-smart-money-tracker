@@ -190,6 +190,7 @@ private fun RowItem(row: ScreenerRow, onClick: () -> Unit) {
         }
         val perp = row.perp
         val extra = listOfNotNull(
+            row.score?.let { "score $it" + if (row.isSignal) " (signal)" else "" },
             "24h ${Fmt.usd(row.ticker?.quoteVolume24h)}",
             perp?.let { "OI ${Fmt.pct(it.oiChange)}" },
             perp?.let { "funding ${Fmt.pct(it.fundingRate, digits = 3)}" },

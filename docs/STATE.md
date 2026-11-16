@@ -32,6 +32,16 @@ Read this file and docs/SPEC.md at the start of every session.
 - 2026-11-12: Phase 3 started: pre-registration committed (e1785c7), Replay Lab code committed (b731dd8). The first
   run was stopped while downloading daily candles: **no Phase 3 results exist yet.**
 
+- 2026-11-16: **App v0.3.0-experimental** (user: "skip the backtesting, just provide the updated app"). A confirmed
+  move is shown as a signal only with a score >= 75 (Settings: 50-100): the share of 8 live checks that pass (1h+4h
+  EMA50 trend, BTC 15m not against, volume >= 2x, taker flow 55% (Binance only), OI rising and funding not crowded
+  (perps), 20-candle breakout, strong close), all weighted equally because no backtest set weights. Each signal shows
+  coin, direction, entry, stop, target, score, EXPERIMENTAL and "holdout: not tested". Live paper tracking scores every
+  signal (target / stop 1 ATR, 30 min, conservative) and compares with the v0.2 backtest (decay flag). History DB v3
+  (in-place upgrade, checked in SQLite). Engine 107/107, app 10/10 tests pass. Installs over v0.2 (same key, versionCode 3).
+- 2026-11-16: v0.3 research (E006) pre-registered (67dbc8e) and coded (123552a), then paused before any result.
+  **Open issue:** after that refactor a Phase 3 rerun did not reproduce the committed Phase 3 numbers; cause not found.
+
 ### Build and test results (2026-11-12, this PC: Windows 10, JDK 17.0.21, Gradle 8.10.2, AGP 8.7.3, Kotlin 2.0.21)
 
 | Command (run in `android/`) | Result |

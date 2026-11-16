@@ -103,7 +103,7 @@ class ScanService : LifecycleService() {
                 val live = fs.count { it.phase == FeedPhase.LIVE }
                 "${ex.label} ${if (live == fs.size) "live" else if (live > 0) "partly live" else fs.first().phase.label}"
             }
-            val signals = s.rows.filter { it.tier == Tier.CONFIRMED && it.label != null }
+            val signals = s.rows.filter { it.isSignal }
             val counts = SignalLabel.entries.mapNotNull { l -> signals.count { it.label == l }.takeIf { it > 0 }?.let { "$it ${l.text}" } }
             return "$feeds\n${if (counts.isEmpty()) "No signals right now" else counts.joinToString(", ")} on ${s.config.timeframe.label} candles (unproven)"
         }

@@ -34,7 +34,7 @@ data class ScreenerFilter(
             .filter {
                 when (tier) {
                     TierFilter.ALL -> true
-                    TierFilter.SIGNALS -> it.tier == Tier.CONFIRMED && it.label != null
+                    TierFilter.SIGNALS -> it.isSignal
                     TierFilter.MOVING -> it.tier != Tier.NONE
                     TierFilter.CONFIRMED -> it.tier == Tier.CONFIRMED
                     TierFilter.WATCH -> it.tier == Tier.WATCH

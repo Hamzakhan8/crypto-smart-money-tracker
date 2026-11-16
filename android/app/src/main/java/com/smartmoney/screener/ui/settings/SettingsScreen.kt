@@ -101,6 +101,10 @@ fun SettingsScreen() {
             Caption("Most-traded coins followed per exchange and market (more = more data use)")
             Chips(listOf(20, 40, 80), s.universeSize, { it.toString() }) { n -> update { it.copy(universeSize = n) } }
 
+            SectionTitle("Signals (v0.3, EXPERIMENTAL)")
+            Caption("Minimum score: share of the 8 checks that must pass (75 = at least 6 of 8). Higher = fewer signals.")
+            Chips(listOf(50, 63, 75, 88, 100), s.minScore, { "$it" }) { v -> update { it.copy(minScore = v) } }
+
             SectionTitle("Unusual move")
             Caption("A candle counts as unusual when its move is at least this many ATRs (its usual range)")
             Chips(listOf(1.5, 2.0, 2.5, 3.0), s.moveThresholdZ, { "${it}x" }) { z -> update { it.copy(moveThresholdZ = z) } }

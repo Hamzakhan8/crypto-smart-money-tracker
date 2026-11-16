@@ -108,6 +108,7 @@ fun DetailScreen(market: Market, canonical: String, initial: Exchange, onBack: (
             CandleChart(candles, row.invalidation, Modifier.padding(vertical = 8.dp))
 
             SignalCard(row)
+            Checks(row)
             Breakdown(ui.rows)
             Gates(row)
             if (row.flags.isNotEmpty()) {
@@ -199,6 +200,31 @@ private fun SignalCard(row: ScreenerRow) {
             }
         }
     }
+}
+
+@Composable
+private fun Checks(row: ScreenerRow) {
+    if (row.checks.isEmpty()) return
+    SectionTitle("v0.3 score: ${row.score ?: "n/a"} / 100 (EXPERIMENTAL)")
+    Text(
+        "Share of the checks below that pass (n/a ones are left out); all weighted equally because no backtest has set weights yet. A confirmed move becomes a signal at the minimum score set in Settings.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    for (c in row.checks) {
+        val (mark, color) = when (c.passed) {
+            true -> "✓" to Palette.Up
+            false -> "✗" to Palette.Down
+            null -> "–" to MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+            Text(mark, color = color, fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp))
+            Column {
+                Text(c.name, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                Text(if (c.passed == null) "n/a: ${c.detail}" else c.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    Text("Holdout win rate: not tested (n = 0).", style = MaterialTheme.typography.bodySmall, color = Palette.Amber, modifier = Modifier.padding(top = 4.dp))
 }
 
 @Composable

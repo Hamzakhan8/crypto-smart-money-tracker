@@ -53,6 +53,9 @@ data class HitRecord(
     /** Plan target and stop (1 ATR) when the row had an action. */
     val target: Double?,
     val stop: Double?,
+    /** v0.3 score (0-100, equal-weight checks) and whether it was shown as a signal. */
+    val score: Int?,
+    val isSignal: Boolean,
     val failedGates: List<String>,
     val flags: List<String>,
     val confirmations: Int,
@@ -181,7 +184,9 @@ class ScreenerEngine(
 
     private fun buildRows(data: FeedData, cfg: EngineConfig, t: Long): List<ScreenerRow> {
         val btcInst = data.universe.firstOrNull { it.base == "BTC" }
-        val btcMap = btcInst?.let { b -> data.series[b.nativeSymbol]?.candles?.associateBy { it.openTime } }
+        val btcCandles = btcInst?.let { b -> data.series[b.nativeSymbol]?.candles }
+        val btcMap = btcCandles?.associateBy { it.openTime }
+        val btcMove15 = btcCandles?.let { cs -> btcMove15(cs, btcInst.let { data.tickers[it.nativeSymbol]?.last }, cfg.timeframe.millis, t) }
         return data.universe.map { inst ->
             RowBuilder.build(
                 inst = inst,
@@ -192,8 +197,17 @@ class ScreenerEngine(
                 depth = data.depth[inst.nativeSymbol],
                 config = cfg,
                 now = t,
+                htf = data.htf[inst.nativeSymbol],
+                btcMove15 = btcMove15,
             )
         }
+    }
+
+    /** BTC's move from the last closed candle that ended at least 15 minutes ago to now. */
+    private fun btcMove15(candles: List<Candle>, last: Double?, tfMillis: Long, t: Long): Double? {
+        val now = last ?: candles.lastOrNull()?.close ?: return null
+        val then = candles.lastOrNull { it.closed && it.openTime + tfMillis <= t - 15 * 60_000L }?.close ?: return null
+        return if (then > 0) now / then - 1 else null
     }
 
     private fun processCloses(rows: List<ScreenerRow>, current: Map<FeedId, Feed>, cfg: EngineConfig, t: Long) {
@@ -240,7 +254,7 @@ class ScreenerEngine(
             canonical = instrument.canonical, nativeSymbol = instrument.nativeSymbol, timeframe = timeframe, tier = tier,
             label = label, direction = direction, price = f.price, move = f.move, zMove = f.zMove, relVolume = f.relVolume,
             residual = f.residual, oiChange = perp?.oiChange, fundingRate = perp?.fundingRate, invalidation = invalidation,
-            target = plan?.target, stop = plan?.stop,
+            target = plan?.target, stop = plan?.stop, score = score, isSignal = isSignal,
             failedGates = gates.filter { it.passed != true }.map { "${it.name}: ${it.detail}" },
             flags = flags.map { it.text }, confirmations = cross.confirmations, reason = reason,
             engineVersion = ENGINE_VERSION, configHash = cfg.hash,

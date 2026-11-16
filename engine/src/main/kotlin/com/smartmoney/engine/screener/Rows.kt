@@ -47,6 +47,9 @@ enum class Cause(val text: String) {
 /** A hard yes/no check. [passed] null = could not be checked, which counts as not passed. */
 data class Gate(val name: String, val passed: Boolean?, val detail: String)
 
+/** A v0.3 confirmation. [passed] null = not available (left out of the score). */
+data class Check(val name: String, val passed: Boolean?, val detail: String)
+
 data class RiskFlag(val code: String, val text: String)
 
 data class PerpInfo(
@@ -95,8 +98,14 @@ data class ScreenerRow(
     val cross: CrossInfo,
     val reason: String,
     val mainRisk: String,
+    /** v0.3 confirmation checks (passed null = not available for this coin / market). */
+    val checks: List<Check> = emptyList(),
+    /** Share of available checks that pass, 0-100; null with fewer than 4 available. Equal weights, not validated. */
+    val score: Int? = null,
+    /** Shown as a signal: confirmed move with an action and score >= the minimum score. */
+    val isSignal: Boolean = false,
 ) {
-    /** Track A: nothing is validated. */
+    /** Nothing is validated yet: v0.3 signals are EXPERIMENTAL. */
     val unproven: Boolean get() = true
 
     /** Features the tier is based on. */
@@ -122,6 +131,10 @@ object RowBuilder {
         depth: DepthInfo?,
         config: EngineConfig,
         now: Long,
+        /** EMA50 of 1h and of 4h closes (closed candles), when known. */
+        htf: Pair<Double?, Double?>? = null,
+        /** BTC's move over about the last 15 minutes on the same exchange and market. */
+        btcMove15: Double? = null,
     ): ScreenerRow {
         val tf = config.timeframe
         val candles = series?.candles ?: emptyList()
@@ -163,11 +176,49 @@ object RowBuilder {
             TradePlan(entry = price, target = price + sign * width, stop = price - sign * width)
         }
         val flags = flags(ticker, focus, perp, freshDepth, config, tier != Tier.NONE)
+        val checks = if (direction == null || price == null) emptyList() else checks(inst, focus, perp, price, if (direction == Direction.UP) 1 else -1, htf, btcMove15)
+        val available = checks.filter { it.passed != null }
+        val score = if (available.size < MIN_CHECKS) null else Math.round(100.0 * available.count { it.passed == true } / available.size).toInt()
         return ScreenerRow(
             instrument = inst, timeframe = tf, price = price, ticker = ticker, closed = closed, live = live, perp = perp,
             depth = freshDepth, tier = tier, direction = direction, label = label, gates = gates, flags = flags,
             invalidation = invalidation, plan = plan, cross = CrossInfo(), reason = reason(focus, tier, perp, tf), mainRisk = mainRisk(tier, gates, flags),
+            checks = checks, score = score,
+            isSignal = tier == Tier.CONFIRMED && label != null && score != null && score >= config.minScore,
         )
+    }
+
+    const val MIN_CHECKS = 4
+
+    /**
+     * The v0.3 priority confirmations that can be computed live (user spec 2a), for direction [d]. Equal weights: no
+     * backtest has set weights yet. passed = null when the data is not available.
+     */
+    fun checks(inst: Instrument, f: FeatureSet?, perp: PerpInfo?, price: Double, d: Int, htf: Pair<Double?, Double?>?, btcMove15: Double?): List<Check> {
+        val e1 = htf?.first
+        val e4 = htf?.second
+        val trend = if (e1 == null || e4 == null) Check("1h + 4h trend (EMA50)", null, "not loaded yet")
+        else Check("1h + 4h trend (EMA50)", d * (price - e1) > 0 && d * (price - e4) > 0, "price ${if (d * (price - e1) > 0) "on" else "against"} the 1h EMA50, ${if (d * (price - e4) > 0) "on" else "against"} the 4h EMA50")
+        val btc = when {
+            inst.base == "BTC" -> Check("BTC not against", true, "this is BTC")
+            btcMove15 == null -> Check("BTC not against", null, "BTC data n/a")
+            else -> Check("BTC not against", d * btcMove15 >= 0, "BTC ${pct(btcMove15)} in about 15 min")
+        }
+        val rv = f?.relVolume
+        val vol = Check("Volume >= 2x usual", rv?.let { it >= 2.0 }, rv?.let { "volume ${fmt1(it)}x its recent median" } ?: "n/a")
+        val tb = f?.takerImbalance?.let { (it + 1) / 2 }
+        val taker = Check("Taker flow >= 55%", tb?.let { if (d == 1) it >= 0.55 else it <= 0.45 }, tb?.let { "${(it * 100).toInt()}% of volume bought by takers" } ?: "not given by this exchange")
+        val oi = perp?.oiChange
+        val oiCheck = Check("Open interest rising", if (perp == null) null else oi?.let { it > 0 }, if (perp == null) "spot: no open interest" else oi?.let { "open interest ${pct(it)}" } ?: "n/a")
+        val fr = perp?.fundingRate
+        val funding = Check("Funding not crowded", if (perp == null) null else fr?.let { d * it < 0.0005 }, if (perp == null) "spot: no funding" else fr?.let { "funding ${pct(it, digits = 3)}" } ?: "n/a")
+        val br = f?.breakout
+        val breakout = Check("Range breakout (20 candles)", br?.let { if (d == 1) it == Breakout.UP else it == Breakout.DOWN }, when (br) {
+            Breakout.UP -> "above the 20-candle high"; Breakout.DOWN -> "below the 20-candle low"; Breakout.NONE -> "inside the range"; null -> "n/a"
+        })
+        val cl = f?.closeLocation
+        val close = Check("Strong close (top/bottom 25%)", cl?.let { if (d == 1) it >= 0.75 else it <= 0.25 }, cl?.let { "closed at ${(it * 100).toInt()}% of its range" } ?: "n/a")
+        return listOf(trend, btc, vol, taker, oiCheck, funding, breakout, close)
     }
 
     /** Adds cross-exchange confirmation, price sanity and the "isolated" flag across all rows of one snapshot. */

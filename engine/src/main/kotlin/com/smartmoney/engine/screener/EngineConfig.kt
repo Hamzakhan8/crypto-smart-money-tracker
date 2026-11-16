@@ -7,7 +7,7 @@ import com.smartmoney.engine.model.Timeframe
 import java.security.MessageDigest
 
 /** Logged with every screener hit, so every record says which code and settings produced it. */
-const val ENGINE_VERSION = "0.2.0-trackA"
+const val ENGINE_VERSION = "0.3.0-experimental"
 
 data class EngineConfig(
     val timeframe: Timeframe = Timeframe.M5,
@@ -29,6 +29,8 @@ data class EngineConfig(
     val costMultiple: Double = 2.0,
     /** Show SHORT signals on perps after down moves. Spot never shows shorts (BUY only). */
     val canShort: Boolean = true,
+    /** v0.3: a confirmed move is shown as a signal only with a score at or above this (75 = at least 6 of 8 checks). */
+    val minScore: Int = 75,
     /** Taker fee overrides, keyed "BINANCE_SPOT" etc. Missing keys use [DefaultFees]. */
     val takerFees: Map<String, Double> = emptyMap(),
 ) {
@@ -46,7 +48,7 @@ data class EngineConfig(
         val canonical = listOf(
             "tf=${timeframe.label}", "ex=${exchanges.map { it.name }.sorted()}", "mk=${markets.map { it.name }.sorted()}",
             "n=$universeSize", "vol=$minQuoteVolume24h", "spr=$maxSpread", "z=$moveThresholdZ", "size=$tradeSizeUsd",
-            "slip=$maxSlippage", "cost=$costMultiple", "short=$canShort",
+            "slip=$maxSlippage", "cost=$costMultiple", "short=$canShort", "minScore=$minScore",
             "fees=${Exchange.entries.flatMap { e -> Market.entries.map { m -> "${e.name}_${m.name}:${takerFee(e, m)}" } }}",
         ).joinToString(";")
         MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray()).joinToString("") { "%02x".format(it) }.take(12)

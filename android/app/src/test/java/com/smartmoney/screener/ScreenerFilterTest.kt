@@ -80,7 +80,12 @@ class ScreenerFilterTest {
             val first = period - 60 * tf.millis
             val list = (0 until 59).map { Candle(first + it * tf.millis, 100.0, 100.5, 99.5, 100.0, 10.0, 1_000.0, closed = true) }
             val last = Candle(period - tf.millis, 100.0, maxOf(c, 100.0) * 1.001, minOf(c, 100.0) * 0.999, c, 30.0, 3_000.0, closed = true)
-            return RowBuilder.build(r.instrument, CandleSeries().merge(list + last), null, r.ticker, null, book, cfg, now)
+            // v0.3: trend and BTC agree with the move, so at least 4 checks are known and all known ones pass.
+            val sign = if (move > 0) 1 else -1
+            return RowBuilder.build(
+                r.instrument, CandleSeries().merge(list + last), null, r.ticker, null, book, cfg, now,
+                htf = (c - sign * 5) to (c - sign * 5), btcMove15 = sign * 0.001,
+            )
         }
         val rows = listOf(
             confirmed("LNG", 0.05, Market.PERP), confirmed("SHT", -0.05, Market.PERP),
